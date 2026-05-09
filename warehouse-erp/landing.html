@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WareOps SaaS — Enterprise Warehouse Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-base: #0f1029;
+      --bg-card: rgba(26, 29, 58, 0.6);
+      --border-default: rgba(255, 255, 255, 0.08);
+      --text-primary: #f8fafc;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --brand-500: #6366f1;
+      --brand-600: #4f46e5;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    a { text-decoration: none; color: inherit; }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    
+    /* Nav */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: rgba(15, 16, 41, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-default);
+      z-index: 1000;
+    }
+    .nav-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 72px;
+    }
+    .logo { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+    .logo span { color: var(--brand-500); }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { font-size: 14px; font-weight: 500; color: var(--text-secondary); transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      display: inline-block;
+      text-align: center;
+    }
+    .btn-primary { background: var(--brand-500); color: white; }
+    .btn-primary:hover { background: var(--brand-600); transform: translateY(-1px); }
+    .btn-ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--border-default); }
+    .btn-ghost:hover { background: rgba(255,255,255,0.05); }
+
+    /* Hero */
+    .hero {
+      padding: 160px 0 100px;
+      text-align: center;
+      position: relative;
+    }
+    .hero-glow {
+      position: absolute;
+      top: 20%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 70%);
+      z-index: -1;
+      pointer-events: none;
+    }
+    .badge-top {
+      display: inline-block;
+      padding: 6px 12px;
+      background: rgba(99,102,241,0.1);
+      color: var(--brand-500);
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      border: 1px solid rgba(99,102,241,0.2);
+    }
+    .hero h1 {
+      font-size: 56px;
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 24px;
+      background: linear-gradient(to right, #fff, #94a3b8);
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 18px;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 40px;
+    }
+    .hero-actions { display: flex; justify-content: center; gap: 16px; }
+
+    /* Features */
+    .section-title { text-align: center; font-size: 32px; font-weight: 800; margin-bottom: 16px; }
+    .section-subtitle { text-align: center; color: var(--text-muted); margin-bottom: 64px; }
+    
+    .features { padding: 100px 0; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-default);
+      border-radius: 16px;
+      padding: 32px;
+      transition: transform 0.3s, border-color 0.3s;
+    }
+    .feature-card:hover {
+      transform: translateY(-5px);
+      border-color: var(--brand-500);
+    }
+    .feature-icon {
+      width: 48px; height: 48px;
+      background: rgba(99,102,241,0.1);
+      color: var(--brand-500);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    .feature-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+    .feature-desc { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+
+    /* Pricing */
+    .pricing { padding: 100px 0; background: rgba(0,0,0,0.2); }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 32px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .pricing-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-default);
+      border-radius: 24px;
+      padding: 40px;
+      position: relative;
+    }
+    .pricing-card.popular {
+      border-color: var(--brand-500);
+      background: linear-gradient(180deg, rgba(99,102,241,0.1) 0%, rgba(26,29,58,0.6) 100%);
+    }
+    .popular-badge {
+      position: absolute;
+      top: -12px; left: 50%; transform: translateX(-50%);
+      background: var(--brand-500);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 99px;
+      font-size: 12px; font-weight: 700;
+    }
+    .p-plan { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .p-price { font-size: 48px; font-weight: 900; margin-bottom: 24px; }
+    .p-price span { font-size: 16px; color: var(--text-muted); font-weight: 500; }
+    .p-desc { color: var(--text-secondary); font-size: 14px; margin-bottom: 32px; padding-bottom: 32px; border-bottom: 1px solid var(--border-default); }
+    .p-features { list-style: none; margin-bottom: 32px; }
+    .p-features li { display: flex; align-items: center; gap: 12px; font-size: 14px; margin-bottom: 16px; color: var(--text-secondary); }
+    .p-features li::before { content: '✓'; color: var(--brand-500); font-weight: bold; }
+
+    /* CTA */
+    .cta { padding: 100px 0; text-align: center; }
+    .cta-inner {
+      background: linear-gradient(45deg, rgba(99,102,241,0.2), rgba(244,63,94,0.1));
+      border: 1px solid var(--border-default);
+      border-radius: 24px;
+      padding: 64px 24px;
+    }
+    .cta h2 { font-size: 40px; font-weight: 800; margin-bottom: 16px; }
+    .cta p { font-size: 18px; color: var(--text-secondary); margin-bottom: 32px; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border-default); padding: 48px 0; text-align: center; color: var(--text-muted); font-size: 14px; }
+    
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 40px; }
+      .nav-links { display: none; }
+      .hero-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="container nav-inner">
+      <a href="#" class="logo">🏭 <span>WareOps</span></a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="index.html#/login" class="btn btn-ghost">Log In</a>
+        <a href="index.html#/signup" class="btn btn-primary">Get Started</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="container">
+      <div class="badge-top">v2.0 Now Available</div>
+      <h1>Enterprise Warehouse<br>Management, Simplified.</h1>
+      <p>Scale your logistics with our unified platform. Manage multiple warehouses, workforce roles, inventory, and automated billing all from one beautiful dashboard.</p>
+      <div class="hero-actions">
+        <a href="index.html#/signup" class="btn btn-primary" style="padding: 14px 28px; font-size: 16px;">Start Free Trial</a>
+        <a href="#features" class="btn btn-ghost" style="padding: 14px 28px; font-size: 16px;">Explore Features</a>
+      </div>
+      <div style="margin-top: 64px; border: 1px solid var(--border-default); border-radius: 12px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4);">
+        <div style="background:#1e1e2f; padding: 20px; text-align:left; border-bottom:1px solid #333; display:flex; gap:8px;">
+          <div style="width:12px; height:12px; border-radius:50%; background:#ff5f56;"></div>
+          <div style="width:12px; height:12px; border-radius:50%; background:#ffbd2e;"></div>
+          <div style="width:12px; height:12px; border-radius:50%; background:#27c93f;"></div>
+        </div>
+        <div style="height: 400px; background: linear-gradient(180deg, #151525 0%, #0a0a15 100%); display:flex; align-items:center; justify-content:center;">
+          <h2 style="color:var(--text-muted); opacity:0.5;">Interactive Dashboard Preview</h2>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="features">
+    <div class="container">
+      <h2 class="section-title">Everything you need to scale</h2>
+      <p class="section-subtitle">A complete suite of tools designed for modern warehouse operations.</p>
+      
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🏭</div>
+          <h3 class="feature-title">Multi-Warehouse Config</h3>
+          <p class="feature-desc">Manage unlimited warehouse locations from a single admin panel. Assign staff and track inventory per location.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">👥</div>
+          <h3 class="feature-title">Workforce RBAC</h3>
+          <p class="feature-desc">Granular role-based access control. Assign Super Admins, Managers, Staff, and Employees to specific warehouses.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🧾</div>
+          <h3 class="feature-title">Automated Billing</h3>
+          <p class="feature-desc">Generate professional invoices with automated tax calculations based on customizable regional tax rates.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📈</div>
+          <h3 class="feature-title">Advanced Analytics</h3>
+          <p class="feature-desc">Beautiful, interactive charts providing real-time insights into revenue, inventory valuation, and team performance.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📦</div>
+          <h3 class="feature-title">Inventory Tracking</h3>
+          <p class="feature-desc">Monitor stock levels across all locations. Get instant low-stock alerts and manage item categorizations effortlessly.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📥</div>
+          <h3 class="feature-title">Data Exports</h3>
+          <p class="feature-desc">Export any table or report to CSV, Excel, or print-ready PDF with a single click. Keep your data portable.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing" class="pricing">
+    <div class="container">
+      <h2 class="section-title">Simple, transparent pricing</h2>
+      <p class="section-subtitle">No hidden fees. Choose the plan that fits your logistics scale.</p>
+      
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <h3 class="p-plan">Starter</h3>
+          <div class="p-price">$49<span>/mo</span></div>
+          <p class="p-desc">Perfect for small businesses just getting started with inventory management.</p>
+          <ul class="p-features">
+            <li>1 Warehouse Location</li>
+            <li>Up to 5 Team Members</li>
+            <li>Basic Analytics</li>
+            <li>Standard Email Support</li>
+          </ul>
+          <a href="index.html#/signup" class="btn btn-ghost" style="width:100%;">Get Started</a>
+        </div>
+        
+        <div class="pricing-card popular">
+          <div class="popular-badge">MOST POPULAR</div>
+          <h3 class="p-plan">Enterprise</h3>
+          <div class="p-price">$199<span>/mo</span></div>
+          <p class="p-desc">For scaling operations needing multi-location sync and advanced controls.</p>
+          <ul class="p-features">
+            <li>Unlimited Warehouses</li>
+            <li>Unlimited Team Members</li>
+            <li>Advanced Global Analytics</li>
+            <li>Data Exports (CSV/PDF)</li>
+            <li>24/7 Priority Support</li>
+          </ul>
+          <a href="index.html#/signup" class="btn btn-primary" style="width:100%;">Start Enterprise Trial</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="container">
+      <div class="cta-inner">
+        <h2>Ready to optimize your operations?</h2>
+        <p>Join hundreds of modern logistics companies using WareOps.</p>
+        <a href="index.html#/signup" class="btn btn-primary" style="padding: 16px 32px; font-size: 18px;">Create Free Account</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div style="font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 16px;">🏭 WareOps</div>
+      <p>© 2026 WareOps Inc. All rights reserved. Built for enterprise efficiency.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,67 @@
+/* ============ FORMS ============ */
+.form-group { margin-bottom: var(--space-5); }
+.form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+.form-label { display: block; font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-2); }
+.form-label span.req { color: var(--accent-rose); margin-left: 2px; }
+.form-control {
+  width: 100%; padding: var(--space-3) var(--space-4);
+  background: var(--bg-input); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); color: var(--text-primary);
+  font-size: var(--text-sm); font-family: var(--font-sans);
+  transition: all var(--transition-fast); outline: none;
+}
+.form-control:focus { border-color: var(--border-brand); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+.form-control::placeholder { color: var(--text-muted); }
+.form-control:disabled { opacity: 0.5; cursor: not-allowed; }
+select.form-control { cursor: pointer; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px;
+}
+textarea.form-control { resize: vertical; min-height: 100px; }
+.form-hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-1); }
+.form-error { font-size: var(--text-xs); color: var(--accent-rose); margin-top: var(--space-1); }
+.form-control.error { border-color: rgba(244,63,94,0.5); }
+.form-control.success { border-color: rgba(16,185,129,0.5); }
+
+/* Checkbox & Radio */
+.checkbox-group, .radio-group { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.checkbox-group input[type=checkbox], .radio-group input[type=radio] { width: 16px; height: 16px; accent-color: var(--brand-500); cursor: pointer; }
+.checkbox-group label, .radio-group label { font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
+
+/* File Upload */
+.file-upload {
+  border: 2px dashed var(--border-default); border-radius: var(--radius-lg);
+  padding: var(--space-8); text-align: center; cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.file-upload:hover { border-color: var(--border-brand); background: rgba(99,102,241,0.05); }
+.file-upload-icon { font-size: 36px; margin-bottom: var(--space-3); opacity: 0.5; }
+.file-upload-text { font-size: var(--text-sm); color: var(--text-muted); }
+.file-upload-text span { color: var(--text-brand); font-weight: 600; }
+.file-upload input[type=file] { display: none; }
+
+/* Color Picker */
+.color-picker-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.color-swatch {
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: all var(--transition-fast);
+}
+.color-swatch.selected { border-color: white; transform: scale(1.15); box-shadow: 0 0 0 3px rgba(255,255,255,0.2); }
+
+/* Steps */
+.steps { display: flex; align-items: center; gap: 0; margin-bottom: var(--space-8); overflow-x: auto; }
+.step { display: flex; align-items: center; flex: 1; }
+.step-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--bg-input); border: 2px solid var(--border-default);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-xs); font-weight: 700; color: var(--text-muted);
+  flex-shrink: 0; transition: all var(--transition-base); position: relative; z-index: 1;
+}
+.step.active .step-dot { background: var(--gradient-brand); border-color: transparent; color: white; box-shadow: var(--shadow-brand); }
+.step.done .step-dot { background: var(--accent-emerald); border-color: transparent; color: white; }
+.step-line { flex: 1; height: 2px; background: var(--border-default); }
+.step.done .step-line, .step.active .step-line { background: var(--brand-500); }
+.step-label { font-size: var(--text-xs); color: var(--text-muted); margin-top: 4px; white-space: nowrap; }
+.step.active .step-label { color: var(--text-brand); font-weight: 600; }
+.step-wrap { display: flex; flex-direction: column; align-items: center; gap: 0; }
