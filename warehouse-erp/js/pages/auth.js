@@ -40,9 +40,9 @@ export function renderLogin() {
           <div class="auth-divider-line"></div>
         </div>
         <div style="display:grid;gap:8px">
-          <button class="btn btn-secondary btn-sm" data-demo="alex@wareops.io|Admin@123">👑 Super Admin</button>
-          <button class="btn btn-secondary btn-sm" data-demo="jordan@wareops.io|Admin@123">🏭 Admin (North Hub)</button>
-          <button class="btn btn-secondary btn-sm" data-demo="sam@wareops.io|Admin@123">👔 Manager</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-demo="alex@wareops.io|Admin@123">👑 Super Admin</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-demo="jordan@wareops.io|Admin@123">🏭 Admin (North Hub)</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-demo="sam@wareops.io|Admin@123">👔 Manager</button>
         </div>
         <div class="auth-footer">
           Don't have an account? <a href="#/signup">Create account</a>

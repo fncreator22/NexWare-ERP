@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-09T13:07:06.247Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-09T20:05:34.051Z
 
 
 // ===== modules/store.js =====
@@ -175,8 +175,20 @@ function getWarehouses() {
   const s = getStore();
   const u = getCurrentUser();
   if (!u) return [];
-  if (u.role === 'super_admin') return s.warehouses.filter(w => w.ownerId === u.id);
-  return s.warehouses.filter(w => w.id === u.warehouseId);
+  let whs = [];
+  if (u.role === 'super_admin') {
+    whs = s.warehouses.filter(w => w.ownerId === u.id);
+  } else {
+    whs = s.warehouses.filter(w => w.id === u.warehouseId);
+  }
+  
+  // Dynamically compute math/statistics for true global synchronization
+  return whs.map(w => ({
+    ...w,
+    staffCount: s.users.filter(user => user.warehouseId === w.id).length,
+    items: s.items.filter(item => item.warehouseId === w.id).length,
+    revenue: s.bills.filter(bill => bill.warehouseId === w.id).reduce((sum, bill) => sum + (bill.total || 0), 0)
+  }));
 }
 
 function createWarehouse(data) {
@@ -184,7 +196,7 @@ function createWarehouse(data) {
   const u = getCurrentUser();
   if (u.role !== 'super_admin') return null; // Only Super Admin can create
   const id = 'wh' + Date.now();
-  const wh = { id, ...data, ownerId: u.id, createdAt: new Date().toISOString(), status: 'active', staffCount: 0, revenue: 0, items: 0 };
+  const wh = { id, ...data, ownerId: u.id, createdAt: new Date().toISOString(), status: 'active' };
   s.warehouses.push(wh);
   saveStore();
   addAuditLog('warehouse_create', `Warehouse created: ${data.name}`, u.id);
@@ -256,10 +268,7 @@ function createUser(data) {
     assignedBy: s.currentUserId, assignedAt: new Date().toISOString()
   };
   s.users.push(user);
-  if (data.warehouseId) {
-    const wh = s.warehouses.find(w => w.id === data.warehouseId);
-    if (wh) { wh.staffCount = (wh.staffCount || 0) + 1; }
-  }
+
   saveStore();
   addAuditLog('user_create', `User created: ${data.name} (${data.role})`, s.currentUserId);
   return { user };
@@ -344,8 +353,7 @@ function createItem(data) {
   const id = 'item' + Date.now();
   const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
   s.items.push(item);
-  const wh = s.warehouses.find(w => w.id === data.warehouseId);
-  if (wh) { wh.items = (wh.items || 0) + 1; }
+
   saveStore();
   addAuditLog('item_create', `Item created: ${data.name}`, s.currentUserId);
   addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
@@ -537,8 +545,7 @@ function createBill(data) {
     billNo: 'INV-' + String(s.bills.length + 1).padStart(4, '0') 
   };
   s.bills.push(bill);
-  const wh = s.warehouses.find(w => w.id === data.warehouseId);
-  if (wh) { wh.revenue = (wh.revenue || 0) + data.total; }
+
   saveStore();
   addAuditLog('bill_create', `Bill generated: ${bill.billNo} — $${data.total}`, s.currentUserId);
   addNotification('bill_create', 'New Invoice Generated', `${bill.billNo} for ${data.customer} — $${data.total}`, '/billing', data.warehouseId);
@@ -707,42 +714,18 @@ function getPlanWarehouseLimit() {
 // ---- SEED DATA ----
 function seedDemoData() {
   const s = getStore();
-  const u = getCurrentUser();
-  if (!u || s.warehouses.length > 0) return;
-
-  const wh1 = createWarehouse({ name: 'North Hub', businessName: 'NorthTech Supplies', address: '100 Industrial Blvd, Chicago, IL', contact: '+1-312-555-0101', email: 'north@wareops.io', taxPreference: 'standard', logo: '🏭' });
-  const wh2 = createWarehouse({ name: 'South Depot', businessName: 'SouthEx Logistics', address: '200 Commerce Dr, Austin, TX', contact: '+1-512-555-0202', email: 'south@wareops.io', taxPreference: 'standard', logo: '🏗️' });
-  const wh3 = createWarehouse({ name: 'East Flex', businessName: 'EastWave Distribution', address: '300 Harbor Rd, Boston, MA', contact: '+1-617-555-0303', email: 'east@wareops.io', taxPreference: 'luxury', logo: '🚛' });
-
-  createUser({ name: 'Jordan Lee', email: 'jordan@wareops.io', password: 'Admin@123', role: 'admin', warehouseId: wh1.id });
-  createUser({ name: 'Sam Rivera', email: 'sam@wareops.io', password: 'Admin@123', role: 'manager', warehouseId: wh1.id });
-  createUser({ name: 'Taylor Kim', email: 'taylor@wareops.io', password: 'Admin@123', role: 'staff', warehouseId: wh2.id });
-  createUser({ name: 'Chris Patel', email: 'chris@wareops.io', password: 'Admin@123', role: 'employee', warehouseId: wh2.id });
-  createUser({ name: 'Morgan Zhao', email: 'morgan@wareops.io', password: 'Admin@123', role: 'manager', warehouseId: wh3.id });
-
-  const categories = ['Electronics', 'Furniture', 'Apparel', 'Food & Beverage', 'Tools'];
-  const itemNames = ['Laptop Pro', 'Standing Desk', 'Wireless Mouse', 'Office Chair', 'Tablet', 'Monitor 4K', 'Keyboard Mech', 'Storage Box', 'Safety Helmet', 'Forklift Manual'];
-  itemNames.forEach((name, i) => {
-    const cat = categories[i % categories.length];
-    createItem({ name, category: cat, sku: 'SKU-' + String(i+1).padStart(4,'0'), price: Math.floor(Math.random()*900+50), stock: Math.floor(Math.random()*200+10), taxCategory: i % 3 === 0 ? 'luxury' : 'normal', warehouseId: [wh1.id, wh2.id, wh3.id][i % 3], unit: 'pcs' });
-  });
-
-  const colDef = [
-    { id: 'c1', name: 'Task', type: 'text', required: true },
-    { id: 'c2', name: 'Assignee', type: 'text', required: false },
-    { id: 'c3', name: 'Status', type: 'dropdown', options: ['Todo', 'In Progress', 'Done'], required: false },
-    { id: 'c4', name: 'Due Date', type: 'date', required: false },
-    { id: 'c5', name: 'Priority', type: 'dropdown', options: ['Low', 'Medium', 'High'], required: false }
-  ];
-  const t = createTable({ name: 'Operations Tracker', category: 'Operations', description: 'Track daily warehouse operations', warehouseId: wh1.id, columns: colDef, roles: ['admin','manager','staff'], headerColor: '#6366f1', bgColor: '#0f1029', rowHighlight: false });
-  addTableRow(t.id, { c1: 'Inventory audit Q1', c2: 'Jordan Lee', c3: 'In Progress', c4: '2025-03-15', c5: 'High' });
-  addTableRow(t.id, { c1: 'Safety inspection', c2: 'Sam Rivera', c3: 'Todo', c4: '2025-03-20', c5: 'Medium' });
-  addTableRow(t.id, { c1: 'Equipment maintenance', c2: 'Jordan Lee', c3: 'Done', c4: '2025-03-10', c5: 'Low' });
-
-  createBill({ warehouseId: wh1.id, customer: 'Acme Corp', items: [{name:'Laptop Pro', qty:3, price:999, tax:15, category:'luxury'}], subtotal: 2997, tax: 449.55, total: 3446.55, notes: '' });
-  createBill({ warehouseId: wh2.id, customer: 'Beta LLC', items: [{name:'Wireless Mouse', qty:10, price:49, tax:5, category:'normal'}], subtotal: 490, tax: 24.5, total: 514.5, notes: '' });
-  createBill({ warehouseId: wh3.id, customer: 'Gamma Inc', items: [{name:'Monitor 4K', qty:2, price:599, tax:15, category:'luxury'}], subtotal: 1198, tax: 179.7, total: 1377.7, notes: '' });
-  createBill({ warehouseId: wh1.id, customer: 'Delta Trading', items: [{name:'Office Chair', qty:5, price:299, tax:5, category:'normal'}], subtotal: 1495, tax: 74.75, total: 1569.75, notes: '' });
+  const d = getDefaultData();
+  
+  if (s.users.length === 0) s.users = d.users;
+  if (s.warehouses.length === 0) s.warehouses = d.warehouses;
+  if (s.items.length === 0) s.items = d.items;
+  if (s.bills.length === 0) s.bills = d.bills;
+  if (s.tables.length === 0) s.tables = d.tables;
+  if (Object.keys(s.tableData).length === 0) s.tableData = d.tableData;
+  if (s.auditLogs.length === 0) s.auditLogs = d.auditLogs;
+  if (s.notifications.length === 0) s.notifications = d.notifications;
+  
+  saveStore();
 }
 
 // ===== modules/router.js =====
@@ -1740,9 +1723,9 @@ function renderLogin() {
           <div class="auth-divider-line"></div>
         </div>
         <div style="display:grid;gap:8px">
-          <button class="btn btn-secondary btn-sm" data-demo="alex@wareops.io|Admin@123">👑 Super Admin</button>
-          <button class="btn btn-secondary btn-sm" data-demo="jordan@wareops.io|Admin@123">🏭 Admin (North Hub)</button>
-          <button class="btn btn-secondary btn-sm" data-demo="sam@wareops.io|Admin@123">👔 Manager</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-demo="alex@wareops.io|Admin@123">👑 Super Admin</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-demo="jordan@wareops.io|Admin@123">🏭 Admin (North Hub)</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-demo="sam@wareops.io|Admin@123">👔 Manager</button>
         </div>
         <div class="auth-footer">
           Don't have an account? <a href="#/signup">Create account</a>
