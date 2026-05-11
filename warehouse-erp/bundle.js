@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-11T18:20:26.442Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-11T18:24:50.191Z
 
 
 // ===== modules/store.js =====
@@ -204,6 +204,14 @@ function getWarehouses() {
     items: s.items.filter(item => item.warehouseId === w.id).length,
     revenue: s.bills.filter(bill => bill.warehouseId === w.id).reduce((sum, bill) => sum + (bill.total || 0), 0)
   }));
+}
+
+function getStockHealth(warehouseId) {
+  const s = getStore();
+  const items = warehouseId ? s.items.filter(i => i.warehouseId === warehouseId) : s.items;
+  if (items.length === 0) return 100;
+  const lowStock = items.filter(i => (i.stock || 0) < 20).length;
+  return Math.round(((items.length - lowStock) / items.length) * 100);
 }
 
 function createWarehouse(data) {
@@ -1408,6 +1416,7 @@ function exportPDF(entity) {
 
 
 
+
 const SUPER_ADMIN_NAV = [
   { section: 'Overview', items: [
     { path: '/dashboard', icon: '📊', label: 'Dashboard' },
@@ -1515,6 +1524,20 @@ function renderShell(pageTitle, pageSubtitle, content) {
     ? `<span class="breadcrumb-item">WareOps</span><span class="breadcrumb-sep">›</span><span class="breadcrumb-item current">${pageTitle}</span>`
     : `<span class="breadcrumb-item current">WareOps ERP</span>`;
 
+  const stockHealth = getStockHealth(user.role === 'super_admin' ? null : user.warehouseId);
+  const healthColor = stockHealth > 80 ? 'var(--accent-emerald)' : stockHealth > 50 ? 'var(--accent-amber)' : 'var(--accent-rose)';
+
+  const sidebarWidget = `
+    <div class="sidebar-widget">
+      <div class="widget-label">Inventory Health</div>
+      <div class="health-bar"><div class="health-bar-fill" style="width:${stockHealth}%; background:${healthColor}"></div></div>
+      <div class="health-val">
+        <span>Stock Status</span>
+        <span style="color:${healthColor}">${stockHealth}%</span>
+      </div>
+    </div>
+  `;
+
   document.getElementById('app').innerHTML = `
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
@@ -1528,6 +1551,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
           </div>
         </div>
         <nav class="sidebar-nav" id="sidebar-nav">${navHTML}</nav>
+        ${sidebarWidget}
         <div class="sidebar-footer">
           <div class="sidebar-user" id="user-menu-btn">
             <div class="sidebar-user-avatar">${user.avatar}</div>
@@ -1544,9 +1568,9 @@ function renderShell(pageTitle, pageSubtitle, content) {
           <button class="topbar-menu-btn" id="topbar-menu-btn">☰</button>
           <div class="topbar-breadcrumb">${breadcrumb}</div>
           <div class="topbar-actions">
-            <div class="topbar-search">
+            <div class="topbar-search" id="cmd-palette-btn" style="cursor:pointer" title="Search Everything (Ctrl+K)">
               <span style="color:var(--text-muted);font-size:14px">🔍</span>
-              <input type="text" placeholder="Quick search..." id="global-search" />
+              <input type="text" placeholder="Search (Ctrl+K)" id="global-search" readonly style="cursor:pointer" />
             </div>
             <div class="icon-btn notif-btn" id="notif-btn" data-tooltip="Notifications" style="position:relative">
               🔔
@@ -1593,6 +1617,10 @@ function renderShell(pageTitle, pageSubtitle, content) {
     e.stopPropagation();
     showProfileDropdown(e.currentTarget);
   });
+
+  // Command Palette
+  initPalette();
+  document.getElementById('cmd-palette-btn')?.addEventListener('click', togglePalette);
 }
 
 function toggleSidebar() {

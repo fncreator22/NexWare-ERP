@@ -202,6 +202,14 @@ export function getWarehouses() {
   }));
 }
 
+export function getStockHealth(warehouseId) {
+  const s = getStore();
+  const items = warehouseId ? s.items.filter(i => i.warehouseId === warehouseId) : s.items;
+  if (items.length === 0) return 100;
+  const lowStock = items.filter(i => (i.stock || 0) < 20).length;
+  return Math.round(((items.length - lowStock) / items.length) * 100);
+}
+
 export function createWarehouse(data) {
   const s = getStore();
   const u = getCurrentUser();

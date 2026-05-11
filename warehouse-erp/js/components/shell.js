@@ -1,9 +1,10 @@
 /**
  * App Shell — Sidebar + Topbar + Main layout (v2)
  */
-import { getCurrentUser, logout, getWarehouses, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, getSubscription } from '../modules/store.js';
+import { getCurrentUser, logout, getWarehouses, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, getSubscription, getStockHealth } from '../modules/store.js';
 import { navigate, getCurrentPath } from '../modules/router.js';
 import { capitalize, positionFixedElement } from '../modules/ui.js';
+import { initPalette, togglePalette } from './palette.js';
 
 const SUPER_ADMIN_NAV = [
   { section: 'Overview', items: [
@@ -112,6 +113,20 @@ export function renderShell(pageTitle, pageSubtitle, content) {
     ? `<span class="breadcrumb-item">WareOps</span><span class="breadcrumb-sep">›</span><span class="breadcrumb-item current">${pageTitle}</span>`
     : `<span class="breadcrumb-item current">WareOps ERP</span>`;
 
+  const stockHealth = getStockHealth(user.role === 'super_admin' ? null : user.warehouseId);
+  const healthColor = stockHealth > 80 ? 'var(--accent-emerald)' : stockHealth > 50 ? 'var(--accent-amber)' : 'var(--accent-rose)';
+
+  const sidebarWidget = `
+    <div class="sidebar-widget">
+      <div class="widget-label">Inventory Health</div>
+      <div class="health-bar"><div class="health-bar-fill" style="width:${stockHealth}%; background:${healthColor}"></div></div>
+      <div class="health-val">
+        <span>Stock Status</span>
+        <span style="color:${healthColor}">${stockHealth}%</span>
+      </div>
+    </div>
+  `;
+
   document.getElementById('app').innerHTML = `
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
@@ -125,6 +140,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
           </div>
         </div>
         <nav class="sidebar-nav" id="sidebar-nav">${navHTML}</nav>
+        ${sidebarWidget}
         <div class="sidebar-footer">
           <div class="sidebar-user" id="user-menu-btn">
             <div class="sidebar-user-avatar">${user.avatar}</div>
@@ -141,9 +157,9 @@ export function renderShell(pageTitle, pageSubtitle, content) {
           <button class="topbar-menu-btn" id="topbar-menu-btn">☰</button>
           <div class="topbar-breadcrumb">${breadcrumb}</div>
           <div class="topbar-actions">
-            <div class="topbar-search">
+            <div class="topbar-search" id="cmd-palette-btn" style="cursor:pointer" title="Search Everything (Ctrl+K)">
               <span style="color:var(--text-muted);font-size:14px">🔍</span>
-              <input type="text" placeholder="Quick search..." id="global-search" />
+              <input type="text" placeholder="Search (Ctrl+K)" id="global-search" readonly style="cursor:pointer" />
             </div>
             <div class="icon-btn notif-btn" id="notif-btn" data-tooltip="Notifications" style="position:relative">
               🔔
@@ -190,6 +206,10 @@ export function renderShell(pageTitle, pageSubtitle, content) {
     e.stopPropagation();
     showProfileDropdown(e.currentTarget);
   });
+
+  // Command Palette
+  initPalette();
+  document.getElementById('cmd-palette-btn')?.addEventListener('click', togglePalette);
 }
 
 function toggleSidebar() {
