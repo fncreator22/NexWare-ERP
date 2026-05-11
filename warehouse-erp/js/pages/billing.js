@@ -84,6 +84,10 @@ function renderBillsTable() {
 
   const total = bills.length;
   const bl_pages = Math.ceil(total/bl_PER_PAGE) || 1;
+  
+  // Bug fix: Reset page pointer if it's out of bounds after filtering
+  if (bl_page > bl_pages) bl_page = 1;
+
   const start = (bl_page-1)*bl_PER_PAGE;
   const pageBills = bills.slice(start, start+bl_PER_PAGE);
 

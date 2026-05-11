@@ -341,7 +341,7 @@ export function renderWarehouseDetail(whId) {
   const staff      = allUsers.filter(u => u.warehouseId === whId);
   const bills      = getBills(whId);
   const items      = getItems(whId);
-  const taxCfg     = getTaxConfig();
+  const taxCfg     = getTaxConfig(whId);
 
   const revenue    = bills.reduce((s,b)=>s+(b.total||0),0);
   const tax        = bills.reduce((s,b)=>s+(b.tax||0),0);

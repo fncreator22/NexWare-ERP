@@ -91,6 +91,21 @@ function getDefaultData() {
 
 let _store = null;
 
+// Cross-tab synchronization: Listen for changes from other tabs
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY && e.newValue) {
+      try {
+        _store = JSON.parse(e.newValue);
+        // Dispatch event for UI components to optionally re-render
+        window.dispatchEvent(new CustomEvent('wareops_storage_sync'));
+      } catch (err) {
+        console.error('Store sync error:', err);
+      }
+    }
+  });
+}
+
 export function getStore() {
   if (_store) return _store;
   try {
@@ -217,9 +232,19 @@ export function deleteWarehouse(id) {
   const u = getCurrentUser();
   if (u.role !== 'super_admin') return;
 
+  // Cascade Deletion to associated records to maintain data integrity
+  s.users = s.users.filter(usr => usr.warehouseId !== id);
+  s.items = s.items.filter(item => item.warehouseId !== id);
+  s.bills = s.bills.filter(bill => bill.warehouseId !== id);
+  
+  // Also cascade to operational tables and their rows
+  const affectedTables = s.tables.filter(t => t.warehouseId === id).map(t => t.id);
+  affectedTables.forEach(tId => { delete s.tableData[tId]; });
+  s.tables = s.tables.filter(t => t.warehouseId !== id);
+
   s.warehouses = s.warehouses.filter(w => w.id !== id);
   saveStore();
-  addAuditLog('warehouse_delete', `Warehouse deleted`, s.currentUserId);
+  addAuditLog('warehouse_delete', `Warehouse deleted (cascade)`, s.currentUserId);
 }
 
 // ---- USERS / WORKFORCE ----
@@ -346,12 +371,17 @@ export function createItem(data) {
   if (!u || u.role === 'employee') return null; // Employees cannot create items
   if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
 
+  // SKU Uniqueness check to prevent tracking errors
+  if (data.sku && s.items.find(i => i.sku === data.sku)) {
+    return { error: 'SKU already exists in the system' };
+  }
+
   const id = 'item' + Date.now();
   const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
   s.items.push(item);
 
   saveStore();
-  addAuditLog('item_create', `Item created: ${data.name}`, s.currentUserId);
+  addAuditLog('item_create', `Item created: ${data.name} (SKU: ${data.sku})`, s.currentUserId);
   addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
   return item;
 }
@@ -367,6 +397,11 @@ export function updateItem(id, data) {
 
   if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return null;
   if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+
+  // SKU Uniqueness check for updates
+  if (data.sku && s.items.find(i => i.sku === data.sku && i.id !== id)) {
+    return { error: 'SKU already exists' };
+  }
 
   s.items[idx] = { ...s.items[idx], ...data, updatedAt: new Date().toISOString() };
   saveStore();
@@ -531,8 +566,19 @@ export function createBill(data) {
   if (!u || u.role === 'employee') return null;
   if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
 
+  // Manual Inventory Synchronization: Decrement stock for billed items
+  if (data.items && Array.isArray(data.items)) {
+    data.items.forEach(billItem => {
+      const itemIdx = s.items.findIndex(i => i.id === billItem.id);
+      if (itemIdx !== -1) {
+        s.items[itemIdx].stock = Math.max(0, (s.items[itemIdx].stock || 0) - billItem.qty);
+      }
+    });
+  }
+
   const id = 'bill' + Date.now();
-  const taxConfig = getTaxConfig();
+  // Regional Tax Snapshot: Use warehouse-specific tax config if available
+  const taxConfig = getTaxConfig(data.warehouseId);
   const bill = { 
     id, ...data, 
     taxConfigSnapshot: { ...taxConfig }, // Snapshot for record integrity
@@ -558,7 +604,8 @@ export function addAuditLog(action, description, userId) {
     warehouseId: u ? u.warehouseId : null,
     timestamp: new Date().toISOString()
   });
-  if (s.auditLogs.length > 500) s.auditLogs = s.auditLogs.slice(0, 500);
+  // Increased limit for enterprise compliance and historical tracking
+  if (s.auditLogs.length > 5000) s.auditLogs = s.auditLogs.slice(0, 5000);
   saveStore();
 }
 
@@ -681,9 +728,16 @@ export function markAllNotificationsRead() {
 }
 
 // ---- TAX CONFIG ----
-export function getTaxConfig() {
+export function getTaxConfig(warehouseId) {
   const s = getStore();
   if (!s.taxConfig) s.taxConfig = { luxury: 15, normal: 5 };
+  
+  // Support for regional compliance: Check for warehouse-specific overrides
+  if (warehouseId) {
+    const wh = s.warehouses.find(w => w.id === warehouseId);
+    if (wh && wh.taxConfig) return wh.taxConfig;
+  }
+  
   return s.taxConfig;
 }
 

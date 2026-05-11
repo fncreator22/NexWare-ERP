@@ -135,7 +135,7 @@ function renderItemsTable() {
               <td data-label="Category"><span class="badge badge-brand">${item.category}</span></td>
               <td data-label="Price"><strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong></td>
               <td data-label="Stock"><span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span></td>
-              <td data-label="Tax"><span class="badge ${item.taxCategory==='luxury'?'badge-purple':'badge-info'}">${item.taxCategory==='luxury'?getTaxConfig().luxury+'%':getTaxConfig().normal+'%'}</span></td>
+              <td data-label="Tax"><span class="badge ${item.taxCategory==='luxury'?'badge-purple':'badge-info'}">${item.taxCategory==='luxury' ? getTaxConfig(item.warehouseId).luxury+'%' : getTaxConfig(item.warehouseId).normal+'%'}</span></td>
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">

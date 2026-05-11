@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-09T20:05:34.051Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-11T18:20:26.442Z
 
 
 // ===== modules/store.js =====
@@ -94,6 +94,21 @@ function getDefaultData() {
 }
 
 let _store = null;
+
+// Cross-tab synchronization: Listen for changes from other tabs
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY && e.newValue) {
+      try {
+        _store = JSON.parse(e.newValue);
+        // Dispatch event for UI components to optionally re-render
+        window.dispatchEvent(new CustomEvent('wareops_storage_sync'));
+      } catch (err) {
+        console.error('Store sync error:', err);
+      }
+    }
+  });
+}
 
 function getStore() {
   if (_store) return _store;
@@ -221,9 +236,19 @@ function deleteWarehouse(id) {
   const u = getCurrentUser();
   if (u.role !== 'super_admin') return;
 
+  // Cascade Deletion to associated records to maintain data integrity
+  s.users = s.users.filter(usr => usr.warehouseId !== id);
+  s.items = s.items.filter(item => item.warehouseId !== id);
+  s.bills = s.bills.filter(bill => bill.warehouseId !== id);
+  
+  // Also cascade to operational tables and their rows
+  const affectedTables = s.tables.filter(t => t.warehouseId === id).map(t => t.id);
+  affectedTables.forEach(tId => { delete s.tableData[tId]; });
+  s.tables = s.tables.filter(t => t.warehouseId !== id);
+
   s.warehouses = s.warehouses.filter(w => w.id !== id);
   saveStore();
-  addAuditLog('warehouse_delete', `Warehouse deleted`, s.currentUserId);
+  addAuditLog('warehouse_delete', `Warehouse deleted (cascade)`, s.currentUserId);
 }
 
 // ---- USERS / WORKFORCE ----
@@ -350,12 +375,17 @@ function createItem(data) {
   if (!u || u.role === 'employee') return null; // Employees cannot create items
   if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
 
+  // SKU Uniqueness check to prevent tracking errors
+  if (data.sku && s.items.find(i => i.sku === data.sku)) {
+    return { error: 'SKU already exists in the system' };
+  }
+
   const id = 'item' + Date.now();
   const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
   s.items.push(item);
 
   saveStore();
-  addAuditLog('item_create', `Item created: ${data.name}`, s.currentUserId);
+  addAuditLog('item_create', `Item created: ${data.name} (SKU: ${data.sku})`, s.currentUserId);
   addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
   return item;
 }
@@ -371,6 +401,11 @@ function updateItem(id, data) {
 
   if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return null;
   if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+
+  // SKU Uniqueness check for updates
+  if (data.sku && s.items.find(i => i.sku === data.sku && i.id !== id)) {
+    return { error: 'SKU already exists' };
+  }
 
   s.items[idx] = { ...s.items[idx], ...data, updatedAt: new Date().toISOString() };
   saveStore();
@@ -535,8 +570,19 @@ function createBill(data) {
   if (!u || u.role === 'employee') return null;
   if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
 
+  // Manual Inventory Synchronization: Decrement stock for billed items
+  if (data.items && Array.isArray(data.items)) {
+    data.items.forEach(billItem => {
+      const itemIdx = s.items.findIndex(i => i.id === billItem.id);
+      if (itemIdx !== -1) {
+        s.items[itemIdx].stock = Math.max(0, (s.items[itemIdx].stock || 0) - billItem.qty);
+      }
+    });
+  }
+
   const id = 'bill' + Date.now();
-  const taxConfig = getTaxConfig();
+  // Regional Tax Snapshot: Use warehouse-specific tax config if available
+  const taxConfig = getTaxConfig(data.warehouseId);
   const bill = { 
     id, ...data, 
     taxConfigSnapshot: { ...taxConfig }, // Snapshot for record integrity
@@ -562,7 +608,8 @@ function addAuditLog(action, description, userId) {
     warehouseId: u ? u.warehouseId : null,
     timestamp: new Date().toISOString()
   });
-  if (s.auditLogs.length > 500) s.auditLogs = s.auditLogs.slice(0, 500);
+  // Increased limit for enterprise compliance and historical tracking
+  if (s.auditLogs.length > 5000) s.auditLogs = s.auditLogs.slice(0, 5000);
   saveStore();
 }
 
@@ -685,9 +732,16 @@ function markAllNotificationsRead() {
 }
 
 // ---- TAX CONFIG ----
-function getTaxConfig() {
+function getTaxConfig(warehouseId) {
   const s = getStore();
   if (!s.taxConfig) s.taxConfig = { luxury: 15, normal: 5 };
+  
+  // Support for regional compliance: Check for warehouse-specific overrides
+  if (warehouseId) {
+    const wh = s.warehouses.find(w => w.id === warehouseId);
+    if (wh && wh.taxConfig) return wh.taxConfig;
+  }
+  
   return s.taxConfig;
 }
 
@@ -2677,7 +2731,7 @@ function renderWarehouseDetail(whId) {
   const staff      = allUsers.filter(u => u.warehouseId === whId);
   const bills      = getBills(whId);
   const items      = getItems(whId);
-  const taxCfg     = getTaxConfig();
+  const taxCfg     = getTaxConfig(whId);
 
   const revenue    = bills.reduce((s,b)=>s+(b.total||0),0);
   const tax        = bills.reduce((s,b)=>s+(b.tax||0),0);
@@ -3320,7 +3374,7 @@ function renderItemsTable() {
               <td data-label="Category"><span class="badge badge-brand">${item.category}</span></td>
               <td data-label="Price"><strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong></td>
               <td data-label="Stock"><span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span></td>
-              <td data-label="Tax"><span class="badge ${item.taxCategory==='luxury'?'badge-purple':'badge-info'}">${item.taxCategory==='luxury'?getTaxConfig().luxury+'%':getTaxConfig().normal+'%'}</span></td>
+              <td data-label="Tax"><span class="badge ${item.taxCategory==='luxury'?'badge-purple':'badge-info'}">${item.taxCategory==='luxury' ? getTaxConfig(item.warehouseId).luxury+'%' : getTaxConfig(item.warehouseId).normal+'%'}</span></td>
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
@@ -3934,6 +3988,10 @@ function renderBillsTable() {
 
   const total = bills.length;
   const bl_pages = Math.ceil(total/bl_PER_PAGE) || 1;
+  
+  // Bug fix: Reset page pointer if it's out of bounds after filtering
+  if (bl_page > bl_pages) bl_page = 1;
+
   const start = (bl_page-1)*bl_PER_PAGE;
   const pageBills = bills.slice(start, start+bl_PER_PAGE);
 
