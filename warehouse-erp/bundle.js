@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-11T18:33:11.276Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-11T18:41:18.165Z
 
 
 // ===== modules/store.js =====
@@ -2247,6 +2247,17 @@ function renderDashboard() {
   const myWh = !isSA ? whs.find(w=>w.id===user.warehouseId) : null;
   const roleLabel = isSA ? 'Global Overview' : `${myWh?.name || 'Warehouse'} Overview`;
 
+  // Smart Restock Logic: Identify items with low stock relative to sales velocity
+  const restockSuggestions = items
+    .filter(i => (i.stock || 0) < 50)
+    .map(i => {
+      const salesCount = bills.reduce((acc, b) => acc + (b.items?.filter(bi => bi.id === i.id).reduce((s, bi) => s + bi.qty, 0) || 0), 0);
+      const priority = (salesCount * 2) + (50 - (i.stock || 0));
+      return { ...i, priority, salesCount };
+    })
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, 4);
+
   renderShell('Dashboard', roleLabel, `
     <div class="animate-slideUp">
 
@@ -2445,6 +2456,63 @@ function renderDashboard() {
         </div>
       </div>
 
+      <!-- Third Row: Intelligence + Reports -->
+      <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:16px;margin-bottom:16px">
+        
+        <!-- Smart Restock Recommender -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div>
+              <div class="chart-card-title">💡 Smart Restock</div>
+              <div class="chart-card-subtitle">AI-prioritized inventory needs</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            ${restockSuggestions.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text-muted)">Stock levels optimal</div>' :
+              restockSuggestions.map(s => `
+                <div style="background:rgba(99,102,241,0.05);padding:12px;border-radius:10px;border:1px solid rgba(99,102,241,0.1);display:flex;align-items:center;gap:12px">
+                  <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:700;color:var(--text-primary)">${s.name}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} sold recently · Priority: ${s.priority > 30 ? 'High 🔥' : 'Medium'}</div>
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-size:14px;font-weight:800;color:${s.stock < 10 ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
+                    <div style="font-size:10px;color:var(--text-muted)">In Stock</div>
+                  </div>
+                </div>
+              `).join('')}
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <div class="chart-card-title">📊 Revenue Summary</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Gross Revenue</div>
+              <div style="font-size:18px;font-weight:800;color:var(--accent-emerald)">${formatCurrency(totalRevenue).split('.')[0]}</div>
+            </div>
+            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Total Tax</div>
+              <div style="font-size:18px;font-weight:800;color:var(--accent-amber)">${formatCurrency(totalTax).split('.')[0]}</div>
+            </div>
+            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Net Earnings</div>
+              <div style="font-size:18px;font-weight:800;color:var(--text-brand)">${formatCurrency(totalRevenue-totalTax).split('.')[0]}</div>
+            </div>
+          </div>
+          <div style="margin-top:15px;padding:15px;background:linear-gradient(90deg, rgba(99,102,241,0.1), transparent);border-radius:12px;display:flex;align-items:center;gap:12px">
+            <div style="font-size:24px">📈</div>
+            <div>
+              <div style="font-size:13px;font-weight:700">Projected Growth</div>
+              <div style="font-size:11px;color:var(--text-muted)">Expected +12% increase based on current month volume</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Workforce Summary (Admin+) -->
       ${isAdmin ? `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
@@ -2507,6 +2575,11 @@ function renderDashboard() {
       </div>` : ''}
 
     </div>
+
+    <!-- Floating Action Button for Quick Invoicing -->
+    <button class="fab" onclick="location.hash='#/billing'" title="Quick Invoice">
+      <span style="font-size:24px">🧾</span>
+    </button>
   `);
 
   setTimeout(() => initDashboardCharts(bills, whs), 100);

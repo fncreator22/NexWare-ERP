@@ -227,3 +227,16 @@
 .health-bar { height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
 .health-bar-fill { height: 100%; transition: width 1s var(--transition-spring); }
 .health-val { font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; }
+
+/* ============ FLOATING ACTION BUTTON ============ */
+.fab {
+  position: fixed; bottom: var(--space-8); right: var(--space-8);
+  width: 60px; height: 60px; border-radius: 50%;
+  background: var(--gradient-brand); color: white;
+  border: none; box-shadow: var(--shadow-xl);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: var(--z-dropdown);
+  transition: all var(--transition-base);
+}
+.fab:hover { transform: scale(1.1) rotate(5deg); box-shadow: var(--shadow-brand); }
+.fab:active { transform: scale(0.95); }
