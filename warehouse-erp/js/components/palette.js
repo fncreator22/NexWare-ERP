@@ -1,9 +1,9 @@
 /**
  * Command Palette Component — Ctrl+K for pro navigation
  */
-import { getItems, getWarehouses, getCurrentUser } from '../modules/store.js';
+import { getItems, getWarehouses, getCurrentUser, getBills, getStockHealth } from '../modules/store.js';
 import { navigate } from '../modules/router.js';
-import { formatCurrency } from '../modules/ui.js';
+import { formatCurrency, formatNumber } from '../modules/ui.js';
 
 let paletteOpen = false;
 let query = '';
@@ -25,6 +25,8 @@ export function initPalette() {
 export function togglePalette() {
   paletteOpen = !paletteOpen;
   if (paletteOpen) {
+    query = '';
+    selectedIndex = 0;
     renderPalette();
     document.getElementById('palette-input')?.focus();
   } else {
@@ -67,11 +69,21 @@ function renderPalette() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      selectedIndex = (selectedIndex + 1) % results.length;
+      let next = (selectedIndex + 1) % results.length;
+      while (results[next]?.type === 'divider' || results[next]?.type === 'insight') {
+        next = (next + 1) % results.length;
+        if (next === selectedIndex) break;
+      }
+      selectedIndex = next;
       renderResults();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      selectedIndex = (selectedIndex - 1 + results.length) % results.length;
+      let prev = (selectedIndex - 1 + results.length) % results.length;
+      while (results[prev]?.type === 'divider' || results[prev]?.type === 'insight') {
+        prev = (prev - 1 + results.length) % results.length;
+        if (prev === selectedIndex) break;
+      }
+      selectedIndex = prev;
       renderResults();
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -86,6 +98,7 @@ function updateResults() {
   const user = getCurrentUser();
   const items = getItems();
   const whs = getWarehouses();
+  const bills = getBills();
 
   const commands = [
     { type: 'page', label: 'Go to Dashboard', path: '/dashboard', icon: '📊' },
@@ -103,6 +116,16 @@ function updateResults() {
   }
 
   const matches = [];
+
+  // Show Quick Insights if no query
+  if (!query) {
+    const totalRev = bills.reduce((sum, b) => sum + (b.total || 0), 0);
+    const health = getStockHealth();
+    matches.push({ type: 'insight', label: 'Quick Insight: Revenue', sub: `Total across all warehouses: ${formatCurrency(totalRev)}`, icon: '💰' });
+    matches.push({ type: 'insight', label: 'Quick Insight: Inventory', sub: `Total items tracked: ${formatNumber(items.length)}`, icon: '📦' });
+    matches.push({ type: 'insight', label: 'Quick Insight: Stock Health', sub: `Current status: ${health}% healthy`, icon: '🛡️' });
+    matches.push({ type: 'divider', label: 'Suggested Commands' });
+  }
 
   // Filter commands
   commands.forEach(c => {
@@ -127,7 +150,15 @@ function updateResults() {
     });
   }
 
-  results = matches.slice(0, 8);
+  results = matches.slice(0, 10);
+  
+  // Ensure selectedIndex is valid for new results
+  if (selectedIndex >= results.length) selectedIndex = 0;
+  if (results.length > 0 && (results[selectedIndex]?.type === 'divider' || results[selectedIndex]?.type === 'insight')) {
+    const next = results.findIndex(r => r.type !== 'divider' && r.type !== 'insight');
+    if (next !== -1) selectedIndex = next;
+  }
+
   renderResults();
 }
 
@@ -140,16 +171,21 @@ function renderResults() {
     return;
   }
 
-  container.innerHTML = results.map((res, i) => `
-    <div class="palette-item ${i === selectedIndex ? 'active' : ''}" data-index="${i}">
-      <span class="palette-item-icon">${res.icon}</span>
-      <div class="palette-item-info">
-        <div class="palette-item-label">${res.label}</div>
-        ${res.sub ? `<div class="palette-item-sub">${res.sub}</div>` : ''}
+  container.innerHTML = results.map((res, i) => {
+    if (res.type === 'divider') {
+      return `<div class="palette-divider">${res.label}</div>`;
+    }
+    return `
+      <div class="palette-item ${i === selectedIndex ? 'active' : ''}" data-index="${i}">
+        <span class="palette-item-icon">${res.icon}</span>
+        <div class="palette-item-info">
+          <div class="palette-item-label">${res.label}</div>
+          ${res.sub ? `<div class="palette-item-sub">${res.sub}</div>` : ''}
+        </div>
+        <span class="palette-item-type">${res.type}</span>
       </div>
-      <span class="palette-item-type">${res.type}</span>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   container.querySelectorAll('.palette-item').forEach(el => {
     el.addEventListener('click', () => {
@@ -160,15 +196,21 @@ function renderResults() {
 }
 
 function executeCommand(cmd) {
+  if (cmd.type === 'divider' || cmd.type === 'insight') return;
   togglePalette();
   if (cmd.type === 'page') {
     navigate(cmd.path);
   } else if (cmd.type === 'action') {
-    navigate('/' + cmd.action);
-    // Potentially trigger a modal in the target page
+    if (cmd.action === 'billing') {
+      navigate('/billing');
+      setTimeout(() => window._showBillModal?.(), 300);
+    } else if (cmd.action === 'items') {
+      navigate('/items');
+      setTimeout(() => window._showItemModal?.(), 300);
+    }
   } else if (cmd.type === 'item') {
     navigate('/items');
-    // Potentially filter or highlight item
+    // We could potentially pass state to filter by this item
   } else if (cmd.type === 'warehouse') {
     navigate('/warehouses/' + cmd.id);
   }

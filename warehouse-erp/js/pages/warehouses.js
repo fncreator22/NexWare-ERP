@@ -50,7 +50,7 @@ function refreshShell() {
       </div>` : ''}
 
       <!-- Summary Stat Cards -->
-      <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:28px">
+      <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
           <div class="stat-card-value" id="wh-count">${whs.length}</div>
@@ -388,7 +388,7 @@ export function renderWarehouseDetail(whId) {
         </div>
       </div>
 
-      <div class="stat-grid" style="margin-bottom:20px">
+      <div class="dashboard-grid">
         ${[
           {icon:'💰',val:formatCurrency(revenue), label:'Revenue',       color:'var(--accent-emerald)',glow:'#10b981'},
           {icon:'💵',val:formatCurrency(netRev),  label:'Net Revenue',   color:'var(--accent-cyan)',   glow:'#06b6d4'},
@@ -408,8 +408,8 @@ export function renderWarehouseDetail(whId) {
         `).join('')}
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card" style="grid-column:1/3">
+      <div class="dashboard-grid">
+        <div class="card col-8">
           <div class="card-header">
             <div class="card-title">📈 Revenue Trend (Last 6 Months)</div>
             <div style="font-size:12px;color:var(--text-muted)">Total: ${formatCurrency(revenue)}</div>
@@ -426,7 +426,7 @@ export function renderWarehouseDetail(whId) {
             }).join('')}
           </div>
         </div>
-        <div class="card">
+        <div class="card col-4">
           <div class="card-header"><div class="card-title">💰 Billing Summary</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${[
@@ -448,8 +448,8 @@ export function renderWarehouseDetail(whId) {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card">
+      <div class="dashboard-grid">
+        <div class="card col-6">
           <div class="card-header">
             <div class="card-title">👥 Team (${staff.length})</div>
             ${isAdmin?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
@@ -460,7 +460,7 @@ export function renderWarehouseDetail(whId) {
               <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Since</th></tr></thead>
               <tbody>${staff.map(u=>`
                 <tr>
-                  <td>
+                  <td data-label="Name">
                     <div style="display:flex;align-items:center;gap:8px">
                       <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:white;flex-shrink:0">${u.avatar}</div>
                       <div>
@@ -469,15 +469,15 @@ export function renderWarehouseDetail(whId) {
                       </div>
                     </div>
                   </td>
-                  <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,0.1);color:${roleColors[u.role]||'var(--text-secondary)'}">${u.role}</span></td>
-                  <td><span class="badge ${u.status==='active'?'badge-success':'badge-danger'}" style="font-size:10px">${u.status}</span></td>
-                  <td style="font-size:11px;color:var(--text-muted)">${formatDate(u.assignedAt||u.createdAt)}</td>
+                  <td data-label="Role"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,0.1);color:${roleColors[u.role]||'var(--text-secondary)'}">${u.role}</span></td>
+                  <td data-label="Status"><span class="badge ${u.status==='active'?'badge-success':'badge-danger'}" style="font-size:10px">${u.status}</span></td>
+                  <td data-label="Since" style="font-size:11px;color:var(--text-muted)">${formatDate(u.assignedAt||u.createdAt)}</td>
                 </tr>`).join('')}
               </tbody>
             </table></div>`}
         </div>
 
-        <div class="card">
+        <div class="card col-6">
           <div class="card-header">
             <div class="card-title">🧾 Recent Invoices</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">+ New</button>
@@ -488,10 +488,10 @@ export function renderWarehouseDetail(whId) {
               <thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Date</th></tr></thead>
               <tbody>${bills.slice(0,8).map(b=>`
                 <tr>
-                  <td><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-brand)">${b.billNo}</span></td>
-                  <td><div class="primary-cell">${b.customer}</div></td>
-                  <td><strong style="color:var(--accent-emerald)">${formatCurrency(b.total)}</strong></td>
-                  <td style="font-size:12px;color:var(--text-muted)">${formatDate(b.createdAt)}</td>
+                  <td data-label="Invoice"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-brand)">${b.billNo}</span></td>
+                  <td data-label="Customer"><div class="primary-cell">${b.customer}</div></td>
+                  <td data-label="Total"><strong style="color:var(--accent-emerald)">${formatCurrency(b.total)}</strong></td>
+                  <td data-label="Date" style="font-size:12px;color:var(--text-muted)">${formatDate(b.createdAt)}</td>
                 </tr>`).join('')}
               </tbody>
             </table></div>`}

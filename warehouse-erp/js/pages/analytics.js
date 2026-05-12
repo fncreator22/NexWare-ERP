@@ -65,7 +65,7 @@ export function renderAnalytics() {
       </div>
 
       <!-- KPI Cards (dynamic) -->
-      <div id="an-kpis" style="margin-bottom:24px"></div>
+      <div id="an-kpis"></div>
 
       <!-- Charts Grid -->
       <div class="dashboard-grid" style="margin-bottom:20px">
@@ -410,7 +410,7 @@ function updateStockTable(items, taxCfg) {
       <table>
         <thead><tr>
           <th>Item</th><th>Category</th><th>Price</th><th>Stock</th>
-          <th>Inventory Value</th><th>Tax Rate</th><th>Status</th>
+          <th>Value</th><th>Tax</th><th>Status</th>
         </tr></thead>
         <tbody>
           ${sorted.slice(0,10).map(i=>{
@@ -418,13 +418,13 @@ function updateStockTable(items, taxCfg) {
             const val  = (i.price||0)*(i.stock||0);
             const stockClass = (i.stock||0)<10?'badge-danger':(i.stock||0)<20?'badge-warning':'badge-success';
             return `<tr>
-              <td><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
-              <td><span class="badge badge-brand">${i.category}</span></td>
-              <td>${formatCurrency(i.price||0)}</td>
-              <td><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
-              <td><strong>${formatCurrency(val)}</strong></td>
-              <td><span class="badge ${i.taxCategory==='luxury'?'badge-purple':'badge-info'}">${rate}%</span></td>
-              <td><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
+              <td data-label="Item"><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
+              <td data-label="Category"><span class="badge badge-brand">${i.category}</span></td>
+              <td data-label="Price">${formatCurrency(i.price||0)}</td>
+              <td data-label="Stock"><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
+              <td data-label="Value"><strong>${formatCurrency(val)}</strong></td>
+              <td data-label="Tax"><span class="badge ${i.taxCategory==='luxury'?'badge-purple':'badge-info'}">${rate}%</span></td>
+              <td data-label="Status"><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
             </tr>`;
           }).join('')}
         </tbody>

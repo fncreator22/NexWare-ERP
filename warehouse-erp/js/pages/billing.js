@@ -71,8 +71,9 @@ export function renderBilling() {
   document.getElementById('bill-search')?.addEventListener('input', e => { bl_searchQ = e.target.value; bl_page=1; renderBillsTable(); });
   document.getElementById('bill-wh-filter')?.addEventListener('change', () => { bl_page=1; renderBillsTable(); });
 
-  // Expose printBill globally
+  // Expose printBill and showBillModal globally
   window.printBill = printBill;
+  window._showBillModal = showBillModal;
 }
 
 function renderBillsTable() {

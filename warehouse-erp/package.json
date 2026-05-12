@@ -6,8 +6,9 @@
   "scripts": {
     "start": "npm run dev",
     "build": "node build.mjs",
+    "watch": "node watch.mjs",
     "serve": "npx serve ./",
-    "dev": "node build.mjs && npx serve ./"
+    "dev": "node dev.mjs"
   },
   "keywords": [
     "erp",

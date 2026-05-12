@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-12T15:41:45.275Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-12T18:03:54.074Z
 
 
 // ===== modules/store.js =====
@@ -1790,6 +1790,8 @@ function initPalette() {
 function togglePalette() {
   paletteOpen = !paletteOpen;
   if (paletteOpen) {
+    query = '';
+    selectedIndex = 0;
     renderPalette();
     document.getElementById('palette-input')?.focus();
   } else {
@@ -1832,11 +1834,21 @@ function renderPalette() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      selectedIndex = (selectedIndex + 1) % results.length;
+      let next = (selectedIndex + 1) % results.length;
+      while (results[next]?.type === 'divider' || results[next]?.type === 'insight') {
+        next = (next + 1) % results.length;
+        if (next === selectedIndex) break;
+      }
+      selectedIndex = next;
       renderResults();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      selectedIndex = (selectedIndex - 1 + results.length) % results.length;
+      let prev = (selectedIndex - 1 + results.length) % results.length;
+      while (results[prev]?.type === 'divider' || results[prev]?.type === 'insight') {
+        prev = (prev - 1 + results.length) % results.length;
+        if (prev === selectedIndex) break;
+      }
+      selectedIndex = prev;
       renderResults();
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -1851,6 +1863,7 @@ function updateResults() {
   const user = getCurrentUser();
   const items = getItems();
   const whs = getWarehouses();
+  const bills = getBills();
 
   const commands = [
     { type: 'page', label: 'Go to Dashboard', path: '/dashboard', icon: '📊' },
@@ -1868,6 +1881,16 @@ function updateResults() {
   }
 
   const matches = [];
+
+  // Show Quick Insights if no query
+  if (!query) {
+    const totalRev = bills.reduce((sum, b) => sum + (b.total || 0), 0);
+    const health = getStockHealth();
+    matches.push({ type: 'insight', label: 'Quick Insight: Revenue', sub: `Total across all warehouses: ${formatCurrency(totalRev)}`, icon: '💰' });
+    matches.push({ type: 'insight', label: 'Quick Insight: Inventory', sub: `Total items tracked: ${formatNumber(items.length)}`, icon: '📦' });
+    matches.push({ type: 'insight', label: 'Quick Insight: Stock Health', sub: `Current status: ${health}% healthy`, icon: '🛡️' });
+    matches.push({ type: 'divider', label: 'Suggested Commands' });
+  }
 
   // Filter commands
   commands.forEach(c => {
@@ -1892,7 +1915,15 @@ function updateResults() {
     });
   }
 
-  results = matches.slice(0, 8);
+  results = matches.slice(0, 10);
+  
+  // Ensure selectedIndex is valid for new results
+  if (selectedIndex >= results.length) selectedIndex = 0;
+  if (results.length > 0 && (results[selectedIndex]?.type === 'divider' || results[selectedIndex]?.type === 'insight')) {
+    const next = results.findIndex(r => r.type !== 'divider' && r.type !== 'insight');
+    if (next !== -1) selectedIndex = next;
+  }
+
   renderResults();
 }
 
@@ -1905,16 +1936,21 @@ function renderResults() {
     return;
   }
 
-  container.innerHTML = results.map((res, i) => `
-    <div class="palette-item ${i === selectedIndex ? 'active' : ''}" data-index="${i}">
-      <span class="palette-item-icon">${res.icon}</span>
-      <div class="palette-item-info">
-        <div class="palette-item-label">${res.label}</div>
-        ${res.sub ? `<div class="palette-item-sub">${res.sub}</div>` : ''}
+  container.innerHTML = results.map((res, i) => {
+    if (res.type === 'divider') {
+      return `<div class="palette-divider">${res.label}</div>`;
+    }
+    return `
+      <div class="palette-item ${i === selectedIndex ? 'active' : ''}" data-index="${i}">
+        <span class="palette-item-icon">${res.icon}</span>
+        <div class="palette-item-info">
+          <div class="palette-item-label">${res.label}</div>
+          ${res.sub ? `<div class="palette-item-sub">${res.sub}</div>` : ''}
+        </div>
+        <span class="palette-item-type">${res.type}</span>
       </div>
-      <span class="palette-item-type">${res.type}</span>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   container.querySelectorAll('.palette-item').forEach(el => {
     el.addEventListener('click', () => {
@@ -1925,15 +1961,21 @@ function renderResults() {
 }
 
 function executeCommand(cmd) {
+  if (cmd.type === 'divider' || cmd.type === 'insight') return;
   togglePalette();
   if (cmd.type === 'page') {
     navigate(cmd.path);
   } else if (cmd.type === 'action') {
-    navigate('/' + cmd.action);
-    // Potentially trigger a modal in the target page
+    if (cmd.action === 'billing') {
+      navigate('/billing');
+      setTimeout(() => window._showBillModal?.(), 300);
+    } else if (cmd.action === 'items') {
+      navigate('/items');
+      setTimeout(() => window._showItemModal?.(), 300);
+    }
   } else if (cmd.type === 'item') {
     navigate('/items');
-    // Potentially filter or highlight item
+    // We could potentially pass state to filter by this item
   } else if (cmd.type === 'warehouse') {
     navigate('/warehouses/' + cmd.id);
   }
@@ -2321,11 +2363,11 @@ function renderDashboard() {
         </div>` : ''}
       </div>
 
-      <!-- Main content grid: compact 3-column -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Main content grid -->
+      <div class="dashboard-grid">
 
-        <!-- Revenue Chart (compact) -->
-        <div class="chart-card" style="grid-column:1/3">
+        <!-- Revenue Chart -->
+        <div class="chart-card col-8">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title">📈 Revenue Trend</div>
@@ -2339,8 +2381,8 @@ function renderDashboard() {
           <div class="chart-container" style="height:180px"><canvas id="revenue-chart"></canvas></div>
         </div>
 
-        <!-- Activity Feed (compact) -->
-        <div class="chart-card">
+        <!-- Activity Feed -->
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">⚡ Activity</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/audit'" style="font-size:11px">All →</button>
@@ -2360,11 +2402,11 @@ function renderDashboard() {
         </div>
       </div>
 
-      <!-- Second row: warehouses + quick actions + low stock + billing -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Second row -->
+      <div class="dashboard-grid">
 
-        <!-- Warehouse Summary Cards -->
-        ${isSA ? `<div class="chart-card">
+        <!-- Warehouse Summary -->
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">🏭 Warehouses</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -2399,7 +2441,7 @@ function renderDashboard() {
         </div>`}
 
         <!-- Billing Quick Stats -->
-        <div class="chart-card">
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">💰 Billing Stats</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">View →</button>
@@ -2426,8 +2468,8 @@ function renderDashboard() {
           `).join('')}
         </div>
 
-        <!-- Low Stock Alerts + Quick Actions -->
-        <div class="chart-card">
+        <!-- Low Stock Alerts -->
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">⚠️ Low Stock</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
@@ -2456,11 +2498,11 @@ function renderDashboard() {
         </div>
       </div>
 
-      <!-- Third Row: Intelligence + Reports -->
-      <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:16px;margin-bottom:16px">
+      <!-- Third Row -->
+      <div class="dashboard-grid">
         
         <!-- Smart Restock Recommender -->
-        <div class="chart-card">
+        <div class="chart-card col-5">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title">💡 Smart Restock</div>
@@ -2485,7 +2527,8 @@ function renderDashboard() {
           </div>
         </div>
 
-        <div class="chart-card">
+        <!-- Revenue Summary -->
+        <div class="chart-card col-7">
           <div class="chart-card-header">
             <div class="chart-card-title">📊 Revenue Summary</div>
           </div>
@@ -2513,10 +2556,10 @@ function renderDashboard() {
         </div>
       </div>
 
-      <!-- Workforce Summary (Admin+) -->
+      <!-- Workforce Summary -->
       ${isAdmin ? `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="chart-card">
+      <div class="dashboard-grid">
+        <div class="chart-card col-6">
           <div class="chart-card-header">
             <div class="chart-card-title">👥 Workforce Summary</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -2545,9 +2588,8 @@ function renderDashboard() {
           </div>
         </div>
 
-        <!-- Warehouse Distribution Chart -->
-        ${isSA && whs.length > 0 ? `
-        <div class="chart-card">
+        <!-- Warehouse Distribution -->
+        <div class="chart-card col-6">
           <div class="chart-card-header">
             <div class="chart-card-title">📊 Revenue by Warehouse</div>
           </div>
@@ -2564,7 +2606,7 @@ function renderDashboard() {
             }).join('')}
           </div>
         </div>` : `
-        <div class="chart-card">
+        <div class="chart-card col-6">
           <div class="chart-card-header"><div class="chart-card-title">📋 My Tables</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn btn-secondary btn-sm" onclick="location.hash='#/tables'" style="width:100%">📋 View My Tables</button>
@@ -2717,7 +2759,7 @@ function refreshShell() {
       </div>` : ''}
 
       <!-- Summary Stat Cards -->
-      <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:28px">
+      <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
           <div class="stat-card-value" id="wh-count">${whs.length}</div>
@@ -3055,7 +3097,7 @@ function renderWarehouseDetail(whId) {
         </div>
       </div>
 
-      <div class="stat-grid" style="margin-bottom:20px">
+      <div class="dashboard-grid">
         ${[
           {icon:'💰',val:formatCurrency(revenue), label:'Revenue',       color:'var(--accent-emerald)',glow:'#10b981'},
           {icon:'💵',val:formatCurrency(netRev),  label:'Net Revenue',   color:'var(--accent-cyan)',   glow:'#06b6d4'},
@@ -3075,8 +3117,8 @@ function renderWarehouseDetail(whId) {
         `).join('')}
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card" style="grid-column:1/3">
+      <div class="dashboard-grid">
+        <div class="card col-8">
           <div class="card-header">
             <div class="card-title">📈 Revenue Trend (Last 6 Months)</div>
             <div style="font-size:12px;color:var(--text-muted)">Total: ${formatCurrency(revenue)}</div>
@@ -3093,7 +3135,7 @@ function renderWarehouseDetail(whId) {
             }).join('')}
           </div>
         </div>
-        <div class="card">
+        <div class="card col-4">
           <div class="card-header"><div class="card-title">💰 Billing Summary</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${[
@@ -3115,8 +3157,8 @@ function renderWarehouseDetail(whId) {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="card">
+      <div class="dashboard-grid">
+        <div class="card col-6">
           <div class="card-header">
             <div class="card-title">👥 Team (${staff.length})</div>
             ${isAdmin?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
@@ -3127,7 +3169,7 @@ function renderWarehouseDetail(whId) {
               <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Since</th></tr></thead>
               <tbody>${staff.map(u=>`
                 <tr>
-                  <td>
+                  <td data-label="Name">
                     <div style="display:flex;align-items:center;gap:8px">
                       <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:white;flex-shrink:0">${u.avatar}</div>
                       <div>
@@ -3136,15 +3178,15 @@ function renderWarehouseDetail(whId) {
                       </div>
                     </div>
                   </td>
-                  <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,0.1);color:${roleColors[u.role]||'var(--text-secondary)'}">${u.role}</span></td>
-                  <td><span class="badge ${u.status==='active'?'badge-success':'badge-danger'}" style="font-size:10px">${u.status}</span></td>
-                  <td style="font-size:11px;color:var(--text-muted)">${formatDate(u.assignedAt||u.createdAt)}</td>
+                  <td data-label="Role"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(99,102,241,0.1);color:${roleColors[u.role]||'var(--text-secondary)'}">${u.role}</span></td>
+                  <td data-label="Status"><span class="badge ${u.status==='active'?'badge-success':'badge-danger'}" style="font-size:10px">${u.status}</span></td>
+                  <td data-label="Since" style="font-size:11px;color:var(--text-muted)">${formatDate(u.assignedAt||u.createdAt)}</td>
                 </tr>`).join('')}
               </tbody>
             </table></div>`}
         </div>
 
-        <div class="card">
+        <div class="card col-6">
           <div class="card-header">
             <div class="card-title">🧾 Recent Invoices</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">+ New</button>
@@ -3155,10 +3197,10 @@ function renderWarehouseDetail(whId) {
               <thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Date</th></tr></thead>
               <tbody>${bills.slice(0,8).map(b=>`
                 <tr>
-                  <td><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-brand)">${b.billNo}</span></td>
-                  <td><div class="primary-cell">${b.customer}</div></td>
-                  <td><strong style="color:var(--accent-emerald)">${formatCurrency(b.total)}</strong></td>
-                  <td style="font-size:12px;color:var(--text-muted)">${formatDate(b.createdAt)}</td>
+                  <td data-label="Invoice"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-brand)">${b.billNo}</span></td>
+                  <td data-label="Customer"><div class="primary-cell">${b.customer}</div></td>
+                  <td data-label="Total"><strong style="color:var(--accent-emerald)">${formatCurrency(b.total)}</strong></td>
+                  <td data-label="Date" style="font-size:12px;color:var(--text-muted)">${formatDate(b.createdAt)}</td>
                 </tr>`).join('')}
               </tbody>
             </table></div>`}
@@ -3322,7 +3364,7 @@ function renderWorkforceStats() {
   const el = document.getElementById('workforce-stats');
   if (!el) return;
   el.innerHTML = `
-    <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));margin-bottom:24px">
+    <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">👤</div>
         <div class="stat-card-value">${users.length}</div>
@@ -3589,6 +3631,8 @@ function renderItems() {
   document.getElementById('item-search')?.addEventListener('input', e => { it_searchQ = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('cat-filter')?.addEventListener('change', e => { categoryFilter = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
+
+  window._showItemModal = (item) => showItemModal(item);
 }
 
 function renderItemStats() {
@@ -3599,7 +3643,7 @@ function renderItemStats() {
   const totalValue = items.reduce((s,i)=>s+((i.price||0)*(i.stock||0)),0);
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
-    <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:24px">
+    <div class="stat-grid">
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
@@ -4252,8 +4296,9 @@ function renderBilling() {
   document.getElementById('bill-search')?.addEventListener('input', e => { bl_searchQ = e.target.value; bl_page=1; renderBillsTable(); });
   document.getElementById('bill-wh-filter')?.addEventListener('change', () => { bl_page=1; renderBillsTable(); });
 
-  // Expose printBill globally
+  // Expose printBill and showBillModal globally
   window.printBill = printBill;
+  window._showBillModal = showBillModal;
 }
 
 function renderBillsTable() {
@@ -4666,7 +4711,7 @@ function renderAnalytics() {
       </div>
 
       <!-- KPI Cards (dynamic) -->
-      <div id="an-kpis" style="margin-bottom:24px"></div>
+      <div id="an-kpis"></div>
 
       <!-- Charts Grid -->
       <div class="dashboard-grid" style="margin-bottom:20px">
@@ -5011,7 +5056,7 @@ function updateStockTable(items, taxCfg) {
       <table>
         <thead><tr>
           <th>Item</th><th>Category</th><th>Price</th><th>Stock</th>
-          <th>Inventory Value</th><th>Tax Rate</th><th>Status</th>
+          <th>Value</th><th>Tax</th><th>Status</th>
         </tr></thead>
         <tbody>
           ${sorted.slice(0,10).map(i=>{
@@ -5019,13 +5064,13 @@ function updateStockTable(items, taxCfg) {
             const val  = (i.price||0)*(i.stock||0);
             const stockClass = (i.stock||0)<10?'badge-danger':(i.stock||0)<20?'badge-warning':'badge-success';
             return `<tr>
-              <td><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
-              <td><span class="badge badge-brand">${i.category}</span></td>
-              <td>${formatCurrency(i.price||0)}</td>
-              <td><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
-              <td><strong>${formatCurrency(val)}</strong></td>
-              <td><span class="badge ${i.taxCategory==='luxury'?'badge-purple':'badge-info'}">${rate}%</span></td>
-              <td><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
+              <td data-label="Item"><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
+              <td data-label="Category"><span class="badge badge-brand">${i.category}</span></td>
+              <td data-label="Price">${formatCurrency(i.price||0)}</td>
+              <td data-label="Stock"><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
+              <td data-label="Value"><strong>${formatCurrency(val)}</strong></td>
+              <td data-label="Tax"><span class="badge ${i.taxCategory==='luxury'?'badge-purple':'badge-info'}">${rate}%</span></td>
+              <td data-label="Status"><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
             </tr>`;
           }).join('')}
         </tbody>

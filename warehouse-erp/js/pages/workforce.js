@@ -77,7 +77,7 @@ function renderWorkforceStats() {
   const el = document.getElementById('workforce-stats');
   if (!el) return;
   el.innerHTML = `
-    <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));margin-bottom:24px">
+    <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">👤</div>
         <div class="stat-card-value">${users.length}</div>

@@ -73,6 +73,8 @@ export function renderItems() {
   document.getElementById('item-search')?.addEventListener('input', e => { it_searchQ = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('cat-filter')?.addEventListener('change', e => { categoryFilter = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
+
+  window._showItemModal = (item) => showItemModal(item);
 }
 
 function renderItemStats() {
@@ -83,7 +85,7 @@ function renderItemStats() {
   const totalValue = items.reduce((s,i)=>s+((i.price||0)*(i.stock||0)),0);
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
-    <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:24px">
+    <div class="stat-grid">
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>

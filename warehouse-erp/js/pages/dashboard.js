@@ -111,11 +111,11 @@ export function renderDashboard() {
         </div>` : ''}
       </div>
 
-      <!-- Main content grid: compact 3-column -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Main content grid -->
+      <div class="dashboard-grid">
 
-        <!-- Revenue Chart (compact) -->
-        <div class="chart-card" style="grid-column:1/3">
+        <!-- Revenue Chart -->
+        <div class="chart-card col-8">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title">📈 Revenue Trend</div>
@@ -129,8 +129,8 @@ export function renderDashboard() {
           <div class="chart-container" style="height:180px"><canvas id="revenue-chart"></canvas></div>
         </div>
 
-        <!-- Activity Feed (compact) -->
-        <div class="chart-card">
+        <!-- Activity Feed -->
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">⚡ Activity</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/audit'" style="font-size:11px">All →</button>
@@ -150,11 +150,11 @@ export function renderDashboard() {
         </div>
       </div>
 
-      <!-- Second row: warehouses + quick actions + low stock + billing -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Second row -->
+      <div class="dashboard-grid">
 
-        <!-- Warehouse Summary Cards -->
-        ${isSA ? `<div class="chart-card">
+        <!-- Warehouse Summary -->
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">🏭 Warehouses</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -189,7 +189,7 @@ export function renderDashboard() {
         </div>`}
 
         <!-- Billing Quick Stats -->
-        <div class="chart-card">
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">💰 Billing Stats</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">View →</button>
@@ -216,8 +216,8 @@ export function renderDashboard() {
           `).join('')}
         </div>
 
-        <!-- Low Stock Alerts + Quick Actions -->
-        <div class="chart-card">
+        <!-- Low Stock Alerts -->
+        <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">⚠️ Low Stock</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
@@ -246,11 +246,11 @@ export function renderDashboard() {
         </div>
       </div>
 
-      <!-- Third Row: Intelligence + Reports -->
-      <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:16px;margin-bottom:16px">
+      <!-- Third Row -->
+      <div class="dashboard-grid">
         
         <!-- Smart Restock Recommender -->
-        <div class="chart-card">
+        <div class="chart-card col-5">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title">💡 Smart Restock</div>
@@ -275,7 +275,8 @@ export function renderDashboard() {
           </div>
         </div>
 
-        <div class="chart-card">
+        <!-- Revenue Summary -->
+        <div class="chart-card col-7">
           <div class="chart-card-header">
             <div class="chart-card-title">📊 Revenue Summary</div>
           </div>
@@ -303,10 +304,10 @@ export function renderDashboard() {
         </div>
       </div>
 
-      <!-- Workforce Summary (Admin+) -->
+      <!-- Workforce Summary -->
       ${isAdmin ? `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="chart-card">
+      <div class="dashboard-grid">
+        <div class="chart-card col-6">
           <div class="chart-card-header">
             <div class="chart-card-title">👥 Workforce Summary</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -335,9 +336,8 @@ export function renderDashboard() {
           </div>
         </div>
 
-        <!-- Warehouse Distribution Chart -->
-        ${isSA && whs.length > 0 ? `
-        <div class="chart-card">
+        <!-- Warehouse Distribution -->
+        <div class="chart-card col-6">
           <div class="chart-card-header">
             <div class="chart-card-title">📊 Revenue by Warehouse</div>
           </div>
@@ -354,7 +354,7 @@ export function renderDashboard() {
             }).join('')}
           </div>
         </div>` : `
-        <div class="chart-card">
+        <div class="chart-card col-6">
           <div class="chart-card-header"><div class="chart-card-title">📋 My Tables</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn btn-secondary btn-sm" onclick="location.hash='#/tables'" style="width:100%">📋 View My Tables</button>
