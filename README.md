@@ -280,13 +280,50 @@ Both plans support:
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js, React.js, Tailwind CSS |
-| Backend | Node.js, Express.js |
-| Database | PostgreSQL |
-| Authentication | JWT & RBAC |
-| State Management | TanStack Query / Zustand |
-| Analytics | Recharts |
-| Architecture | Multi-Tenant SaaS |
+| Frontend | Vanilla JavaScript (ES6+), CSS3 Variables |
+| Backend | Simulation (localStorage + In-Memory Store) |
+| Database | Browser LocalStorage |
+| Authentication | Role-Based Access Control (RBAC) Simulation |
+| Charts | Chart.js |
+| Icons | Unicode Symbols & Font Awesome (Optional) |
+| Architecture | Modular Component-Based SPA |
+
+---
+
+# Getting Started
+
+To get the platform running locally on your machine, follow these steps:
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v16 or higher recommended)
+- [npm](https://www.npmjs.com/) (installed with Node.js)
+
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/fncreator22/New-folder.git
+   ```
+2. Navigate to the project directory:
+   ```bash
+   cd New-folder/warehouse-erp
+   ```
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+### Running Locally
+To start the development server:
+```bash
+npm run dev
+```
+The application will be available at `http://localhost:3000` (or the port specified in your console).
+
+### Building for Production
+To create a bundled version of the application:
+```bash
+npm run build
+```
 
 ---
 
