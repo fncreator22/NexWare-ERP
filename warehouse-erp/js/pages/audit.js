@@ -101,7 +101,7 @@ function renderAuditTable() {
     </div>
   `;
 
-  container.querySelectorAll('.page-btn[data-pg]').forEach(btn=>btn.addEventListener('click',()=>{au_page=parseInt(btn.dataset.pg);renderAuditTable();}));
+  container.querySelectorAll('.au_page-btn[data-pg]').forEach(btn=>btn.addEventListener('click',()=>{au_page=parseInt(btn.dataset.pg);renderAuditTable();}));
   container.querySelector('#ap-prev')?.addEventListener('click',()=>{if(au_page>1){au_page--;renderAuditTable();}});
   container.querySelector('#ap-next')?.addEventListener('click',()=>{if(au_page<au_pages){au_page++;renderAuditTable();}});
 }

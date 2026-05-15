@@ -14,14 +14,19 @@ const files = [
   'pages/settings.js', 'pages/subscription.js',
 ];
 
-const strip = (code) => {
-  code = code.replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '');
-  code = code.replace(/^export\s+(default\s+)?(function\s)/gm, '$2');
-  code = code.replace(/^export\s+(default\s+)?(class\s)/gm, '$2');
-  code = code.replace(/^export\s+(const|let|var)\s/gm, '$1 ');
-  code = code.replace(/^export\s*\{[^}]*\};\s*$/gm, '');
+function strip(code) {
+  // Remove multi-line and single-line imports
+  code = code.replace(/import\s+[\s\S]*?from\s+['"][^'"]+['"];?/g, '');
+  
+  // Remove export keywords while keeping the declarations
+  code = code.replace(/export\s+default\s+/g, '');
+  code = code.replace(/export\s+(function|class|const|let|var)\s+/g, '$1 ');
+  
+  // Remove export blocks (e.g. export { a, b };)
+  code = code.replace(/export\s*\{[\s\S]*?\};?/g, '');
+  
   return code;
-};
+}
 
 let bundle = `// WareOps ERP — Bundled v2.0  Generated: ${new Date().toISOString()}\n\n`;
 

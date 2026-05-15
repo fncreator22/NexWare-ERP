@@ -171,7 +171,7 @@ function renderItemsTable() {
       });
     });
   }
-  container.querySelectorAll('.page-btn[data-pg]').forEach(btn => { btn.addEventListener('click', () => { it_page=parseInt(btn.dataset.pg); renderItemsTable(); }); });
+  container.querySelectorAll('.it_page-btn[data-pg]').forEach(btn => { btn.addEventListener('click', () => { it_page=parseInt(btn.dataset.pg); renderItemsTable(); }); });
   container.querySelector('#ip-prev')?.addEventListener('click', () => { if(it_page>1){it_page--;renderItemsTable();} });
   container.querySelector('#ip-next')?.addEventListener('click', () => { if(it_page<it_pages){it_page++;renderItemsTable();} });
 }

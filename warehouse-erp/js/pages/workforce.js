@@ -178,7 +178,7 @@ function renderWorkforceTable() {
       if (ok) { deleteUser(btn.dataset.uid); showToast('User removed', '', 'success'); renderWorkforceStats(); renderWorkforceTable(); }
     });
   });
-  container.querySelectorAll('.page-btn[data-pg]').forEach(btn => {
+  container.querySelectorAll('.wf_page-btn[data-pg]').forEach(btn => {
     btn.addEventListener('click', () => { wf_page = parseInt(btn.dataset.pg); renderWorkforceTable(); });
   });
   container.querySelector('#pg-prev')?.addEventListener('click', () => { if (wf_page > 1) { wf_page--; renderWorkforceTable(); } });
