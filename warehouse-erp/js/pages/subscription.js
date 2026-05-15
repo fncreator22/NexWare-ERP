@@ -4,7 +4,7 @@
 import { getCurrentUser, getSubscription, getWarehouses } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { navigate } from '../modules/router.js';
-import { formatDate } from '../modules/ui.js';
+import { formatDate, showToast } from '../modules/ui.js';
 
 export function renderSubscription() {
   const user = getCurrentUser();

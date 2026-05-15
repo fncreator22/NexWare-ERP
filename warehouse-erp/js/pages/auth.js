@@ -239,7 +239,7 @@ export function renderWarehouseRegistration() {
   `;
 
   document.getElementById('wh-signout-btn')?.addEventListener('click', () => {
-    const { logout } = { logout: () => { const s = getStore(); s.currentUserId = null; import('../modules/store.js').then(m => m.saveStore()); } };
+    logout();
     navigate('/login');
   });
 

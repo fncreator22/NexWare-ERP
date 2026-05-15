@@ -154,6 +154,7 @@ export function renderDashboard() {
       <div class="dashboard-grid">
 
         <!-- Warehouse Summary -->
+        ${isSA ? `
         <div class="chart-card col-4">
           <div class="chart-card-header">
             <div class="chart-card-title">🏭 Warehouses</div>
@@ -362,7 +363,7 @@ export function renderDashboard() {
             <button class="btn btn-secondary btn-sm" onclick="location.hash='#/items'" style="width:100%">📦 Manage Inventory</button>
           </div>
         </div>`}
-      </div>` : ''}
+      </div>
 
     </div>
 
@@ -386,7 +387,7 @@ function initDashboardCharts(bills, whs) {
     const monthRevenue = bills.filter(b=>{
       const bd = new Date(b.createdAt);
       return bd.getMonth()===d.getMonth() && bd.getFullYear()===d.getFullYear();
-    }).reduce((s,b)=>s+b.total,0);
+    }).reduce((s,b)=>s+(b.total||0),0);
     data.push(monthRevenue || 0);
   }
 

@@ -1,26 +1,20 @@
-/**
- * WareOps ERP — Main Application Entry Point
- */
-import { getCurrentUser, seedDemoData, getWarehouses, getStore } from './modules/store.js';
-
-// Global performance optimizations
-if (window.Chart) {
-  Chart.defaults.animation = false;
-  Chart.defaults.responsive = true;
-  Chart.defaults.maintainAspectRatio = false;
-}
-
-// Global tooltip repositioning to prevent viewport overflow
-document.addEventListener('mouseover', (e) => {
-  const target = e.target.closest('[data-tooltip]');
-  if (!target) return;
-  const rect = target.getBoundingClientRect();
-  const winW = window.innerWidth;
-  target.classList.remove('tooltip-left', 'tooltip-right');
-  if (rect.left < 80) target.classList.add('tooltip-left');
-  else if (winW - rect.right < 80) target.classList.add('tooltip-right');
+// Handle unhandled promise rejections and global errors for visible debugging
+window.addEventListener('error', (event) => {
+  console.error('[WareOps] Global Error:', event.error);
+  if (!document.getElementById('app')?.innerHTML) {
+    renderErrorPage(event.error || new Error(event.message));
+  }
 });
 
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[WareOps] Unhandled Rejection:', event.reason);
+  if (!document.getElementById('app')?.innerHTML) {
+    renderErrorPage(new Error(event.reason || 'Unhandled Async Error'));
+  }
+});
+
+// Modules
+import { getCurrentUser, getWarehouses, getStore, seedDemoData } from './modules/store.js';
 
 // Pages
 import { renderLogin, renderSignup, renderWarehouseRegistration } from './pages/auth.js';
@@ -61,87 +55,98 @@ function getActivePath() {
   return hash.split('?')[0] || '';
 }
 
-let _isNavigating = false;
+let _lastResolvedPath = null;
 
 function safeNavigate(path) {
-  if (_isNavigating) return;
-  _isNavigating = true;
+  const currentPath = getActivePath();
+  if (currentPath === path) return;
   window.location.hash = '#' + path;
-  // Reset flag after the hashchange fires
-  setTimeout(() => { _isNavigating = false; }, 100);
 }
 
 function resolveRoute() {
-  if (_isNavigating) return;
+  const appEl = document.getElementById('app');
+  if (!appEl) return;
 
   const path = getActivePath();
-  const user = getCurrentUser();
-  const publicRoutes = ['/login', '/signup', '/register-warehouse'];
+  // Prevent redundant renders if the path hasn't changed
+  if (_lastResolvedPath === path && appEl.innerHTML !== '') return;
+  _lastResolvedPath = path;
 
-  // Not logged in
-  if (!user) {
-    if (!publicRoutes.includes(path)) {
-      if (path === '') {
-        window.location.href = 'landing.html';
+  try {
+    const path = getActivePath();
+    const user = getCurrentUser();
+    const publicRoutes = ['/login', '/signup', '/register-warehouse'];
+
+    // Not logged in
+    if (!user) {
+      if (!publicRoutes.includes(path)) {
+        if (path === '' || path === '/') {
+          window.location.href = 'landing.html';
+          return;
+        }
+        safeNavigate('/login');
         return;
       }
-      safeNavigate('/login');
-      return;
-    }
-  } else {
-    // Logged in user — check if super admin needs a warehouse
-    const whs = getWarehouses();
-    if (user.role === 'super_admin' && whs.length === 0 && path !== '/register-warehouse') {
-      safeNavigate('/register-warehouse');
-      return;
-    }
-    // Redirect away from public routes if already logged in
-    if (publicRoutes.includes(path)) {
-      safeNavigate('/dashboard');
-      return;
-    }
-    // Seed demo data if super admin has warehouses but no items
-    if (user.role === 'super_admin') {
-      const s = getStore();
-      if (s.warehouses.length > 0 && s.items.length === 0) {
-        seedDemoData();
+    } else {
+      // Logged in user — check if super admin needs a warehouse
+      const whs = getWarehouses();
+      if (user.role === 'super_admin' && whs.length === 0 && path !== '/register-warehouse') {
+        safeNavigate('/register-warehouse');
+        return;
+      }
+      // Redirect away from public routes if already logged in
+      if (publicRoutes.includes(path)) {
+        safeNavigate('/dashboard');
+        return;
+      }
+      // Seed demo data if super admin has warehouses but no items
+      if (user.role === 'super_admin') {
+        const s = getStore();
+        if (s.warehouses.length > 0 && s.items.length === 0) {
+          seedDemoData();
+        }
       }
     }
-  }
 
-  const handler = routes[path];
-  if (handler) {
-    try {
+    const handler = routes[path];
+    if (handler) {
       handler();
-    } catch (err) {
-      console.error('[WareOps] Route render error:', err);
-      renderErrorPage(err);
-    }
-  } else if (path && path.startsWith('/warehouses/')) {
-    // Warehouse detail: /warehouses/:id
-    const whId = path.replace('/warehouses/', '');
-    try { renderWarehouseDetail(whId); } catch(err) { renderErrorPage(err); }
-  } else if (path && path !== '') {
-    safeNavigate(user ? '/dashboard' : '/login');
-  } else {
-    if (!user) {
-      window.location.href = 'landing.html';
+    } else if (path && path.startsWith('/warehouses/')) {
+      // Warehouse detail: /warehouses/:id
+      const whId = path.replace('/warehouses/', '');
+      renderWarehouseDetail(whId);
+    } else if (path && path !== '') {
+      safeNavigate(user ? '/dashboard' : '/login');
     } else {
-      safeNavigate('/dashboard');
+      if (!user) {
+        window.location.href = 'landing.html';
+      } else {
+        safeNavigate('/dashboard');
+      }
     }
+  } catch (err) {
+    console.error('[WareOps] Route resolution crash:', err);
+    renderErrorPage(err);
   }
 }
 
 function renderErrorPage(err) {
-  document.getElementById('app').innerHTML = `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg-base)">
-      <div style="text-align:center;max-width:480px">
-        <div style="font-size:64px;margin-bottom:24px">💥</div>
-        <h1 style="font-size:24px;font-weight:800;margin-bottom:8px;color:var(--text-primary)">Something went wrong</h1>
-        <p style="color:var(--text-muted);font-size:14px;margin-bottom:8px">${err?.message || 'An unexpected error occurred'}</p>
-        <p style="color:var(--text-disabled);font-size:11px;font-family:monospace;margin-bottom:24px;word-break:break-all">${err?.stack?.split('\n').slice(0,3).join('<br>') || ''}</p>
-        <button class="btn btn-primary" onclick="location.hash='#/dashboard'">Go to Dashboard</button>
-        <button class="btn btn-ghost" style="margin-left:8px" onclick="location.hash='#/login'">Sign Out</button>
+  const appEl = document.getElementById('app');
+  if (!appEl) return;
+  
+  appEl.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0f1029;color:#f8fafc;font-family:sans-serif">
+      <div style="text-align:center;max-width:480px;background:rgba(255,255,255,0.03);padding:40px;border-radius:24px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.3)">
+        <div style="font-size:64px;margin-bottom:24px">⚠️</div>
+        <h1 style="font-size:24px;font-weight:800;margin-bottom:12px">Application Startup Error</h1>
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;line-height:1.6">${err?.message || 'An unexpected error occurred during initialization.'}</p>
+        <div style="background:rgba(0,0,0,0.2);padding:16px;border-radius:12px;margin-bottom:24px;text-align:left;overflow-x:auto">
+          <code style="color:#f43f5e;font-size:11px;font-family:monospace;white-space:pre">${err?.stack || 'No stack trace available'}</code>
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center">
+          <button class="btn btn-primary" onclick="window.location.reload()" style="background:#6366f1;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Retry Loading</button>
+          <button class="btn btn-ghost" onclick="window.location.href='landing.html'" style="background:transparent;color:#f8fafc;border:1px solid rgba(255,255,255,0.1);padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Back to Home</button>
+        </div>
       </div>
     </div>
   `;
@@ -150,21 +155,33 @@ function renderErrorPage(err) {
 // Handle hash changes
 window.addEventListener('hashchange', resolveRoute);
 
-// Initialize app
+// Initialize app when DOM is ready
 function init() {
-  const currentPath = getActivePath();
-  // If no hash, set a default and let the hashchange + resolveRoute handle it
-  if (!currentPath) {
+  try {
+    const currentPath = getActivePath();
     const user = getCurrentUser();
-    if (!user) {
-      window.location.href = 'landing.html';
-      return;
+
+    if (!currentPath) {
+      if (!user) {
+        window.location.href = 'landing.html';
+      } else {
+        safeNavigate('/dashboard');
+        // If we just changed the hash, resolveRoute will be called by hashchange
+        // But if we didn't (rare), we call it manually
+        if (getActivePath() === '/dashboard') resolveRoute();
+      }
+    } else {
+      resolveRoute();
     }
-    safeNavigate('/dashboard');
-    setTimeout(resolveRoute, 50);
-  } else {
-    resolveRoute();
+  } catch (err) {
+    console.error('[WareOps] Critical initialization failure:', err);
+    renderErrorPage(err);
   }
 }
 
-init();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
