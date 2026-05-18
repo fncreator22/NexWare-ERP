@@ -10,6 +10,11 @@ let query = '';
 let selectedIndex = 0;
 let results = [];
 
+/**
+ * Initializes the global keyboard listener for the Command Palette.
+ * Listens for Ctrl+K (or Cmd+K on macOS) to trigger the overlay,
+ * and Esc key to dismiss it when active.
+ */
 export function initPalette() {
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -22,6 +27,11 @@ export function initPalette() {
   });
 }
 
+/**
+ * Toggles the Command Palette visibility.
+ * Handles overlay setup, initial query/selection state, element focusing,
+ * and cleans up overlay elements from the DOM when closing.
+ */
 export function togglePalette() {
   paletteOpen = !paletteOpen;
   if (paletteOpen) {
@@ -34,6 +44,11 @@ export function togglePalette() {
   }
 }
 
+/**
+ * Creates and appends the Command Palette overlay element to the DOM body.
+ * Mounts the search bar, results list, shortcuts footer, and attaches key/mouse event listeners.
+ * @private
+ */
 function renderPalette() {
   const overlay = document.createElement('div');
   overlay.id = 'palette-overlay';
@@ -94,6 +109,11 @@ function renderPalette() {
   updateResults();
 }
 
+/**
+ * Queries active store collections (items, bills, warehouses) to filter items
+ * matching the query prefix. Populates default quick insights when query is empty.
+ * @private
+ */
 function updateResults() {
   const user = getCurrentUser();
   const items = getItems();
@@ -162,6 +182,11 @@ function updateResults() {
   renderResults();
 }
 
+/**
+ * Renders the compiled search results matching the active query.
+ * Focuses active selections and mounts click event listeners on items.
+ * @private
+ */
 function renderResults() {
   const container = document.getElementById('palette-results');
   if (!container) return;
@@ -195,6 +220,12 @@ function renderResults() {
   });
 }
 
+/**
+ * Resolves actions, page routing, and deep-linking targets selected from the palette.
+ * Cleans up navigation state and calls callbacks for modal actions.
+ * @param {Object} cmd - The matched command, action, or item payload.
+ * @private
+ */
 function executeCommand(cmd) {
   if (cmd.type === 'divider' || cmd.type === 'insight') return;
   togglePalette();

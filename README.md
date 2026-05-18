@@ -263,6 +263,24 @@ through centralized dashboards and reporting systems.
 
 ---
 
+## Global Command Palette (Ctrl+K)
+
+The system includes a premium global search keyboard-driven Command Palette overlay:
+- Toggle instantly by pressing `Ctrl + K` (or `Cmd + K` on macOS), or `ESC` to close.
+- Instantly search all pages, dynamic actions, system settings, inventory items, and warehouses.
+- View real-time system metrics (Revenue, Total Inventory, Stock Health) as high-value insights inside the overlay without leaving the current context.
+
+---
+
+## Smart Restock Prioritizer
+
+The system features an AI-simulated Smart Restock engine to optimize inventory:
+- Automatically filters items under threshold guidelines to identify reorder requests.
+- Ranks item priority using stock levels coupled with sales velocity/frequencies.
+- Visualizes key suggestions via custom priorities directly in dashboard views to maintain healthy inventory pipelines.
+
+---
+
 # Subscription Structure
 
 | Plan | Workspace Support | Features |
