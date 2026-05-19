@@ -8,6 +8,13 @@ import { formatCurrency, formatDate } from '../modules/ui.js';
 // Track chart instances so we can destroy before re-rendering
 const _dashboardCharts = {};
 
+/**
+ * Renders the main dashboard page for the ERP platform.
+ * Dynamically computes key operational metrics (total revenue, taxes, stock units, active workforce)
+ * based on user privileges (Super Admin global view or Warehouse-specific views).
+ * Displays KPI cards, revenue charts, recent activity logs, and automated restock suggestions.
+ * Mounts standard interaction buttons and floating actions.
+ */
 export function renderDashboard() {
   const user = getCurrentUser();
   const whs = getWarehouses();
@@ -376,6 +383,14 @@ export function renderDashboard() {
   setTimeout(() => initDashboardCharts(bills, whs), 100);
 }
 
+/**
+ * Initializes and draws the dashboard analytics charts.
+ * Creates a monthly revenue bar chart and a warehouse revenue distribution doughnut chart.
+ * Recreates instances as needed to avoid resource leaks or overlay duplication.
+ * @param {Array<Object>} bills - Loaded invoices/billing items.
+ * @param {Array<Object>} whs - Active warehouses.
+ * @private
+ */
 function initDashboardCharts(bills, whs) {
   // Revenue trend chart
   const now = new Date();
