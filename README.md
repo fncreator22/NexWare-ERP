@@ -279,6 +279,41 @@ The system features an AI-simulated Smart Restock engine to optimize inventory:
 - Ranks item priority using stock levels coupled with sales velocity/frequencies.
 - Visualizes key suggestions via custom priorities directly in dashboard views to maintain healthy inventory pipelines.
 
+# Role-Based Access Control (RBAC) Matrix
+
+To support structured workforce operations and enterprise data integrity, NexWare ERP enforces strict Role-Based Access Control (RBAC) rules:
+
+| Action / Capability | Super Admin | Admin | Manager | Staff | Employee |
+|---------------------|:-----------:|:-----:|:-------:|:-----:|:--------:|
+| Create & Delete Warehouses | **Yes** | No | No | No | No |
+| Manage Warehouse Configurations | **Yes** | Yes (Own) | No | No | No |
+| Manage Operational Table Structures | **Yes** | Yes (Own) | No | No | No |
+| Manage Workforce Users | **Yes** | Yes (Lower Roles) | Yes (Staff/Employee) | No | No |
+| Create Bills & Add Inventory Items | **Yes** | **Yes** | **Yes** | **Yes** | No |
+| Write or Update Table Data Rows | **Yes** | **Yes** | **Yes** | **Yes** | No |
+| View Warehouse Analytics & Reports | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+
+---
+
+# Directory & Project Structure
+
+The repository follows a clean, modular component-based Single Page Application (SPA) layout:
+
+```text
+warehouse-erp/
+├── css/                 # UI styles, HSL color tokens, compact tables, animations
+├── js/
+│   ├── components/      # UI Layout shell structure, Global Command Palette (Ctrl+K)
+│   ├── modules/         # Client router, localStorage-backed store, common UI helpers
+│   ├── pages/           # Dashboard, analytics, billing, items, tables, workforce views
+│   └── app.js           # Core bootstrap and SPA initialization module
+├── build.mjs            # Automated build bundling script
+├── dev.mjs              # Automated dev server setup script
+├── index.html           # Main SPA client container shell
+├── landing.html         # SaaS platform introduction and subscription landing portal
+└── package.json         # Script macros (start, serve, build, dev) and project dependencies
+```
+
 ---
 
 # Subscription Structure
