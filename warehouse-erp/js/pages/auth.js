@@ -23,27 +23,17 @@ export function renderLogin() {
         <form id="login-form">
           <div class="auth-input-group">
             <span class="auth-input-icon">📧</span>
-            <input type="email" id="login-email" class="form-control" placeholder="Email address" required autocomplete="email" value="alex@wareops.io" />
+            <input type="email" id="login-email" class="form-control" placeholder="Email address" required autocomplete="email" />
           </div>
           <div class="auth-input-group">
             <span class="auth-input-icon">🔒</span>
-            <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" value="Admin@123" />
+            <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" />
             <button type="button" class="auth-password-toggle" id="toggle-pw">👁️</button>
           </div>
           <button type="submit" class="btn btn-primary" id="login-btn">
             Sign In
           </button>
         </form>
-        <div class="auth-divider">
-          <div class="auth-divider-line"></div>
-          <span class="auth-divider-text">Quick Demo Access</span>
-          <div class="auth-divider-line"></div>
-        </div>
-        <div style="display:grid;gap:8px">
-          <button type="button" class="btn btn-secondary btn-sm" data-demo="alex@wareops.io|Admin@123">👑 Super Admin</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-demo="jordan@wareops.io|Admin@123">🏭 Admin (North Hub)</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-demo="sam@wareops.io|Admin@123">👔 Manager</button>
-        </div>
         <div class="auth-footer">
           Don't have an account? <a href="#/signup">Create account</a>
         </div>
@@ -77,14 +67,7 @@ export function renderLogin() {
     pw.type = pw.type === 'password' ? 'text' : 'password';
   });
 
-  document.querySelectorAll('[data-demo]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const [email, password] = btn.dataset.demo.split('|');
-      document.getElementById('login-email').value = email;
-      document.getElementById('login-password').value = password;
-      document.getElementById('login-form').dispatchEvent(new Event('submit'));
-    });
-  });
+
 }
 
 export function renderSignup() {
@@ -261,7 +244,6 @@ export function renderWarehouseRegistration() {
       return;
     }
     const wh = createWarehouse({ name, businessName, address, contact, email, taxPreference: document.getElementById('wh-tax').value, logo: document.getElementById('wh-logo').value });
-    seedDemoData();
     showToast('Warehouse created!', `${wh.name} is ready`, 'success');
     navigate('/dashboard');
   });

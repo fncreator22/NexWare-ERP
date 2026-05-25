@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-15T14:52:31.367Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-25T20:28:33.012Z
 
 
 // ===== modules/store.js =====
@@ -10,86 +10,25 @@
 const STORAGE_KEY = 'wareops_data';
 
 function getDefaultData() {
-  // Pre-seed demo data on first install
-  const demoWh1Id = 'wh_demo_001';
-  const demoWh2Id = 'wh_demo_002';
-  const demoWh3Id = 'wh_demo_003';
   const now = new Date().toISOString();
-
-  const warehouses = [
-    { id: demoWh1Id, name: 'North Hub', businessName: 'NorthTech Supplies', address: '100 Industrial Blvd, Chicago, IL', contact: '+1-312-555-0101', email: 'north@wareops.io', taxPreference: 'standard', logo: '🏭', ownerId: 'u1', createdAt: now, status: 'active', staffCount: 2, revenue: 5016.30, items: 4 },
-    { id: demoWh2Id, name: 'South Depot', businessName: 'SouthEx Logistics', address: '200 Commerce Dr, Austin, TX', contact: '+1-512-555-0202', email: 'south@wareops.io', taxPreference: 'standard', logo: '🏗️', ownerId: 'u1', createdAt: now, status: 'active', staffCount: 2, revenue: 514.50, items: 3 },
-    { id: demoWh3Id, name: 'East Flex', businessName: 'EastWave Distribution', address: '300 Harbor Rd, Boston, MA', contact: '+1-617-555-0303', email: 'east@wareops.io', taxPreference: 'luxury', logo: '🚛', ownerId: 'u1', createdAt: now, status: 'active', staffCount: 1, revenue: 1377.70, items: 3 },
-  ];
-
-  const users = [
-    { id: 'u1', name: 'Alex Morgan', email: 'alex@wareops.io', password: 'Admin@123', role: 'super_admin', warehouseId: null, status: 'active', createdAt: now, avatar: 'AM' },
-    { id: 'u2', name: 'Jordan Lee', email: 'jordan@wareops.io', password: 'Admin@123', role: 'admin', warehouseId: demoWh1Id, status: 'active', createdAt: now, avatar: 'JL', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u3', name: 'Sam Rivera', email: 'sam@wareops.io', password: 'Admin@123', role: 'manager', warehouseId: demoWh1Id, status: 'active', createdAt: now, avatar: 'SR', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u4', name: 'Taylor Kim', email: 'taylor@wareops.io', password: 'Admin@123', role: 'staff', warehouseId: demoWh2Id, status: 'active', createdAt: now, avatar: 'TK', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u5', name: 'Chris Patel', email: 'chris@wareops.io', password: 'Admin@123', role: 'employee', warehouseId: demoWh2Id, status: 'active', createdAt: now, avatar: 'CP', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u6', name: 'Morgan Zhao', email: 'morgan@wareops.io', password: 'Admin@123', role: 'manager', warehouseId: demoWh3Id, status: 'active', createdAt: now, avatar: 'MZ', assignedAt: now, assignedBy: 'u1' },
-  ];
-
-  const tblId = 'tbl_demo_001';
-  const tables = [
-    { id: tblId, name: 'Operations Tracker', category: 'Operations', description: 'Track daily warehouse operations', warehouseId: demoWh1Id, columns: [
-      { id: 'c1', name: 'Task', type: 'text', required: true },
-      { id: 'c2', name: 'Assignee', type: 'text', required: false },
-      { id: 'c3', name: 'Status', type: 'dropdown', options: 'Todo,In Progress,Done', required: false },
-      { id: 'c4', name: 'Due Date', type: 'date', required: false },
-      { id: 'c5', name: 'Priority', type: 'dropdown', options: 'Low,Medium,High', required: false }
-    ], roles: ['admin','manager','staff'], headerColor: '#6366f1', createdBy: 'u1', createdAt: now, status: 'active' }
-  ];
-
-  const tableData = {
-    [tblId]: [
-      { id: 'row1', c1: 'Inventory audit Q1', c2: 'Jordan Lee', c3: 'In Progress', c4: '2025-03-15', c5: 'High', createdAt: now },
-      { id: 'row2', c1: 'Safety inspection', c2: 'Sam Rivera', c3: 'Todo', c4: '2025-03-20', c5: 'Medium', createdAt: now },
-      { id: 'row3', c1: 'Equipment maintenance', c2: 'Jordan Lee', c3: 'Done', c4: '2025-03-10', c5: 'Low', createdAt: now },
-    ]
-  };
-
-  const items = [
-    { id: 'i1', name: 'Laptop Pro', category: 'Electronics', sku: 'SKU-0001', price: 999, stock: 45, taxCategory: 'luxury', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i2', name: 'Standing Desk', category: 'Furniture', sku: 'SKU-0002', price: 399, stock: 20, taxCategory: 'normal', warehouseId: demoWh2Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i3', name: 'Wireless Mouse', category: 'Electronics', sku: 'SKU-0003', price: 49, stock: 150, taxCategory: 'normal', warehouseId: demoWh3Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i4', name: 'Office Chair', category: 'Furniture', sku: 'SKU-0004', price: 299, stock: 35, taxCategory: 'normal', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i5', name: 'Tablet', category: 'Electronics', sku: 'SKU-0005', price: 649, stock: 18, taxCategory: 'luxury', warehouseId: demoWh2Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i6', name: 'Monitor 4K', category: 'Electronics', sku: 'SKU-0006', price: 599, stock: 22, taxCategory: 'luxury', warehouseId: demoWh3Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i7', name: 'Keyboard Mech', category: 'Electronics', sku: 'SKU-0007', price: 149, stock: 80, taxCategory: 'normal', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i8', name: 'Storage Box', category: 'Tools', sku: 'SKU-0008', price: 25, stock: 200, taxCategory: 'normal', warehouseId: demoWh2Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i9', name: 'Safety Helmet', category: 'Tools', sku: 'SKU-0009', price: 35, stock: 12, taxCategory: 'normal', warehouseId: demoWh3Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i10', name: 'Forklift Manual', category: 'Tools', sku: 'SKU-0010', price: 15, stock: 50, taxCategory: 'normal', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-  ];
-
-  const bills = [
-    { id: 'b1', billNo: 'INV-0001', warehouseId: demoWh1Id, customer: 'Acme Corp', items: [{name:'Laptop Pro', qty:3, price:999, taxCategory:'luxury', taxRate: 0.15}], subtotal: 2997, tax: 449.55, total: 3446.55, notes: '', createdAt: now, createdBy: 'u2', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-    { id: 'b2', billNo: 'INV-0002', warehouseId: demoWh2Id, customer: 'Beta LLC', items: [{name:'Wireless Mouse', qty:10, price:49, taxCategory:'normal', taxRate: 0.05}], subtotal: 490, tax: 24.5, total: 514.5, notes: '', createdAt: now, createdBy: 'u3', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-    { id: 'b3', billNo: 'INV-0003', warehouseId: demoWh3Id, customer: 'Gamma Inc', items: [{name:'Monitor 4K', qty:2, price:599, taxCategory:'luxury', taxRate: 0.15}], subtotal: 1198, tax: 179.7, total: 1377.7, notes: '', createdAt: now, createdBy: 'u6', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-    { id: 'b4', billNo: 'INV-0004', warehouseId: demoWh1Id, customer: 'Delta Trading', items: [{name:'Office Chair', qty:5, price:299, taxCategory:'normal', taxRate: 0.05}], subtotal: 1495, tax: 74.75, total: 1569.75, notes: '', createdAt: now, createdBy: 'u2', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-  ];
-
-  const auditLogs = [
-    { id: 'log1', action: 'login', description: 'User logged in', userId: 'u1', userName: 'Alex Morgan', warehouseId: null, timestamp: now },
-    { id: 'log2', action: 'warehouse_create', description: 'Warehouse created: North Hub', userId: 'u1', userName: 'Alex Morgan', warehouseId: null, timestamp: now },
-    { id: 'log3', action: 'user_create', description: 'User created: Jordan Lee (admin)', userId: 'u1', userName: 'Alex Morgan', warehouseId: null, timestamp: now },
-    { id: 'log4', action: 'bill_create', description: 'Bill generated: INV-0001 — $3446.55', userId: 'u2', userName: 'Jordan Lee', warehouseId: demoWh1Id, timestamp: now },
-  ];
-
-  const notifications = [
-    { id: 'n1', type: 'warehouse_create', title: 'Warehouse Created', message: 'North Hub warehouse is now active', userId: 'u1', read: false, timestamp: now, link: '/warehouses' },
-    { id: 'n2', type: 'bill_create', title: 'Invoice Generated', message: 'INV-0001 generated for Acme Corp — $3,446.55', userId: 'u1', read: false, timestamp: now, link: '/billing' },
-    { id: 'n3', type: 'user_create', title: 'New Team Member', message: 'Jordan Lee joined as Admin at North Hub', userId: 'u1', read: true, timestamp: now, link: '/workforce' },
-  ];
 
   const taxConfig = { luxury: 15, normal: 5 };
   const subscription = { plan: 'enterprise', startDate: now, status: 'active', warehouseLimit: -1 };
 
   return {
-    users, warehouses, workforce: [], tables, tableData, bills, items, auditLogs,
-    notifications, taxConfig, subscription,
-    currentUserId: null, currentWarehouseId: null,
+    users: [],
+    warehouses: [],
+    workforce: [],
+    tables: [],
+    tableData: {},
+    bills: [],
+    items: [],
+    auditLogs: [],
+    notifications: [],
+    taxConfig,
+    subscription,
+    currentUserId: null,
+    currentWarehouseId: null,
   };
 }
 
@@ -775,19 +714,7 @@ function getPlanWarehouseLimit() {
 
 // ---- SEED DATA ----
 function seedDemoData() {
-  const s = getStore();
-  const d = getDefaultData();
-  
-  if (s.users.length === 0) s.users = d.users;
-  if (s.warehouses.length === 0) s.warehouses = d.warehouses;
-  if (s.items.length === 0) s.items = d.items;
-  if (s.bills.length === 0) s.bills = d.bills;
-  if (s.tables.length === 0) s.tables = d.tables;
-  if (Object.keys(s.tableData).length === 0) s.tableData = d.tableData;
-  if (s.auditLogs.length === 0) s.auditLogs = d.auditLogs;
-  if (s.notifications.length === 0) s.notifications = d.notifications;
-  
-  saveStore();
+  // Safe zero-data startup starter: No demo seeding
 }
 
 // ===== modules/router.js =====
@@ -1803,6 +1730,11 @@ let query = '';
 let selectedIndex = 0;
 let results = [];
 
+/**
+ * Initializes the global keyboard listener for the Command Palette.
+ * Listens for Ctrl+K (or Cmd+K on macOS) to trigger the overlay,
+ * and Esc key to dismiss it when active.
+ */
 function initPalette() {
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -1815,6 +1747,11 @@ function initPalette() {
   });
 }
 
+/**
+ * Toggles the Command Palette visibility.
+ * Handles overlay setup, initial query/selection state, element focusing,
+ * and cleans up overlay elements from the DOM when closing.
+ */
 function togglePalette() {
   paletteOpen = !paletteOpen;
   if (paletteOpen) {
@@ -1827,6 +1764,11 @@ function togglePalette() {
   }
 }
 
+/**
+ * Creates and appends the Command Palette overlay element to the DOM body.
+ * Mounts the search bar, results list, shortcuts footer, and attaches key/mouse event listeners.
+ * @private
+ */
 function renderPalette() {
   const overlay = document.createElement('div');
   overlay.id = 'palette-overlay';
@@ -1887,6 +1829,11 @@ function renderPalette() {
   updateResults();
 }
 
+/**
+ * Queries active store collections (items, bills, warehouses) to filter items
+ * matching the query prefix. Populates default quick insights when query is empty.
+ * @private
+ */
 function updateResults() {
   const user = getCurrentUser();
   const items = getItems();
@@ -1955,6 +1902,11 @@ function updateResults() {
   renderResults();
 }
 
+/**
+ * Renders the compiled search results matching the active query.
+ * Focuses active selections and mounts click event listeners on items.
+ * @private
+ */
 function renderResults() {
   const container = document.getElementById('palette-results');
   if (!container) return;
@@ -1988,6 +1940,12 @@ function renderResults() {
   });
 }
 
+/**
+ * Resolves actions, page routing, and deep-linking targets selected from the palette.
+ * Cleans up navigation state and calls callbacks for modal actions.
+ * @param {Object} cmd - The matched command, action, or item payload.
+ * @private
+ */
 function executeCommand(cmd) {
   if (cmd.type === 'divider' || cmd.type === 'insight') return;
   togglePalette();
@@ -2035,27 +1993,17 @@ function renderLogin() {
         <form id="login-form">
           <div class="auth-input-group">
             <span class="auth-input-icon">📧</span>
-            <input type="email" id="login-email" class="form-control" placeholder="Email address" required autocomplete="email" value="alex@wareops.io" />
+            <input type="email" id="login-email" class="form-control" placeholder="Email address" required autocomplete="email" />
           </div>
           <div class="auth-input-group">
             <span class="auth-input-icon">🔒</span>
-            <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" value="Admin@123" />
+            <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" />
             <button type="button" class="auth-password-toggle" id="toggle-pw">👁️</button>
           </div>
           <button type="submit" class="btn btn-primary" id="login-btn">
             Sign In
           </button>
         </form>
-        <div class="auth-divider">
-          <div class="auth-divider-line"></div>
-          <span class="auth-divider-text">Quick Demo Access</span>
-          <div class="auth-divider-line"></div>
-        </div>
-        <div style="display:grid;gap:8px">
-          <button type="button" class="btn btn-secondary btn-sm" data-demo="alex@wareops.io|Admin@123">👑 Super Admin</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-demo="jordan@wareops.io|Admin@123">🏭 Admin (North Hub)</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-demo="sam@wareops.io|Admin@123">👔 Manager</button>
-        </div>
         <div class="auth-footer">
           Don't have an account? <a href="#/signup">Create account</a>
         </div>
@@ -2089,14 +2037,7 @@ function renderLogin() {
     pw.type = pw.type === 'password' ? 'text' : 'password';
   });
 
-  document.querySelectorAll('[data-demo]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const [email, password] = btn.dataset.demo.split('|');
-      document.getElementById('login-email').value = email;
-      document.getElementById('login-password').value = password;
-      document.getElementById('login-form').dispatchEvent(new Event('submit'));
-    });
-  });
+
 }
 
 function renderSignup() {
@@ -2273,7 +2214,6 @@ function renderWarehouseRegistration() {
       return;
     }
     const wh = createWarehouse({ name, businessName, address, contact, email, taxPreference: document.getElementById('wh-tax').value, logo: document.getElementById('wh-logo').value });
-    seedDemoData();
     showToast('Warehouse created!', `${wh.name} is ready`, 'success');
     navigate('/dashboard');
   });
@@ -2290,6 +2230,13 @@ function renderWarehouseRegistration() {
 // Track chart instances so we can destroy before re-rendering
 const _dashboardCharts = {};
 
+/**
+ * Renders the main dashboard page for the ERP platform.
+ * Dynamically computes key operational metrics (total revenue, taxes, stock units, active workforce)
+ * based on user privileges (Super Admin global view or Warehouse-specific views).
+ * Displays KPI cards, revenue charts, recent activity logs, and automated restock suggestions.
+ * Mounts standard interaction buttons and floating actions.
+ */
 function renderDashboard() {
   const user = getCurrentUser();
   const whs = getWarehouses();
@@ -2658,6 +2605,14 @@ function renderDashboard() {
   setTimeout(() => initDashboardCharts(bills, whs), 100);
 }
 
+/**
+ * Initializes and draws the dashboard analytics charts.
+ * Creates a monthly revenue bar chart and a warehouse revenue distribution doughnut chart.
+ * Recreates instances as needed to avoid resource leaks or overlay duplication.
+ * @param {Array<Object>} bills - Loaded invoices/billing items.
+ * @param {Array<Object>} whs - Active warehouses.
+ * @private
+ */
 function initDashboardCharts(bills, whs) {
   // Revenue trend chart
   const now = new Date();
@@ -5765,13 +5720,8 @@ function resolveRoute() {
         safeNavigate('/dashboard');
         return;
       }
-      // Seed demo data if super admin has warehouses but no items
-      if (user.role === 'super_admin') {
-        const s = getStore();
-        if (s.warehouses.length > 0 && s.items.length === 0) {
-          seedDemoData();
-        }
-      }
+      // Seeding demo data disabled for pristine zero-data vanilla reset
+
     }
 
     const handler = routes[path];
