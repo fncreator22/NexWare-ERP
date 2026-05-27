@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getAllUsers, createUser, updateUser, deleteUser, getWarehouses } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wf_searchQ = '';
@@ -27,7 +27,7 @@ export function renderWorkforce() {
         </div>
         <div class="wf_page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          <button class="btn btn-primary" id="create-user-btn">+ Add User</button>
+          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
       </div>
 
@@ -65,7 +65,13 @@ export function renderWorkforce() {
   renderWorkforceTable();
 
   document.getElementById('create-user-btn')?.addEventListener('click', () => showUserModal(null));
-  document.getElementById('wf-search')?.addEventListener('input', e => { wf_searchQ = e.target.value; wf_page = 1; renderWorkforceTable(); });
+  const debouncedSearch = debounce(q => {
+    wf_searchQ = q;
+    wf_page = 1;
+    renderWorkforceTable();
+  }, 300);
+
+  document.getElementById('wf-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('role-filter')?.addEventListener('change', e => { roleFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
   document.getElementById('wh-filter-wf')?.addEventListener('change', e => { wf_whFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
 }
@@ -94,6 +100,7 @@ function renderWorkforceStats() {
 }
 
 function renderWorkforceTable() {
+  const currentUser = getCurrentUser();
   let users = getAllUsers();
   const whs = getWarehouses();
   if (wf_searchQ) users = filterData(users, wf_searchQ, ['name','email','role']);
@@ -145,10 +152,11 @@ function renderWorkforceTable() {
               <td data-label="Status">${statusBadge(u.status)}</td>
               <td data-label="Assigned">${formatDate(u.assignedAt || u.createdAt)}</td>
               <td data-label="Actions">
+                ${['super_admin', 'admin'].includes(currentUser.role) ? `
                 <div class="table-actions">
                   <button class="action-btn edit" data-uid="${u.id}" title="Edit">✏️</button>
                   <button class="action-btn delete" data-uid="${u.id}" title="Delete">🗑️</button>
-                </div>
+                </div>` : '—'}
               </td>
             </tr>`;
           }).join('')}
@@ -175,7 +183,16 @@ function renderWorkforceTable() {
   container.querySelectorAll('.action-btn.delete[data-uid]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const ok = await confirm('Remove this user from the platform?', 'Remove User');
-      if (ok) { deleteUser(btn.dataset.uid); showToast('User removed', '', 'success'); renderWorkforceStats(); renderWorkforceTable(); }
+      if (ok) {
+        const result = await deleteUser(btn.dataset.uid);
+        if (result && result.error) {
+          showToast('Error', result.error, 'error');
+        } else {
+          showToast('User removed', '', 'success');
+          renderWorkforceStats();
+          renderWorkforceTable();
+        }
+      }
     });
   });
   container.querySelectorAll('.wf_page-btn[data-pg]').forEach(btn => {
@@ -246,7 +263,7 @@ function showUserModal(u) {
 
   const modal = createModal({ title: isEdit ? '✏️ Edit User' : '👤 Add New User', body, footer });
   modal.el.querySelector('#m-u-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-u-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#m-u-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-u-name').value.trim();
     const email = document.getElementById('m-u-email').value.trim();
     const role = document.getElementById('m-u-role').value;
@@ -254,13 +271,14 @@ function showUserModal(u) {
     if (!name || !email || !role || !warehouseId) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
     if (isEdit) {
       const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value };
-      updateUser(u.id, data);
+      const result = await updateUser(u.id, data);
+      if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User updated', `${name}'s details updated`, 'success');
     } else {
       const password = document.getElementById('m-u-password').value;
       if (!password || password.length < 8) { showToast('Validation', 'Password must be at least 8 characters', 'warning'); return; }
-      const result = createUser({ name, email, password, role, warehouseId });
-      if (result.error) { showToast('Error', result.error, 'error'); return; }
+      const result = await createUser({ name, email, password, role, warehouseId });
+      if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User created', `${name} added as ${role}`, 'success');
     }
     modal.close();

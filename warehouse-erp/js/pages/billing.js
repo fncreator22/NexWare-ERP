@@ -1,16 +1,10 @@
 /**
  * Billing & Taxation System — v2
  */
-import { getCurrentUser, getItems, createBill, getBills, getWarehouses, getTaxConfig } from '../modules/store.js';
+import { getCurrentUser, getItems, createBill, getBills, getWarehouses, getTaxConfig, getTaxRates } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, createModal, formatDate, formatDateTime, formatCurrency, filterData } from '../modules/ui.js';
+import { showToast, createModal, formatDate, formatDateTime, formatCurrency, filterData, debounce } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
-
-// Dynamic tax rates — fetched from store so admin changes apply immediately
-function getTaxRates() {
-  const cfg = getTaxConfig();
-  return { luxury: cfg.luxury / 100, normal: cfg.normal / 100 };
-}
 let billItems = [];
 let bl_searchQ = '';
 let bl_page = 1;
@@ -68,7 +62,13 @@ export function renderBilling() {
 
   renderBillsTable();
   document.getElementById('new-bill-btn')?.addEventListener('click', () => showBillModal());
-  document.getElementById('bill-search')?.addEventListener('input', e => { bl_searchQ = e.target.value; bl_page=1; renderBillsTable(); });
+  const debouncedSearch = debounce(q => {
+    bl_searchQ = q;
+    bl_page = 1;
+    renderBillsTable();
+  }, 300);
+
+  document.getElementById('bill-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('bill-wh-filter')?.addEventListener('change', () => { bl_page=1; renderBillsTable(); });
 
   // Expose printBill and showBillModal globally
@@ -159,12 +159,18 @@ function showBillModal() {
   const body = document.createElement('div');
 
   function renderBillBody() {
-    const TAX_RATES = getTaxRates();
+    const savedCustomer = body.querySelector('#bill-customer')?.value || '';
+    const savedWh = body.querySelector('#bill-wh')?.value || '';
+    const warehouseId = savedWh || whs[0]?.id;
+    const wh = whs.find(w => w.id === warehouseId);
+    
+    // Check if custom tax preference is unconfigured
+    const isCustomUnconfigured = wh && wh.taxPreference === 'custom' && (!wh.taxConfig || Object.keys(wh.taxConfig).length === 0);
+    const TAX_RATES = getTaxRates(warehouseId);
+    
     const subtotal = billItems.reduce((s,i)=>s+(i.qty*(i.price||0)),0);
     const tax = billItems.reduce((s,i)=>s+(i.qty*(i.price||0)*(TAX_RATES[i.taxCategory]||TAX_RATES.normal)),0);
     const total = subtotal + tax;
-    const savedCustomer = body.querySelector('#bill-customer')?.value || '';
-    const savedWh = body.querySelector('#bill-wh')?.value || '';
 
     body.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
@@ -175,12 +181,17 @@ function showBillModal() {
         <div class="form-group" style="margin:0">
           <label class="form-label">Warehouse</label>
           <select id="bill-wh" class="form-control">
-            ${whs.map(w=>`<option value="${w.id}" ${savedWh===w.id?'selected':''}>${w.name}</option>`).join('')}
+            ${whs.map(w=>`<option value="${w.id}" ${warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
           </select>
         </div>
       </div>
       <div style="background:var(--bg-input);border-radius:10px;padding:16px;margin-bottom:16px">
         <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text-secondary)">📦 Add Items</div>
+        ${isCustomUnconfigured ? `
+          <div style="color:var(--accent-rose);font-size:12px;font-weight:600;padding:10px;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.2);border-radius:8px">
+            ⚠️ Custom Tax Config Required: Please configure tax rates in settings for this warehouse before creating invoices.
+          </div>
+        ` : `
         <div style="display:grid;grid-template-columns:2fr 1fr auto;gap:8px;align-items:end">
           <div>
             <label class="form-label" style="font-size:11px">Item</label>
@@ -195,6 +206,7 @@ function showBillModal() {
           </div>
           <button class="btn btn-secondary btn-sm" id="add-item-btn" style="height:40px">+ Add</button>
         </div>
+        `}
       </div>
       <div id="bill-items-list" style="margin-bottom:16px">
         ${billItems.length === 0 ? `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">No items added yet</div>` : `
@@ -211,7 +223,7 @@ function showBillModal() {
             <tbody>
               ${billItems.map((bi,i)=>{
                 const lineTotal = bi.qty * bi.price;
-                const taxRate = (getTaxRates()[bi.taxCategory])||getTaxRates().normal;
+                const taxRate = TAX_RATES[bi.taxCategory] || TAX_RATES.normal;
                 const lineTax = lineTotal * taxRate;
                 return `<tr style="border-bottom:1px solid var(--border-subtle)">
                   <td style="padding:8px;font-size:13px"><strong>${bi.name}</strong></td>
@@ -234,12 +246,18 @@ function showBillModal() {
       </div>
     `;
 
+    // Bind dynamic warehouse selector switch to modal re-rendering
+    setTimeout(() => {
+      body.querySelector('#bill-wh')?.addEventListener('change', () => {
+        renderBillBody();
+      });
+    }, 0);
+
     body.querySelector('#add-item-btn')?.addEventListener('click', () => {
       const sel = body.querySelector('#item-select');
       const opt = sel.selectedOptions[0];
       if (!opt || !opt.value) { showToast('Select an item','','warning'); return; }
       const qty = parseInt(body.querySelector('#item-qty').value) || 1;
-      const TAX_RATES = getTaxRates();
       const rate = TAX_RATES[opt.dataset.tax] || TAX_RATES.normal;
       billItems.push({ id: opt.value, name: opt.dataset.name, price: parseFloat(opt.dataset.price), taxCategory: opt.dataset.tax, taxRate: rate, qty });
       renderBillBody();
@@ -261,7 +279,15 @@ function showBillModal() {
     if (!customer) { showToast('Validation','Customer name required','warning'); return; }
     if (billItems.length === 0) { showToast('Validation','Add at least one item','warning'); return; }
     const warehouseId = document.getElementById('bill-wh')?.value || getWarehouses()[0]?.id;
-    const TAX_RATES = getTaxRates();
+    
+    // Custom tax configuration safeguard
+    const wh = getWarehouses().find(w => w.id === warehouseId);
+    if (wh && wh.taxPreference === 'custom' && (!wh.taxConfig || Object.keys(wh.taxConfig).length === 0)) {
+      showToast('Tax Configuration Required', 'This warehouse is flagged with "Custom Tax Setup". Please configure regional tax rules in settings before generating invoices.', 'error');
+      return;
+    }
+
+    const TAX_RATES = getTaxRates(warehouseId);
     const subtotal = billItems.reduce((s,i)=>s+(i.qty*i.price),0);
     const tax = billItems.reduce((s,i)=>s+(i.qty*i.price*(TAX_RATES[i.taxCategory]||TAX_RATES.normal)),0);
     const total = subtotal + tax;

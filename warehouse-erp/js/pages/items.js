@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let it_searchQ = '';
@@ -35,7 +35,10 @@ export function renderItems() {
         </div>
         <div class="it_page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${canEdit ? `<button class="btn btn-primary" id="create-item-btn">+ Add Item</button>` : ''}
+          ${canEdit ? `
+            <button class="btn btn-secondary btn-sm" id="import-csv-btn">📥 Import CSV</button>
+            <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
+          ` : ''}
         </div>
       </div>
 
@@ -70,7 +73,14 @@ export function renderItems() {
   renderItemsTable();
 
   document.getElementById('create-item-btn')?.addEventListener('click', () => showItemModal(null));
-  document.getElementById('item-search')?.addEventListener('input', e => { it_searchQ = e.target.value; it_page = 1; renderItemsTable(); });
+  document.getElementById('import-csv-btn')?.addEventListener('click', () => showImportModal());
+  const debouncedSearch = debounce(q => {
+    it_searchQ = q;
+    it_page = 1;
+    renderItemsTable();
+  }, 300);
+
+  document.getElementById('item-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('cat-filter')?.addEventListener('change', e => { categoryFilter = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
 
@@ -252,5 +262,181 @@ function showItemModal(item) {
     modal.close();
     renderItemStats();
     renderItemsTable();
+  });
+}
+
+function showImportModal() {
+  const body = `
+    <div style="padding:16px">
+      <div id="drag-drop-zone" style="border:2px dashed var(--border-default);border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:rgba(99,102,241,0.02);transition:all 0.2s">
+        <div style="font-size:36px;margin-bottom:12px">📥</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:4px">Drag & Drop CSV File here</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">or click to browse from your computer</div>
+        <input type="file" id="csv-file-input" accept=".csv" style="display:none" />
+        <span class="btn btn-secondary btn-sm">Browse File</span>
+      </div>
+      <div id="upload-progress-container" style="margin-top:20px;display:none">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:6px">
+          <span>Uploading & processing items...</span>
+          <span id="upload-percentage">0%</span>
+        </div>
+        <div style="height:6px;background:var(--bg-input);border-radius:3px;overflow:hidden">
+          <div id="upload-progress-bar" style="height:100%;width:0%;background:var(--brand-500);transition:width 0.1s"></div>
+        </div>
+      </div>
+      <div id="import-errors-container" style="margin-top:20px;display:none;background:rgba(244,63,94,0.06);border:1px solid rgba(244,63,94,0.15);border-radius:10px;padding:12px;max-height:160px;overflow-y:auto">
+        <div style="font-size:12px;font-weight:700;color:var(--accent-rose);margin-bottom:8px">⚠️ Import Warnings/Errors:</div>
+        <ul id="import-errors-list" style="font-size:11px;color:var(--text-muted);margin:0;padding-left:16px;line-height:1.6"></ul>
+      </div>
+      <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:11px;color:var(--text-muted)">
+        ℹ️ <strong>Expected columns:</strong> <code>name</code>, <code>sku</code>, <code>category</code>, <code>price</code>, <code>stock</code> (and optional <code>warehouseId</code>).
+      </div>
+    </div>
+  `;
+
+  const footer = `
+    <button class="btn btn-secondary" id="import-cancel">Cancel</button>
+    <button class="btn btn-primary" id="import-start-btn" disabled>✓ Upload & Import</button>
+  `;
+
+  const modal = createModal({ title: '📥 Bulk Import Inventory', body, footer });
+  const fileInput = modal.el.querySelector('#csv-file-input');
+  const zone = modal.el.querySelector('#drag-drop-zone');
+  const startBtn = modal.el.querySelector('#import-start-btn');
+  const cancelBtn = modal.el.querySelector('#import-cancel');
+  
+  let selectedFile = null;
+
+  zone.addEventListener('click', () => fileInput.click());
+  
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleFileSelected(e.target.files[0]);
+    }
+  });
+
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    zone.style.borderColor = 'var(--brand-500)';
+    zone.style.background = 'rgba(99,102,241,0.08)';
+  });
+
+  zone.addEventListener('dragleave', () => {
+    zone.style.borderColor = 'var(--border-default)';
+    zone.style.background = 'rgba(99,102,241,0.02)';
+  });
+
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.style.borderColor = 'var(--border-default)';
+    zone.style.background = 'rgba(99,102,241,0.02)';
+    if (e.dataTransfer.files.length > 0) {
+      handleFileSelected(e.dataTransfer.files[0]);
+    }
+  });
+
+  function handleFileSelected(file) {
+    if (file.name.slice(-4).toLowerCase() !== '.csv') {
+      showToast('Invalid File', 'Only standard CSV files are supported.', 'warning');
+      return;
+    }
+    selectedFile = file;
+    zone.querySelector('div:nth-child(2)').textContent = `📄 Selected: ${file.name}`;
+    zone.querySelector('div:nth-child(3)').textContent = `Size: ${(file.size/1024).toFixed(1)} KB`;
+    startBtn.removeAttribute('disabled');
+  }
+
+  startBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    startBtn.setAttribute('disabled', 'true');
+    cancelBtn.setAttribute('disabled', 'true');
+    
+    const progressContainer = modal.el.querySelector('#upload-progress-container');
+    const progressBar = modal.el.querySelector('#upload-progress-bar');
+    const percentage = modal.el.querySelector('#upload-percentage');
+    
+    progressContainer.style.display = 'block';
+    
+    // Simulate initial uploading animation progress smoothly
+    let p = 0;
+    const interval = setInterval(() => {
+      if (p < 85) {
+        p += 5;
+        progressBar.style.width = p + '%';
+        percentage.textContent = p + '%';
+      }
+    }, 100);
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    const token = localStorage.getItem('access_token');
+    const url = 'http://localhost:8000/api/v1/items/import';
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      
+      clearInterval(interval);
+      progressBar.style.width = '100%';
+      percentage.textContent = '100%';
+
+      const data = await res.json();
+      
+      if (!res.ok) {
+        showToast('Import Failed', data.message || 'An error occurred during CSV parsing.', 'error');
+        startBtn.removeAttribute('disabled');
+        cancelBtn.removeAttribute('disabled');
+        return;
+      }
+
+      if (data.success) {
+        showToast('Import Complete', `Successfully registered ${data.imported} items.`, 'success');
+        
+        // Show validation warnings/errors if any skipped
+        if (data.errors && data.errors.length > 0) {
+          const errContainer = modal.el.querySelector('#import-errors-container');
+          const errList = modal.el.querySelector('#import-errors-list');
+          errList.innerHTML = data.errors.map(err => `<li>${err}</li>`).join('');
+          errContainer.style.display = 'block';
+          
+          startBtn.style.display = 'none';
+          cancelBtn.textContent = 'Close';
+          cancelBtn.removeAttribute('disabled');
+          cancelBtn.className = 'btn btn-primary';
+          cancelBtn.addEventListener('click', () => {
+            modal.close();
+            // trigger parallel frontend sync
+            import('../modules/store.js').then(m => m.syncWithBackend()).then(() => {
+              renderItemStats();
+              renderItemsTable();
+            });
+          });
+        } else {
+          modal.close();
+          // trigger parallel frontend sync
+          import('../modules/store.js').then(m => m.syncWithBackend()).then(() => {
+            renderItemStats();
+            renderItemsTable();
+          });
+        }
+      } else {
+        showToast('Import Failed', data.message || 'Malformed CSV format.', 'error');
+        startBtn.removeAttribute('disabled');
+        cancelBtn.removeAttribute('disabled');
+      }
+    } catch (err) {
+      clearInterval(interval);
+      console.error('CSV upload network failure:', err);
+      showToast('Network Error', 'Check if server is active.', 'error');
+      startBtn.removeAttribute('disabled');
+      cancelBtn.removeAttribute('disabled');
+    }
   });
 }

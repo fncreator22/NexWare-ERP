@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, getAllUsers, getBills, getPlanWarehouseLimit, getSubscription, addNotification, getItems, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wh_currentView = 'grid';
@@ -33,7 +33,7 @@ function refreshShell() {
           <p class="page-subtitle">Centralized control for all warehouse locations · <span style="color:var(--text-brand);font-weight:600">${planLabel}</span></p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" id="view-toggle">⊞ Grid</button>
+          <button class="btn btn-secondary btn-sm" id="view-toggle">☰ Table</button>
           <button class="btn btn-primary" id="create-wh-btn" ${atLimit ? 'disabled title="Warehouse limit reached for your plan"' : ''}>
             + New Warehouse ${atLimit ? '🔒' : ''}
           </button>
@@ -108,11 +108,16 @@ function refreshShell() {
     showWarehouseModal(null);
   });
 
-  document.getElementById('wh-search')?.addEventListener('input', e => { wh_searchQuery = e.target.value; refreshList(); });
+  const debouncedSearch = debounce(q => {
+    wh_searchQuery = q;
+    refreshList();
+  }, 300);
+
+  document.getElementById('wh-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('wh-status-filter')?.addEventListener('change', refreshList);
   document.getElementById('view-toggle')?.addEventListener('click', (e) => {
     wh_currentView = wh_currentView === 'grid' ? 'table' : 'grid';
-    e.target.textContent = wh_currentView === 'grid' ? '⊞ Grid' : '☰ Table';
+    e.target.textContent = wh_currentView === 'grid' ? '☰ Table' : '⊞ Grid';
     refreshList();
   });
 
@@ -127,7 +132,9 @@ function refreshList() {
   if (statusFilter) whs = whs.filter(w => w.status === statusFilter);
   const allUsers = getAllUsers();
   const container = document.getElementById('wh-container');
-  if (container) container.innerHTML = renderWarehouseGrid(whs, allUsers);
+  if (container) {
+    container.innerHTML = wh_currentView === 'table' ? renderWarehouseTable(whs, allUsers) : renderWarehouseGrid(whs, allUsers);
+  }
   // Update count
   const countEl = document.getElementById('wh-count');
   if (countEl) countEl.textContent = getWarehouses().length;
@@ -177,6 +184,68 @@ function renderWarehouseGrid(whs, allUsers) {
   </div>`;
 }
 
+function renderWarehouseTable(whs, allUsers) {
+  if (whs.length === 0) return `
+    <div class="card" style="text-align:center;padding:64px">
+      <div style="font-size:48px;margin-bottom:16px;opacity:0.4">🏭</div>
+      <h3 style="color:var(--text-secondary);margin-bottom:8px">No warehouses found</h3>
+      <p style="color:var(--text-muted);font-size:14px;margin-bottom:24px">Create your first warehouse to get started</p>
+      <button class="btn btn-primary" onclick="document.getElementById('create-wh-btn').click()">+ Create Warehouse</button>
+    </div>
+  `;
+
+  return `
+    <div class="card animate-slideUp">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Logo</th>
+              <th>Name</th>
+              <th>Business Name</th>
+              <th>Contact Info</th>
+              <th>Staff</th>
+              <th>Items</th>
+              <th>Revenue</th>
+              <th>Status</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${whs.map(wh => {
+              const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
+              return `
+                <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
+                  <td data-label="Logo"><div style="font-size:24px">${wh.logo || '🏭'}</div></td>
+                  <td data-label="Name">
+                    <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">📍 ${wh.address}</div>
+                  </td>
+                  <td data-label="Business Name">${wh.businessName}</td>
+                  <td data-label="Contact Info">
+                    <div style="font-size:12px">${wh.email}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">📞 ${wh.contact}</div>
+                  </td>
+                  <td data-label="Staff"><span class="badge badge-brand">${staff}</span></td>
+                  <td data-label="Items"><span class="badge badge-info">${wh.items || 0}</span></td>
+                  <td data-label="Revenue"><strong style="color:var(--accent-emerald)">${formatCurrency(wh.revenue || 0)}</strong></td>
+                  <td data-label="Status"><span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'}">${wh.status}</span></td>
+                  <td data-label="Actions" style="text-align:right" onclick="event.stopPropagation()">
+                    <div style="display:inline-flex;gap:4px">
+                      <button class="action-btn edit" data-id="${wh.id}" title="Edit">✏️</button>
+                      <button class="action-btn delete" data-id="${wh.id}" title="Delete">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 function attachWarehouseEvents() {
   // Edit buttons
   document.querySelectorAll('.action-btn.edit[data-id]').forEach(btn => {
@@ -201,10 +270,10 @@ function attachWarehouseEvents() {
     });
   });
 
-  // Warehouse card click → warehouse detail dashboard
-  document.querySelectorAll('.warehouse-card[data-wh-id]').forEach(card => {
-    card.addEventListener('click', () => {
-      const whId = card.dataset.whId;
+  // Warehouse card/row click → warehouse detail dashboard
+  document.querySelectorAll('.warehouse-card[data-wh-id], .warehouse-row[data-wh-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const whId = el.dataset.whId;
       navigate('/warehouses/' + whId);
     });
   });

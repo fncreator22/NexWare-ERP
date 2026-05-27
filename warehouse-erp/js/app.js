@@ -75,7 +75,7 @@ function resolveRoute() {
   try {
     const path = getActivePath();
     const user = getCurrentUser();
-    const publicRoutes = ['/login', '/signup', '/register-warehouse'];
+    const publicRoutes = ['/login', '/signup'];
 
     // Not logged in
     if (!user) {
@@ -99,13 +99,8 @@ function resolveRoute() {
         safeNavigate('/dashboard');
         return;
       }
-      // Seed demo data if super admin has warehouses but no items
-      if (user.role === 'super_admin') {
-        const s = getStore();
-        if (s.warehouses.length > 0 && s.items.length === 0) {
-          seedDemoData();
-        }
-      }
+      // Seeding demo data disabled for pristine zero-data vanilla reset
+
     }
 
     const handler = routes[path];

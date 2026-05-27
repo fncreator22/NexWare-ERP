@@ -6,86 +6,25 @@
 const STORAGE_KEY = 'wareops_data';
 
 function getDefaultData() {
-  // Pre-seed demo data on first install
-  const demoWh1Id = 'wh_demo_001';
-  const demoWh2Id = 'wh_demo_002';
-  const demoWh3Id = 'wh_demo_003';
   const now = new Date().toISOString();
-
-  const warehouses = [
-    { id: demoWh1Id, name: 'North Hub', businessName: 'NorthTech Supplies', address: '100 Industrial Blvd, Chicago, IL', contact: '+1-312-555-0101', email: 'north@wareops.io', taxPreference: 'standard', logo: '🏭', ownerId: 'u1', createdAt: now, status: 'active', staffCount: 2, revenue: 5016.30, items: 4 },
-    { id: demoWh2Id, name: 'South Depot', businessName: 'SouthEx Logistics', address: '200 Commerce Dr, Austin, TX', contact: '+1-512-555-0202', email: 'south@wareops.io', taxPreference: 'standard', logo: '🏗️', ownerId: 'u1', createdAt: now, status: 'active', staffCount: 2, revenue: 514.50, items: 3 },
-    { id: demoWh3Id, name: 'East Flex', businessName: 'EastWave Distribution', address: '300 Harbor Rd, Boston, MA', contact: '+1-617-555-0303', email: 'east@wareops.io', taxPreference: 'luxury', logo: '🚛', ownerId: 'u1', createdAt: now, status: 'active', staffCount: 1, revenue: 1377.70, items: 3 },
-  ];
-
-  const users = [
-    { id: 'u1', name: 'Alex Morgan', email: 'alex@wareops.io', password: 'Admin@123', role: 'super_admin', warehouseId: null, status: 'active', createdAt: now, avatar: 'AM' },
-    { id: 'u2', name: 'Jordan Lee', email: 'jordan@wareops.io', password: 'Admin@123', role: 'admin', warehouseId: demoWh1Id, status: 'active', createdAt: now, avatar: 'JL', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u3', name: 'Sam Rivera', email: 'sam@wareops.io', password: 'Admin@123', role: 'manager', warehouseId: demoWh1Id, status: 'active', createdAt: now, avatar: 'SR', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u4', name: 'Taylor Kim', email: 'taylor@wareops.io', password: 'Admin@123', role: 'staff', warehouseId: demoWh2Id, status: 'active', createdAt: now, avatar: 'TK', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u5', name: 'Chris Patel', email: 'chris@wareops.io', password: 'Admin@123', role: 'employee', warehouseId: demoWh2Id, status: 'active', createdAt: now, avatar: 'CP', assignedAt: now, assignedBy: 'u1' },
-    { id: 'u6', name: 'Morgan Zhao', email: 'morgan@wareops.io', password: 'Admin@123', role: 'manager', warehouseId: demoWh3Id, status: 'active', createdAt: now, avatar: 'MZ', assignedAt: now, assignedBy: 'u1' },
-  ];
-
-  const tblId = 'tbl_demo_001';
-  const tables = [
-    { id: tblId, name: 'Operations Tracker', category: 'Operations', description: 'Track daily warehouse operations', warehouseId: demoWh1Id, columns: [
-      { id: 'c1', name: 'Task', type: 'text', required: true },
-      { id: 'c2', name: 'Assignee', type: 'text', required: false },
-      { id: 'c3', name: 'Status', type: 'dropdown', options: 'Todo,In Progress,Done', required: false },
-      { id: 'c4', name: 'Due Date', type: 'date', required: false },
-      { id: 'c5', name: 'Priority', type: 'dropdown', options: 'Low,Medium,High', required: false }
-    ], roles: ['admin','manager','staff'], headerColor: '#6366f1', createdBy: 'u1', createdAt: now, status: 'active' }
-  ];
-
-  const tableData = {
-    [tblId]: [
-      { id: 'row1', c1: 'Inventory audit Q1', c2: 'Jordan Lee', c3: 'In Progress', c4: '2025-03-15', c5: 'High', createdAt: now },
-      { id: 'row2', c1: 'Safety inspection', c2: 'Sam Rivera', c3: 'Todo', c4: '2025-03-20', c5: 'Medium', createdAt: now },
-      { id: 'row3', c1: 'Equipment maintenance', c2: 'Jordan Lee', c3: 'Done', c4: '2025-03-10', c5: 'Low', createdAt: now },
-    ]
-  };
-
-  const items = [
-    { id: 'i1', name: 'Laptop Pro', category: 'Electronics', sku: 'SKU-0001', price: 999, stock: 45, taxCategory: 'luxury', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i2', name: 'Standing Desk', category: 'Furniture', sku: 'SKU-0002', price: 399, stock: 20, taxCategory: 'normal', warehouseId: demoWh2Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i3', name: 'Wireless Mouse', category: 'Electronics', sku: 'SKU-0003', price: 49, stock: 150, taxCategory: 'normal', warehouseId: demoWh3Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i4', name: 'Office Chair', category: 'Furniture', sku: 'SKU-0004', price: 299, stock: 35, taxCategory: 'normal', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i5', name: 'Tablet', category: 'Electronics', sku: 'SKU-0005', price: 649, stock: 18, taxCategory: 'luxury', warehouseId: demoWh2Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i6', name: 'Monitor 4K', category: 'Electronics', sku: 'SKU-0006', price: 599, stock: 22, taxCategory: 'luxury', warehouseId: demoWh3Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i7', name: 'Keyboard Mech', category: 'Electronics', sku: 'SKU-0007', price: 149, stock: 80, taxCategory: 'normal', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i8', name: 'Storage Box', category: 'Tools', sku: 'SKU-0008', price: 25, stock: 200, taxCategory: 'normal', warehouseId: demoWh2Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i9', name: 'Safety Helmet', category: 'Tools', sku: 'SKU-0009', price: 35, stock: 12, taxCategory: 'normal', warehouseId: demoWh3Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-    { id: 'i10', name: 'Forklift Manual', category: 'Tools', sku: 'SKU-0010', price: 15, stock: 50, taxCategory: 'normal', warehouseId: demoWh1Id, unit: 'pcs', createdAt: now, createdBy: 'u1' },
-  ];
-
-  const bills = [
-    { id: 'b1', billNo: 'INV-0001', warehouseId: demoWh1Id, customer: 'Acme Corp', items: [{name:'Laptop Pro', qty:3, price:999, taxCategory:'luxury', taxRate: 0.15}], subtotal: 2997, tax: 449.55, total: 3446.55, notes: '', createdAt: now, createdBy: 'u2', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-    { id: 'b2', billNo: 'INV-0002', warehouseId: demoWh2Id, customer: 'Beta LLC', items: [{name:'Wireless Mouse', qty:10, price:49, taxCategory:'normal', taxRate: 0.05}], subtotal: 490, tax: 24.5, total: 514.5, notes: '', createdAt: now, createdBy: 'u3', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-    { id: 'b3', billNo: 'INV-0003', warehouseId: demoWh3Id, customer: 'Gamma Inc', items: [{name:'Monitor 4K', qty:2, price:599, taxCategory:'luxury', taxRate: 0.15}], subtotal: 1198, tax: 179.7, total: 1377.7, notes: '', createdAt: now, createdBy: 'u6', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-    { id: 'b4', billNo: 'INV-0004', warehouseId: demoWh1Id, customer: 'Delta Trading', items: [{name:'Office Chair', qty:5, price:299, taxCategory:'normal', taxRate: 0.05}], subtotal: 1495, tax: 74.75, total: 1569.75, notes: '', createdAt: now, createdBy: 'u2', taxConfigSnapshot: { luxury: 15, normal: 5 } },
-  ];
-
-  const auditLogs = [
-    { id: 'log1', action: 'login', description: 'User logged in', userId: 'u1', userName: 'Alex Morgan', warehouseId: null, timestamp: now },
-    { id: 'log2', action: 'warehouse_create', description: 'Warehouse created: North Hub', userId: 'u1', userName: 'Alex Morgan', warehouseId: null, timestamp: now },
-    { id: 'log3', action: 'user_create', description: 'User created: Jordan Lee (admin)', userId: 'u1', userName: 'Alex Morgan', warehouseId: null, timestamp: now },
-    { id: 'log4', action: 'bill_create', description: 'Bill generated: INV-0001 — $3446.55', userId: 'u2', userName: 'Jordan Lee', warehouseId: demoWh1Id, timestamp: now },
-  ];
-
-  const notifications = [
-    { id: 'n1', type: 'warehouse_create', title: 'Warehouse Created', message: 'North Hub warehouse is now active', userId: 'u1', read: false, timestamp: now, link: '/warehouses' },
-    { id: 'n2', type: 'bill_create', title: 'Invoice Generated', message: 'INV-0001 generated for Acme Corp — $3,446.55', userId: 'u1', read: false, timestamp: now, link: '/billing' },
-    { id: 'n3', type: 'user_create', title: 'New Team Member', message: 'Jordan Lee joined as Admin at North Hub', userId: 'u1', read: true, timestamp: now, link: '/workforce' },
-  ];
 
   const taxConfig = { luxury: 15, normal: 5 };
   const subscription = { plan: 'enterprise', startDate: now, status: 'active', warehouseLimit: -1 };
 
   return {
-    users, warehouses, workforce: [], tables, tableData, bills, items, auditLogs,
-    notifications, taxConfig, subscription,
-    currentUserId: null, currentWarehouseId: null,
+    users: [],
+    warehouses: [],
+    workforce: [],
+    tables: [],
+    tableData: {},
+    bills: [],
+    items: [],
+    auditLogs: [],
+    notifications: [],
+    taxConfig,
+    subscription,
+    currentUserId: null,
+    currentWarehouseId: null,
   };
 }
 
@@ -111,6 +50,11 @@ export function getStore() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     _store = raw ? JSON.parse(raw) : getDefaultData();
+
+    // Trigger silent background synchronization if access token exists
+    if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
+      setTimeout(syncWithBackend, 0);
+    }
 
     // Migration: Ensure all bills have tax snapshots for historical integrity
     if (_store.bills) {
@@ -142,43 +86,201 @@ export function resetStore() {
   saveStore();
 }
 
+// ---- API AND SYNCHRONIZATION ----
+const API_BASE_URL = 'http://localhost:8000/api/v1';
+
+export async function apiFetch(path, options = {}) {
+  const url = `${API_BASE_URL}${path}`;
+  const token = localStorage.getItem('access_token');
+  
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  const config = {
+    ...options,
+    headers
+  };
+  
+  try {
+    const res = await fetch(url, config);
+    if (res.status === 401) {
+      localStorage.removeItem('access_token');
+      if (_store) {
+        _store.currentUserId = null;
+        saveStore();
+      }
+      if (typeof window !== 'undefined') {
+        window.location.hash = '#/login';
+      }
+      return { error: 'Session expired. Please sign in again.' };
+    }
+    
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data.message || 'An error occurred.' };
+    }
+    return data;
+  } catch (err) {
+    console.error(`API Fetch Error [${path}]:`, err);
+    return { error: 'Network error. Please check if the server is running.' };
+  }
+}
+
+export async function syncWithBackend() {
+  const token = localStorage.getItem('access_token');
+  if (!token) return;
+  
+  try {
+    // Helper to normalize _id to id recursively / mapped
+    const normalize = (items) => {
+      if (!Array.isArray(items)) return [];
+      return items.map(item => {
+        if (item && item._id && !item.id) {
+          item.id = item._id;
+        }
+        return item;
+      });
+    };
+
+    // 1. Fetch Warehouses
+    const whRes = await apiFetch('/warehouses/');
+    if (whRes && whRes.success && Array.isArray(whRes.data)) {
+      _store.warehouses = normalize(whRes.data);
+    } else {
+      _store.warehouses = [];
+    }
+
+    // 2. Fetch Workforce (Users)
+    const wfRes = await apiFetch('/workforce/');
+    if (wfRes && wfRes.success && Array.isArray(wfRes.data)) {
+      const normalizedWf = normalize(wfRes.data);
+      const currentUser = getCurrentUser();
+      const otherUsers = normalizedWf.filter(u => u.id !== _store.currentUserId);
+      _store.users = currentUser ? [currentUser, ...otherUsers] : normalizedWf;
+    } else {
+      const currentUser = getCurrentUser();
+      _store.users = currentUser ? [currentUser] : [];
+    }
+
+    // 3. Fetch Items (Inventory)
+    const itemsRes = await apiFetch('/items/');
+    if (itemsRes && itemsRes.success && Array.isArray(itemsRes.data)) {
+      _store.items = normalize(itemsRes.data);
+    } else {
+      _store.items = [];
+    }
+
+    // 4. Fetch Bills (Billing)
+    const billsRes = await apiFetch('/billing/');
+    if (billsRes && billsRes.success && Array.isArray(billsRes.data)) {
+      _store.bills = normalize(billsRes.data);
+    } else {
+      _store.bills = [];
+    }
+
+    // 5. Fetch Audit Logs
+    const auditRes = await apiFetch('/audit-logs/');
+    if (auditRes && auditRes.success && Array.isArray(auditRes.data)) {
+      _store.auditLogs = normalize(auditRes.data);
+    } else {
+      _store.auditLogs = [];
+    }
+
+    // 6. Fetch Notifications
+    const notifRes = await apiFetch('/realtime/notifications');
+    if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
+      _store.notifications = normalize(notifRes.data);
+    } else {
+      _store.notifications = [];
+    }
+
+    saveStore();
+    
+    // Automatically trigger/maintain WebSocket connection broker
+    if (typeof window !== 'undefined') {
+      setTimeout(connectWebSocket, 0);
+    }
+    
+    // Dispatch synchronization event to trigger SPA UI re-renders
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('wareops_storage_sync'));
+    }
+  } catch (err) {
+    console.error('Error synchronizing with backend:', err);
+  }
+}
+
 // ---- AUTH ----
 export function getCurrentUser() {
   const s = getStore();
   return s.users.find(u => u.id === s.currentUserId) || null;
 }
 
-export function login(email, password) {
+export async function login(email, password) {
+  const res = await apiFetch('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password })
+  });
+  
+  if (res.error) {
+    return { error: res.error };
+  }
+  
+  const { access_token, user } = res.data;
+  localStorage.setItem('access_token', access_token);
+  
   const s = getStore();
-  const user = s.users.find(u => u.email === email && u.password === password);
-  if (!user) return null;
   s.currentUserId = user.id;
+  
+  // Cache user document locally
+  const idx = s.users.findIndex(u => u.id === user.id);
+  if (idx === -1) {
+    s.users.push(user);
+  } else {
+    s.users[idx] = user;
+  }
+  
   saveStore();
-  addAuditLog('login', `User logged in`, user.id);
+  
+  // Synchronize dynamic tenant database state
+  await syncWithBackend();
+  
   return user;
 }
 
-export function logout() {
+export async function logout() {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    await apiFetch('/auth/logout', { method: 'POST' });
+  }
+  localStorage.removeItem('access_token');
   const s = getStore();
-  addAuditLog('logout', `User logged out`, s.currentUserId);
   s.currentUserId = null;
   saveStore();
 }
 
-export function signup(name, email, password) {
-  const s = getStore();
-  if (s.users.find(u => u.email === email)) return { error: 'Email already registered' };
-  const id = 'u' + Date.now();
-  const user = {
-    id, name, email, password, role: 'super_admin',
-    warehouseId: null, status: 'active',
-    createdAt: new Date().toISOString(), avatar: name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)
-  };
-  s.users.push(user);
-  s.currentUserId = id;
-  saveStore();
-  addAuditLog('user_create', `New Super Admin registered: ${name}`, id);
-  return { user };
+export async function signup(name, email, password) {
+  const res = await apiFetch('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password })
+  });
+  
+  if (res.error) {
+    return { error: res.error };
+  }
+  
+  const loginRes = await login(email, password);
+  if (loginRes && loginRes.error) {
+    return { error: loginRes.error };
+  }
+  
+  return { user: loginRes };
 }
 
 // ---- WAREHOUSES ----
@@ -205,21 +307,30 @@ export function getWarehouses() {
 export function getStockHealth(warehouseId) {
   const s = getStore();
   const items = warehouseId ? s.items.filter(i => i.warehouseId === warehouseId) : s.items;
-  if (items.length === 0) return 100;
+  if (items.length === 0) return 0;
   const lowStock = items.filter(i => (i.stock || 0) < 20).length;
   return Math.round(((items.length - lowStock) / items.length) * 100);
 }
 
-export function createWarehouse(data) {
+export async function createWarehouse(data) {
+  const res = await apiFetch('/warehouses/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  
+  if (res.error) {
+    return { error: res.error };
+  }
+  
+  const warehouse = res.data;
   const s = getStore();
-  const u = getCurrentUser();
-  if (u.role !== 'super_admin') return null; // Only Super Admin can create
-  const id = 'wh' + Date.now();
-  const wh = { id, ...data, ownerId: u.id, createdAt: new Date().toISOString(), status: 'active' };
-  s.warehouses.push(wh);
+  s.warehouses.push(warehouse);
   saveStore();
-  addAuditLog('warehouse_create', `Warehouse created: ${data.name}`, u.id);
-  return wh;
+  
+  // Re-sync with backend to populate correct lists
+  await syncWithBackend();
+  
+  return warehouse;
 }
 
 export function updateWarehouse(id, data) {
@@ -272,92 +383,77 @@ export function getAllUsers() {
   );
 }
 
-export function createUser(data) {
-  const s = getStore();
+export async function createUser(data) {
   const u = getCurrentUser();
-  
-  if (u.role !== 'super_admin') {
-    const levels = { employee: 1, staff: 2, manager: 3, admin: 4, super_admin: 5 };
-    const myLevel = levels[u.role] || 1;
-    const targetLevel = levels[data.role] || 1;
-    
-    // Cannot create user with higher or equal role
-    if (targetLevel >= myLevel) return { error: 'Unauthorized role assignment' };
-    
-    // Must assign to same warehouse
-    if (data.warehouseId !== u.warehouseId) return { error: 'Unauthorized warehouse assignment' };
+  if (u.role !== 'super_admin' && u.role !== 'admin') {
+    return { error: 'Unauthorized: Only Super Admins and Admins can create workforce members.' };
   }
   
-  if (s.users.find(usr => usr.email === data.email)) return { error: 'Email already exists' };
-  const id = 'u' + Date.now();
-  const user = {
-    id, ...data, status: 'active',
-    createdAt: new Date().toISOString(),
-    avatar: data.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2),
-    assignedBy: s.currentUserId, assignedAt: new Date().toISOString()
-  };
+  const res = await apiFetch('/workforce/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  
+  if (res.error) {
+    return { error: res.error };
+  }
+  
+  const user = res.data;
+  if (user._id && !user.id) {
+    user.id = user._id;
+  }
+  
+  const s = getStore();
   s.users.push(user);
-
   saveStore();
-  addAuditLog('user_create', `User created: ${data.name} (${data.role})`, s.currentUserId);
+  
+  await syncWithBackend();
   return { user };
 }
 
-export function updateUser(id, data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  const idx = s.users.findIndex(usr => usr.id === id);
-  if (idx === -1) return null;
-  const target = s.users[idx];
-
-  if (u.role !== 'super_admin') {
-    const levels = { employee: 1, staff: 2, manager: 3, admin: 4, super_admin: 5 };
-    const myLevel = levels[u.role] || 1;
-    const targetLevel = levels[target.role] || 1;
-    
-    // Can update self, but cannot escalate own privileges
-    if (u.id === target.id) {
-      if (data.role && levels[data.role] > myLevel) return null;
-      if (data.warehouseId && data.warehouseId !== u.warehouseId) return null;
-    } else {
-      // Cannot update superiors or peers
-      if (targetLevel >= myLevel) return null;
-      // Cannot assign a role higher than or equal to their own role
-      if (data.role && levels[data.role] >= myLevel) return null;
-      // Must be in same warehouse
-      if (target.warehouseId !== u.warehouseId) return null;
-      // Cannot move users out of warehouse
-      if (data.warehouseId && data.warehouseId !== u.warehouseId) return null;
-    }
+export async function updateUser(id, data) {
+  const res = await apiFetch(`/workforce/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  
+  if (res.error) {
+    return { error: res.error };
   }
-
-  s.users[idx] = { ...s.users[idx], ...data, updatedAt: new Date().toISOString(), updatedBy: s.currentUserId };
+  
+  const user = res.data;
+  if (user._id && !user.id) {
+    user.id = user._id;
+  }
+  
+  const s = getStore();
+  const idx = s.users.findIndex(usr => usr.id === id);
+  if (idx !== -1) {
+    s.users[idx] = { ...s.users[idx], ...user };
+  } else {
+    s.users.push(user);
+  }
   saveStore();
-  addAuditLog('user_update', `User updated: ${s.users[idx].name}`, s.currentUserId);
-  addNotification('user_update', 'Team Member Updated', `${s.users[idx].name} profiles was updated by ${u.name}`, '/workforce', s.users[idx].warehouseId);
-  return s.users[idx];
+  
+  await syncWithBackend();
+  return user;
 }
 
-export function deleteUser(id) {
-  const s = getStore();
-  const u = getCurrentUser();
-  const target = s.users.find(usr => usr.id === id);
-  if (!target) return;
+export async function deleteUser(id) {
+  const res = await apiFetch(`/workforce/${id}`, {
+    method: 'DELETE'
+  });
   
-  if (u.role !== 'super_admin') {
-    const levels = { employee: 1, staff: 2, manager: 3, admin: 4, super_admin: 5 };
-    const myLevel = levels[u.role] || 1;
-    const targetLevel = levels[target.role] || 1;
-    
-    // Cannot delete superiors or peers
-    if (targetLevel >= myLevel) return;
-    // Cannot delete users outside of own warehouse
-    if (target.warehouseId !== u.warehouseId) return;
+  if (res.error) {
+    return { error: res.error };
   }
-
+  
+  const s = getStore();
   s.users = s.users.filter(usr => usr.id !== id);
   saveStore();
-  addAuditLog('user_delete', `User deleted: ${target.name}`, s.currentUserId);
+  
+  await syncWithBackend();
+  return { success: true };
 }
 
 // ---- ITEMS / INVENTORY ----
@@ -653,9 +749,8 @@ export function getNotifications() {
   return s.notifications.filter(n => n.userId === u.id).sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp));
 }
 
-export function addNotification(type, title, message, link, targetWarehouseId = null) {
+export async function addNotification(type, title, message, link, targetWarehouseId = null) {
   const s = getStore();
-  if (!s.notifications) s.notifications = [];
   const u = getCurrentUser();
   let targets = [];
 
@@ -682,15 +777,15 @@ export function addNotification(type, title, message, link, targetWarehouseId = 
     // Always include the user who triggered it
     targets.push(u.id);
     
-    // Prevent duplicate/conflicting updates
     targets = [...new Set(targets)];
   } else {
-    // System generated (no user context) - notify super admins
+    // System generated - notify super admins
     targets = s.users.filter(usr => usr.role === 'super_admin').map(usr => usr.id);
   }
 
+  const notificationsToCreate = [];
   targets.forEach(uid => {
-    const usr = s.users.find(u => u.id === uid);
+    const usr = s.users.find(usr => usr.id === uid);
     
     // Respect granular user notification settings
     const prefs = usr?.settings?.notifications;
@@ -701,38 +796,37 @@ export function addNotification(type, title, message, link, targetWarehouseId = 
       if ((type === 'system') && prefs.system === false) return;
     }
     
-    s.notifications.unshift({
-      id: 'n'+Date.now()+Math.random().toString(36).slice(2),
+    notificationsToCreate.push({
       type, title, message, userId: uid,
-      read: false, timestamp: new Date().toISOString(), link: link||'/dashboard'
+      targetWarehouseId: targetWarehouseId || (usr ? usr.warehouseId : null),
+      link: link || '/dashboard',
+      timestamp: new Date().toISOString()
     });
   });
-  if (s.notifications.length > 500) s.notifications = s.notifications.slice(0, 500);
-  saveStore();
+
+  if (notificationsToCreate.length > 0) {
+    await apiFetch('/realtime/notifications', {
+      method: 'POST',
+      body: JSON.stringify(notificationsToCreate)
+    });
+  }
+
+  await syncWithBackend();
 }
 
-export function clearNotifications() {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || !s.notifications) return;
-  s.notifications = s.notifications.filter(n => n.userId !== u.id);
-  saveStore();
+export async function clearNotifications() {
+  await apiFetch('/realtime/notifications/clear', { method: 'DELETE' });
+  await syncWithBackend();
 }
 
-
-export function markNotificationRead(id) {
-  const s = getStore();
-  if (!s.notifications) return;
-  const n = s.notifications.find(n=>n.id===id);
-  if (n) { n.read = true; saveStore(); }
+export async function markNotificationRead(id) {
+  await apiFetch(`/realtime/notifications/${id}/read`, { method: 'PUT' });
+  await syncWithBackend();
 }
 
-export function markAllNotificationsRead() {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!s.notifications || !u) return;
-  s.notifications.filter(n=>n.userId===u.id).forEach(n=>n.read=true);
-  saveStore();
+export async function markAllNotificationsRead() {
+  await apiFetch('/realtime/notifications/read-all', { method: 'PUT' });
+  await syncWithBackend();
 }
 
 // ---- TAX CONFIG ----
@@ -747,6 +841,11 @@ export function getTaxConfig(warehouseId) {
   }
   
   return s.taxConfig;
+}
+
+export function getTaxRates(warehouseId) {
+  const cfg = getTaxConfig(warehouseId);
+  return { luxury: (cfg.luxury || 0) / 100, normal: (cfg.normal || 0) / 100 };
 }
 
 export function saveTaxConfig(config) {
@@ -771,17 +870,48 @@ export function getPlanWarehouseLimit() {
 
 // ---- SEED DATA ----
 export function seedDemoData() {
-  const s = getStore();
-  const d = getDefaultData();
-  
-  if (s.users.length === 0) s.users = d.users;
-  if (s.warehouses.length === 0) s.warehouses = d.warehouses;
-  if (s.items.length === 0) s.items = d.items;
-  if (s.bills.length === 0) s.bills = d.bills;
-  if (s.tables.length === 0) s.tables = d.tables;
-  if (Object.keys(s.tableData).length === 0) s.tableData = d.tableData;
-  if (s.auditLogs.length === 0) s.auditLogs = d.auditLogs;
-  if (s.notifications.length === 0) s.notifications = d.notifications;
-  
-  saveStore();
+  // Safe zero-data startup starter: No demo seeding
+}
+
+// ---- WEB-SOCKET CONNECTION CLIENT ----
+let ws = null;
+export function connectWebSocket() {
+  if (typeof window === 'undefined') return;
+  const token = localStorage.getItem('access_token');
+  if (!token) return;
+
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws?token=${token}`;
+  console.log('[WebSocket] Connecting to:', wsUrl);
+  ws = new WebSocket(wsUrl);
+
+  ws.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      console.log('[WebSocket] Event received:', payload);
+      
+      // Auto-synchronize the client dataset when real-time updates are received
+      if (payload.event_type) {
+        syncWithBackend();
+      }
+    } catch (err) {
+      console.error('[WebSocket] Failed parsing message:', err);
+    }
+  };
+
+  ws.onclose = (event) => {
+    console.log('[WebSocket] Connection closed. Reason:', event.reason);
+    // Exponential backoff / auto reconnect in 5 seconds
+    if (localStorage.getItem('access_token')) {
+      setTimeout(connectWebSocket, 5000);
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error('[WebSocket] Error:', err);
+    ws.close();
+  };
 }

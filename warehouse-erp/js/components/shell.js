@@ -88,9 +88,11 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   if (!user) { navigate('/login'); return; }
 
   const whs = getWarehouses();
+  const whCount = user.role === 'super_admin' ? whs.length : (user.warehouseId ? 1 : 0);
   const whName = user.role === 'super_admin'
-    ? `${whs.length} Warehouse${whs.length !== 1 ? 's' : ''}`
+    ? `${whCount} Warehouse${whCount !== 1 ? 's' : ''}`
     : (whs.find(w => w.id === user.warehouseId)?.name || 'No Warehouse');
+  const whAccessText = `${whCount} Warehouse${whCount !== 1 ? 's' : ''}`;
 
   const nav = getNav(user.role);
   const currentPath = getCurrentPath();
@@ -146,7 +148,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
             <div class="sidebar-user-avatar">${user.avatar}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
-              <div class="sidebar-user-role">${capitalize(user.role)} · ${whName}</div>
+              <div class="sidebar-user-role" style="font-size:11px;color:var(--text-muted);font-weight:500;">${capitalize(user.role.replace('_', ' '))} · ${whAccessText}</div>
             </div>
           </div>
         </div>
@@ -312,10 +314,16 @@ function showProfileDropdown(anchor) {
   const dropdown = document.createElement('div');
   dropdown.id = 'profile-dropdown';
   dropdown.className = 'dropdown-menu animate-scaleUp';
-  dropdown.style.cssText = 'position:absolute;top:calc(100% + 8px);right:0;min-width:220px;z-index:var(--z-dropdown);';
+  dropdown.style.cssText = 'min-width:220px;';
   
-  anchor.style.position = 'relative';
-  anchor.appendChild(dropdown);
+  const isSidebar = anchor.id === 'user-menu-btn';
+  
+  // Use positionFixedElement to position the profile dropdown perfectly relative to anchor
+  positionFixedElement(anchor, dropdown, {
+    offset: 8,
+    preferredAlign: isSidebar ? 'left' : 'right',
+    preferredVertical: isSidebar ? 'top' : 'bottom'
+  });
 
   dropdown.innerHTML = `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
@@ -335,7 +343,7 @@ function showProfileDropdown(anchor) {
   });
 
   setTimeout(() => document.addEventListener('click', (e) => {
-    if (!dropdown.contains(e.target)) dropdown.remove();
+    if (!dropdown.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) dropdown.remove();
   }, { once: true }), 50);
   
   dropdown.querySelector('#dd-logout')?.addEventListener('click', () => { logout(); navigate('/login'); });
