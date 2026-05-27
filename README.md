@@ -394,7 +394,7 @@ Every module is built to extend operational visibility while reducing workflow f
 
 The goal is not simply to manage inventory or warehouses.
 
-The goal is to provide businesses with a scalable operational infrastructure that helps teams manage workflows, workforce coordination, business operations, reporting, and growth from one connected ecosystem.
+The goal is to provide businesses with a scalable operational infrastructure that helps teams manage workflows, workforce coordination, business operations, reporting, and growth from one connected  ecosystem.
 
 ---
 
