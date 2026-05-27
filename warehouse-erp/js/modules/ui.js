@@ -187,19 +187,23 @@ export function paginate(data, page, perPage = 10) {
  * Auto-positions a fixed element relative to an anchor, ensuring it stays within the viewport.
  */
 export function positionFixedElement(anchor, element, options = {}) {
-  const { offset = 8, preferredAlign = 'right' } = options;
+  const { offset = 8, preferredAlign = 'right', preferredVertical = 'bottom' } = options;
   const rect = anchor.getBoundingClientRect();
   const winW = window.innerWidth;
   const winH = window.innerHeight;
 
   // Append to body if not already there to measure
   if (!element.parentElement) document.body.appendChild(element);
+
+  // Set max width to fit viewport dynamically and prevent horizontal clipping
+  element.style.maxWidth = (winW - 20) + 'px';
+  element.style.boxSizing = 'border-box';
   
   const elRect = element.getBoundingClientRect();
   const elW = elRect.width;
   const elH = elRect.height;
 
-  let top = rect.bottom + offset;
+  let top = preferredVertical === 'top' ? rect.top - elH - offset : rect.bottom + offset;
   let left = preferredAlign === 'left' ? rect.left : rect.right - elW;
 
   // Horizontal edge detection
@@ -209,9 +213,15 @@ export function positionFixedElement(anchor, element, options = {}) {
     left = winW - elW - 10;
   }
 
-  // Vertical edge detection (flip to top if no space below)
-  if (top + elH > winH - 10 && rect.top > elH + offset) {
-    top = rect.top - elH - offset;
+  // Vertical edge detection
+  if (preferredVertical === 'top') {
+    if (top < 10 && rect.bottom + elH + offset < winH - 10) {
+      top = rect.bottom + offset; // Flip to bottom
+    }
+  } else {
+    if (top + elH > winH - 10 && rect.top > elH + offset) {
+      top = rect.top - elH - offset; // Flip to top
+    }
   }
 
   element.style.position = 'fixed';
@@ -243,4 +253,12 @@ export function formatNumber(num) {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
   return num.toString();
+}
+
+export function debounce(func, delay = 300) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => func.apply(this, args), delay);
+  };
 }

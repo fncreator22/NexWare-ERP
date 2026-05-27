@@ -49,16 +49,16 @@ export function renderLogin() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Signing in...';
     await new Promise(r => setTimeout(r, 600));
-    const user = login(email, password);
-    if (!user) {
-      showToast('Login failed', 'Invalid credentials', 'error');
+    const result = await login(email, password);
+    if (result.error) {
+      showToast('Login failed', result.error, 'error');
       btn.disabled = false;
       btn.innerHTML = 'Sign In';
       return;
     }
-    showToast('Welcome back!', `Signed in as ${user.name}`, 'success');
-    const whs = getStore().warehouses.filter(w => w.ownerId === user.id || w.id === user.warehouseId);
-    if (user.role === 'super_admin' && whs.length === 0) navigate('/register-warehouse');
+    showToast('Welcome back!', `Signed in as ${result.name}`, 'success');
+    const whs = getStore().warehouses.filter(w => w.ownerId === result.id || w.id === result.warehouseId);
+    if (result.role === 'super_admin' && whs.length === 0) navigate('/register-warehouse');
     else navigate('/dashboard');
   });
 
@@ -119,7 +119,7 @@ export function renderSignup() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Creating account...';
     await new Promise(r => setTimeout(r, 700));
-    const result = signup(name, email, password);
+    const result = await signup(name, email, password);
     if (result.error) {
       showToast('Signup failed', result.error, 'error');
       btn.disabled = false;
@@ -243,7 +243,13 @@ export function renderWarehouseRegistration() {
       btn.innerHTML = '🚀 Create Warehouse & Enter Dashboard';
       return;
     }
-    const wh = createWarehouse({ name, businessName, address, contact, email, taxPreference: document.getElementById('wh-tax').value, logo: document.getElementById('wh-logo').value });
+    const wh = await createWarehouse({ name, businessName, address, contact, email, taxPreference: document.getElementById('wh-tax').value, logo: document.getElementById('wh-logo').value });
+    if (wh.error) {
+      showToast('Error', wh.error, 'error');
+      btn.disabled = false;
+      btn.innerHTML = '🚀 Create Warehouse & Enter Dashboard';
+      return;
+    }
     showToast('Warehouse created!', `${wh.name} is ready`, 'success');
     navigate('/dashboard');
   });

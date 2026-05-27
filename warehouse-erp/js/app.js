@@ -75,7 +75,7 @@ function resolveRoute() {
   try {
     const path = getActivePath();
     const user = getCurrentUser();
-    const publicRoutes = ['/login', '/signup', '/register-warehouse'];
+    const publicRoutes = ['/login', '/signup'];
 
     // Not logged in
     if (!user) {
