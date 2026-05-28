@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getItems, createBill, getBills, getWarehouses, getTaxConfig, getTaxRates } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, createModal, formatDate, formatDateTime, formatCurrency, filterData, debounce } from '../modules/ui.js';
+import { showToast, createModal, formatDate, formatDateTime, formatCurrency, filterData, debounce, getSvgIcon } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 let billItems = [];
 let bl_searchQ = '';
@@ -24,17 +24,17 @@ export function renderBilling() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">💰 Billing & Taxation</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 24)} Billing & Taxation</h1>
           <p class="page-subtitle">Automated bill generation with tax computation</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          <button class="btn btn-primary" id="new-bill-btn">+ New Bill</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-primary" id="new-bill-btn">${getSvgIcon('plus', 14)} New Bill</button>
         </div>
       </div>
 
       <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <span style="font-size:20px">⚙️</span>
+        <span style="display:flex;align-items:center;color:var(--accent-amber)">${getSvgIcon('settings', 20)}</span>
         <div>
           <div style="font-size:13px;font-weight:700;color:var(--text-primary)">Active Tax Rules</div>
           <div style="font-size:12px;color:var(--text-muted)">Normal items: ${getTaxConfig().normal}% GST &nbsp;|&nbsp; Luxury items: ${getTaxConfig().luxury}% GST</div>
@@ -47,7 +47,7 @@ export function renderBilling() {
       </div>
 
       <div class="table-toolbar">
-        <div class="table-search"><span>🔍</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
+        <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
         <div class="table-filter">
           ${user.role === 'super_admin' ? `
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="bill-wh-filter">
@@ -269,10 +269,10 @@ function showBillModal() {
 
   const footer = `
     <button class="btn btn-secondary" id="bill-cancel">Cancel</button>
-    <button class="btn btn-primary" id="bill-save">🧾 Generate Bill</button>
+    <button class="btn btn-primary" id="bill-save" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('check', 14)} Generate Bill</button>
   `;
 
-  const modal = createModal({ title: '🧾 New Invoice', body, footer, size: 'lg' });
+  const modal = createModal({ title: 'New Invoice', body, footer, size: 'lg' });
   modal.el.querySelector('#bill-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#bill-save')?.addEventListener('click', async () => {
     const customer = document.getElementById('bill-customer')?.value.trim();

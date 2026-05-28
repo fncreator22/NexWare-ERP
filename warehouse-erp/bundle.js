@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-28T19:20:58.179Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-28T20:22:04.864Z
 
 
 // ===== modules/store.js =====
@@ -394,37 +394,65 @@ async function createWarehouse(data) {
   return warehouse;
 }
 
-function updateWarehouse(id, data) {
+async function updateWarehouse(id, data) {
   const s = getStore();
   const u = getCurrentUser();
   if (u.role !== 'super_admin' && (u.role !== 'admin' || u.warehouseId !== id)) return null;
 
+  const res = await apiFetch(`/warehouses/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  const warehouse = res.data;
   const idx = s.warehouses.findIndex(w => w.id === id);
-  if (idx === -1) return null;
-  s.warehouses[idx] = { ...s.warehouses[idx], ...data, updatedAt: new Date().toISOString() };
+  if (idx !== -1) {
+    s.warehouses[idx] = { ...s.warehouses[idx], ...warehouse };
+  }
   saveStore();
-  addAuditLog('warehouse_update', `Warehouse updated: ${s.warehouses[idx].name}`, s.currentUserId);
-  return s.warehouses[idx];
+  
+  await apiFetch('/audit-logs/', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'warehouse_update',
+      description: `Warehouse updated: ${warehouse.name}`,
+      warehouseId: id
+    })
+  });
+
+  await syncWithBackend();
+  return warehouse;
 }
 
-function deleteWarehouse(id) {
+async function deleteWarehouse(id) {
   const s = getStore();
   const u = getCurrentUser();
-  if (u.role !== 'super_admin') return;
+  if (u.role !== 'super_admin') return { error: 'Unauthorized' };
 
-  // Cascade Deletion to associated records to maintain data integrity
+  const res = await apiFetch(`/warehouses/${id}`, {
+    method: 'DELETE'
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  s.warehouses = s.warehouses.filter(w => w.id !== id);
   s.users = s.users.filter(usr => usr.warehouseId !== id);
   s.items = s.items.filter(item => item.warehouseId !== id);
   s.bills = s.bills.filter(bill => bill.warehouseId !== id);
   
-  // Also cascade to operational tables and their rows
   const affectedTables = s.tables.filter(t => t.warehouseId === id).map(t => t.id);
   affectedTables.forEach(tId => { delete s.tableData[tId]; });
   s.tables = s.tables.filter(t => t.warehouseId !== id);
 
-  s.warehouses = s.warehouses.filter(w => w.id !== id);
   saveStore();
-  addAuditLog('warehouse_delete', `Warehouse deleted (cascade)`, s.currentUserId);
+  await syncWithBackend();
+  return { success: true };
 }
 
 // ---- USERS / WORKFORCE ----
@@ -814,7 +842,7 @@ function getTaxConfig(warehouseId) {
   // Support for regional compliance: Check for warehouse-specific overrides
   if (warehouseId) {
     const wh = s.warehouses.find(w => w.id === warehouseId);
-    if (wh && wh.taxConfig) return wh.taxConfig;
+    if (wh && wh.taxConfig && Object.keys(wh.taxConfig).length > 0) return wh.taxConfig;
   }
   
   return s.taxConfig;
@@ -829,6 +857,16 @@ async function saveTaxConfig(config) {
   const s = getStore();
   s.taxConfig = { ...s.taxConfig, ...config };
   saveStore();
+  
+  // Persist updated rules to all warehouses with custom tax preferences
+  const customWhs = s.warehouses.filter(w => w.taxPreference === 'custom');
+  for (const wh of customWhs) {
+    wh.taxConfig = { ...config };
+    await apiFetch(`/warehouses/${wh.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ taxConfig: config })
+    });
+  }
   
   await apiFetch('/audit-logs/', {
     method: 'POST',
@@ -1197,6 +1235,39 @@ function debounce(func, delay = 300) {
     clearTimeout(timer);
     timer = setTimeout(() => func.apply(this, args), delay);
   };
+}
+
+// ---- SVG ICONS ----
+function getSvgIcon(name, size = 18) {
+  const icons = {
+    dashboard: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
+    warehouses: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M3 7v14M21 7v14M10 21V13h4v8M3 7l9-4 9 4M7 21h2v-3h-2v3zM15 21h2v-3h-2v3z"/></svg>`,
+    workforce: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    items: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
+    tables: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>`,
+    billing: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><line x1="7" y1="15" x2="7.01" y2="15"/><line x1="11" y1="15" x2="13" y2="15"/></svg>`,
+    analytics: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><polyline points="18.7 8 13 14 9 10 4.7 14.3"/></svg>`,
+    settings: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+    audit: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>`,
+    subscription: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+    collapse: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
+    search: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+    bell: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`,
+    dollar: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+    revenue: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+    warning: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+    bulb: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2v1M5.22 5.22l.71.71M2 12h1M22 12h-1M18.78 5.22l-.71.71M15 11.5A3.5 3.5 0 1 1 12.5 8M12 18V11.5"/></svg>`,
+    plus: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+    edit: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+    trash: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`,
+    check: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+    back: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`,
+    info: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
+    clock: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    user: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+    upload: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`
+  };
+  return icons[name] || '';
 }
 
 // ===== modules/exporter.js =====
@@ -1579,24 +1650,6 @@ function exportPDF(entity) {
 
 
 
-function getSvgIcon(name, size = 18) {
-  const icons = {
-    dashboard: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
-    warehouses: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M3 7v14M21 7v14M10 21V13h4v8M3 7l9-4 9 4M7 21h2v-3h-2v3zM15 21h2v-3h-2v3z"/></svg>`,
-    workforce: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
-    items: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
-    tables: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>`,
-    billing: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><line x1="7" y1="15" x2="7.01" y2="15"/><line x1="11" y1="15" x2="13" y2="15"/></svg>`,
-    analytics: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><polyline points="18.7 8 13 14 9 10 4.7 14.3"/></svg>`,
-    settings: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
-    audit: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>`,
-    subscription: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
-    collapse: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
-    search: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
-    bell: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`
-  };
-  return icons[name] || '';
-}
 
 const SUPER_ADMIN_NAV = [
   { section: 'Overview', items: [
@@ -2652,42 +2705,42 @@ function renderDashboard() {
       <div class="stat-grid" style="margin-bottom:20px">
         ${isSA ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#6366f1"></div>
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
+          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value">${whs.length}</div>
           <div class="stat-card-label">Warehouses</div>
           <div class="stat-card-trend trend-up">${sub.plan} plan</div>
         </div>` : ''}
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#10b981"></div>
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">💰</div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">${getSvgIcon('revenue', 20)}</div>
           <div class="stat-card-value">${formatCurrency(totalRevenue)}</div>
           <div class="stat-card-label">Revenue</div>
           <div class="stat-card-trend trend-up">Tax: ${formatCurrency(totalTax)}</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#8b5cf6"></div>
-          <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">🧾</div>
+          <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">${getSvgIcon('billing', 20)}</div>
           <div class="stat-card-value">${bills.length}</div>
           <div class="stat-card-label">Invoices</div>
           <div class="stat-card-trend trend-up">↑ This period</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#06b6d4"></div>
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">👥</div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${activeUsers}</div>
           <div class="stat-card-label">Active Users</div>
           <div class="stat-card-trend">${users.length} total</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#f59e0b"></div>
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">📦</div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
           <div class="stat-card-label">Stock Units</div>
           <div class="stat-card-trend ${lowStock.length>0?'trend-down':'trend-up'}">${lowStock.length} low stock</div>
         </div>
         ${isSA ? `<div class="stat-card" style="cursor:pointer" onclick="location.hash='#/subscription'">
           <div class="stat-card-glow" style="background:#f43f5e"></div>
-          <div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">💳</div>
+          <div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">${getSvgIcon('subscription', 20)}</div>
           <div class="stat-card-value" style="font-size:16px;text-transform:capitalize">${sub.plan}</div>
           <div class="stat-card-label">Plan</div>
           <div class="stat-card-trend trend-up">● Active</div>
@@ -2701,7 +2754,7 @@ function renderDashboard() {
         <div class="chart-card col-8">
           <div class="chart-card-header">
             <div>
-              <div class="chart-card-title">📈 Revenue Trend</div>
+              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Trend</div>
               <div class="chart-card-subtitle">Last 6 months across all warehouses</div>
             </div>
             <div style="display:flex;gap:6px">
@@ -2715,7 +2768,7 @@ function renderDashboard() {
         <!-- Activity Feed -->
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">⚡ Activity</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('clock', 18)} Activity</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/audit'" style="font-size:11px">All →</button>
           </div>
           <div style="display:flex;flex-direction:column;gap:0">
@@ -2740,7 +2793,7 @@ function renderDashboard() {
         ${isSA ? `
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">🏭 Warehouses</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} Warehouses</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'" style="font-size:11px;padding:4px 10px">Manage</button>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px">
@@ -2758,7 +2811,7 @@ function renderDashboard() {
           </div>
         </div>` : `<div class="chart-card">
           <div class="chart-card-header">
-            <div class="chart-card-title">🏭 My Warehouse</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} My Warehouse</div>
           </div>
           ${myWh ? `
           <div style="text-align:center;padding:8px 0">
@@ -2775,7 +2828,7 @@ function renderDashboard() {
         <!-- Billing Quick Stats -->
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">💰 Billing Stats</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Billing Stats</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">View →</button>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
@@ -2803,7 +2856,7 @@ function renderDashboard() {
         <!-- Low Stock Alerts -->
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">⚠️ Low Stock</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px;color:var(--accent-rose)">${getSvgIcon('warning', 18)} Low Stock</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
           </div>
           ${lowStock.length === 0
@@ -2818,12 +2871,12 @@ function renderDashboard() {
             <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">Quick Actions</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               ${[
-                { icon:'📦', label:'Add Item',   href:'/items'     },
-                { icon:'🧾', label:'New Bill',   href:'/billing'   },
-                { icon:'👥', label:'Workforce',  href:'/workforce' },
-                { icon:'📈', label:'Reports',    href:'/analytics' },
+                { icon:'items', label:'Add Item',   href:'/items'     },
+                { icon:'billing', label:'New Bill',   href:'/billing'   },
+                { icon:'workforce', label:'Workforce',  href:'/workforce' },
+                { icon:'analytics', label:'Reports',    href:'/analytics' },
               ].filter(a=>isAdmin || (a.href!=='/workforce')).map(a=>`
-                <button class="btn btn-secondary btn-sm" onclick="location.hash='#${a.href}'" style="font-size:11px;padding:6px 8px;justify-content:flex-start;gap:5px">${a.icon} ${a.label}</button>
+                <button class="btn btn-secondary btn-sm" onclick="location.hash='#${a.href}'" style="font-size:11px;padding:6px 8px;justify-content:flex-start;gap:6px">${getSvgIcon(a.icon, 14)} ${a.label}</button>
               `).join('')}
             </div>
           </div>
@@ -2837,7 +2890,7 @@ function renderDashboard() {
         <div class="chart-card col-5">
           <div class="chart-card-header">
             <div>
-              <div class="chart-card-title">💡 Smart Restock</div>
+              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Smart Restock</div>
               <div class="chart-card-subtitle">AI-prioritized inventory needs</div>
             </div>
           </div>
@@ -2845,7 +2898,7 @@ function renderDashboard() {
             ${restockSuggestions.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text-muted)">Stock levels optimal</div>' :
               restockSuggestions.map(s => `
                 <div style="background:rgba(99,102,241,0.05);padding:12px;border-radius:10px;border:1px solid rgba(99,102,241,0.1);display:flex;align-items:center;gap:12px">
-                  <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>
+                  <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0">${getSvgIcon('items', 18)}</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:700;color:var(--text-primary)">${s.name}</div>
                     <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} sold recently · Priority: ${s.priority > 30 ? 'High 🔥' : 'Medium'}</div>
@@ -2862,7 +2915,7 @@ function renderDashboard() {
         <!-- Revenue Summary -->
         <div class="chart-card col-7">
           <div class="chart-card-header">
-            <div class="chart-card-title">📊 Revenue Summary</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Summary</div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
             <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
@@ -2879,7 +2932,7 @@ function renderDashboard() {
             </div>
           </div>
           <div style="margin-top:15px;padding:15px;background:linear-gradient(90deg, rgba(99,102,241,0.1), transparent);border-radius:12px;display:flex;align-items:center;gap:12px">
-            <div style="font-size:24px">📈</div>
+            <div style="display:flex;align-items:center;color:var(--accent-emerald)">${getSvgIcon('analytics', 24)}</div>
             <div>
               <div style="font-size:13px;font-weight:700">Projected Growth</div>
               <div style="font-size:11px;color:var(--text-muted)">Expected +12% increase based on current month volume</div>
@@ -2893,7 +2946,7 @@ function renderDashboard() {
       <div class="dashboard-grid">
         <div class="chart-card col-6">
           <div class="chart-card-header">
-            <div class="chart-card-title">👥 Workforce Summary</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 18)} Workforce Summary</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px;padding:4px 10px">Manage</button>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
@@ -2923,7 +2976,7 @@ function renderDashboard() {
         <!-- Warehouse Distribution -->
         <div class="chart-card col-6">
           <div class="chart-card-header">
-            <div class="chart-card-title">📊 Revenue by Warehouse</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue by Warehouse</div>
           </div>
           <div class="chart-container" style="height:160px"><canvas id="wh-chart"></canvas></div>
           <div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">
@@ -2939,7 +2992,7 @@ function renderDashboard() {
           </div>
         </div>` : `
         <div class="chart-card col-6">
-          <div class="chart-card-header"><div class="chart-card-title">📋 My Tables</div></div>
+          <div class="chart-card-header"><div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('tables', 18)} My Tables</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn btn-secondary btn-sm" onclick="location.hash='#/tables'" style="width:100%">📋 View My Tables</button>
             <button class="btn btn-secondary btn-sm" onclick="location.hash='#/analytics'" style="width:100%">📈 View Reports</button>
@@ -2952,7 +3005,7 @@ function renderDashboard() {
 
     <!-- Floating Action Button for Quick Invoicing -->
     <button class="fab" onclick="location.hash='#/billing'" title="Quick Invoice">
-      <span style="font-size:24px">🧾</span>
+      <span style="display:flex;align-items:center;justify-content:center;color:white">${getSvgIcon('billing', 24)}</span>
     </button>
   `);
 
@@ -3079,59 +3132,57 @@ function refreshShell() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">🏭 Warehouse Management</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 24)} Warehouse Management</h1>
           <p class="page-subtitle">Centralized control for all warehouse locations · <span style="color:var(--text-brand);font-weight:600">${planLabel}</span></p>
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" id="view-toggle">☰ Table</button>
           <button class="btn btn-primary" id="create-wh-btn" ${atLimit ? 'disabled title="Warehouse limit reached for your plan"' : ''}>
-            + New Warehouse ${atLimit ? '🔒' : ''}
+            ${getSvgIcon('plus', 14)} New Warehouse
           </button>
         </div>
       </div>
 
       ${atLimit ? `
       <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
-        <span style="font-size:20px">⚠️</span>
+        <span style="display:flex;align-items:center;color:var(--accent-amber)">${getSvgIcon('warning', 20)}</span>
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--text-primary)">Warehouse Limit Reached</div>
           <div style="font-size:12px;color:var(--text-muted)">Your <strong>Starter plan</strong> allows only 1 warehouse. <a href="#/subscription" style="color:var(--text-brand)">Upgrade to Enterprise</a> for unlimited warehouses.</div>
         </div>
       </div>` : ''}
 
-      <!-- Summary Stat Cards -->
-      <div class="stat-grid">
+      <div class="summary-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px">
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
+          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value" id="wh-count">${whs.length}</div>
           <div class="stat-card-label">Total Warehouses</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">✅</div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('check', 20)}</div>
           <div class="stat-card-value">${whs.filter(w=>w.status==='active').length}</div>
           <div class="stat-card-label">Active</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">👥</div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${allUsers.length}</div>
           <div class="stat-card-label">Total Staff</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">💰</div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
           <div class="stat-card-value">${formatCurrency(whs.reduce((s,w)=>s+(w.revenue||0),0))}</div>
           <div class="stat-card-label">Combined Revenue</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15)">📊</div>
+          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('subscription', 20)}</div>
           <div class="stat-card-value">${limit < 0 ? '∞' : limit}</div>
           <div class="stat-card-label">Plan Limit</div>
         </div>
       </div>
 
-      <!-- Search + Filter -->
       <div class="table-toolbar" style="margin-bottom:20px">
         <div class="table-search" style="max-width:400px;flex:none">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
           <input type="text" id="wh-search" placeholder="Search warehouses..." />
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
@@ -3313,7 +3364,7 @@ function attachWarehouseEvents() {
       const wh = getWarehouses().find(w => w.id === btn.dataset.id);
       const ok = await confirm(`Delete "${wh?.name || 'this warehouse'}"? All associated data will be removed.`, 'Delete Warehouse');
       if (ok) {
-        deleteWarehouse(btn.dataset.id);
+        await deleteWarehouse(btn.dataset.id);
         showToast('Warehouse deleted', `${wh?.name} has been removed`, 'success');
         refreshList();
       }
@@ -3373,6 +3424,7 @@ function showWarehouseModal(wh) {
           <label class="form-label">Tax Preference</label>
           <select id="m-wh-tax" class="form-control">
             <option value="standard" ${wh?.taxPreference==='standard'||!wh?'selected':''}>Standard</option>
+            <option value="custom" ${wh?.taxPreference==='custom'?'selected':''}>Custom Setup</option>
             <option value="luxury" ${wh?.taxPreference==='luxury'?'selected':''}>Luxury</option>
             <option value="none" ${wh?.taxPreference==='none'?'selected':''}>No Tax</option>
           </select>
@@ -3403,7 +3455,7 @@ function showWarehouseModal(wh) {
   const modal = createModal({ title: isEdit ? '✏️ Edit Warehouse' : '🏭 New Warehouse', body, footer });
 
   modal.el.querySelector('#m-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#m-save')?.addEventListener('click', async () => {
     const name         = document.getElementById('m-wh-name')?.value.trim();
     const businessName = document.getElementById('m-wh-biz')?.value.trim();
     const address      = document.getElementById('m-wh-address')?.value.trim();
@@ -3432,10 +3484,10 @@ function showWarehouseModal(wh) {
     };
 
     if (isEdit) {
-      updateWarehouse(wh.id, data);
+      await updateWarehouse(wh.id, data);
       showToast('Warehouse updated', `${name} has been updated`, 'success');
     } else {
-      createWarehouse(data);
+      await createWarehouse(data);
       addNotification('warehouse_create', 'Warehouse Created', `${name} is now active and ready`, '/warehouses');
       showToast('Warehouse created', `${name} is ready`, 'success');
     }
@@ -3720,12 +3772,12 @@ function renderWorkforce() {
     <div class="animate-slideUp">
       <div class="wf_page-header">
         <div class="wf_page-header-left">
-          <h1 class="wf_page-title">👥 Workforce Management</h1>
+          <h1 class="wf_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 24)} Workforce Management</h1>
           <p class="wf_page-subtitle">Centralized user and role management across all warehouses</p>
         </div>
         <div class="wf_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">${getSvgIcon('plus', 14)} Add User</button>` : ''}
         </div>
       </div>
 
@@ -3735,7 +3787,7 @@ function renderWorkforce() {
       <!-- Table Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
           <input type="text" id="wf-search" placeholder="Search by name, email..." />
         </div>
         <div class="table-filter">
@@ -3783,15 +3835,15 @@ function renderWorkforceStats() {
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">👤</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('user', 20)}</div>
         <div class="stat-card-value">${users.length}</div>
         <div class="stat-card-label">Total Users</div>
       </div>
       ${roles.map(r => {
         const count = users.filter(u=>u.role===r).length;
         const colors = {admin:'rgba(6,182,212,0.15)',manager:'rgba(16,185,129,0.15)',staff:'rgba(245,158,11,0.15)',employee:'rgba(100,116,139,0.15)'};
-        const icons = {admin:'🏭',manager:'👔',staff:'🧾',employee:'👨‍💼'};
-        return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]}">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
+        const icons = {admin:getSvgIcon('warehouses', 20),manager:getSvgIcon('user', 20),staff:getSvgIcon('billing', 20),employee:getSvgIcon('workforce', 20)};
+        return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]};display:flex;align-items:center;justify-content:center">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
       }).join('')}
     </div>
   `;
@@ -3852,8 +3904,8 @@ function renderWorkforceTable() {
               <td data-label="Actions">
                 ${['super_admin', 'admin'].includes(currentUser.role) ? `
                 <div class="table-actions">
-                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">🗑️</button>
+                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>` : '—'}
               </td>
             </tr>`;
@@ -3959,7 +4011,7 @@ function showUserModal(u) {
     <button class="btn btn-primary" id="m-u-save">${isEdit ? '✓ Update' : '+ Add'} User</button>
   `;
 
-  const modal = createModal({ title: isEdit ? '✏️ Edit User' : '👤 Add New User', body, footer });
+  const modal = createModal({ title: isEdit ? 'Edit User' : 'Add New User', body, footer });
   modal.el.querySelector('#m-u-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#m-u-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-u-name').value.trim();
@@ -4018,14 +4070,14 @@ function renderItems() {
     <div class="animate-slideUp">
       <div class="it_page-header">
         <div class="it_page-header-left">
-          <h1 class="it_page-title">📦 Inventory Management</h1>
+          <h1 class="it_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('items', 24)} Inventory Management</h1>
           <p class="it_page-subtitle">Track items, stock levels, and pricing</p>
         </div>
         <div class="it_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
           ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="import-csv-btn">📥 Import CSV</button>
-            <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
+            <button class="btn btn-secondary btn-sm" id="import-csv-btn">${getSvgIcon('upload', 14)} Import CSV</button>
+            <button class="btn btn-primary" id="create-item-btn">${getSvgIcon('plus', 14)} Add Item</button>
           ` : ''}
         </div>
       </div>
@@ -4036,7 +4088,7 @@ function renderItems() {
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
           <input type="text" id="item-search" placeholder="Search items..." />
         </div>
         <div class="table-filter">
@@ -4084,10 +4136,10 @@ function renderItemStats() {
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">⚠️</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('items', 20)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('analytics', 20)}</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('warning', 20)}</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
     </div>
   `;
 }
@@ -4139,8 +4191,8 @@ function renderItemsTable() {
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">🗑️</button>
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
               </td>` : ''}
             </tr>`;
@@ -4482,12 +4534,12 @@ function renderTables() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">📋 Table Builder</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('tables', 24)} Table Builder</h1>
           <p class="page-subtitle">Airtable-style dynamic table management system</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn">${getSvgIcon('plus', 14)} New Table</button>` : ''}
         </div>
       </div>
 
@@ -4505,17 +4557,17 @@ function renderTables() {
 function renderTableList(tables, whs, canCreate) {
   if (tables.length === 0) return `
     <div class="card" style="text-align:center;padding:80px 40px">
-      <div style="font-size:56px;margin-bottom:20px;opacity:0.4">📋</div>
+      <div style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);opacity:0.4;margin-bottom:20px">${getSvgIcon('tables', 56)}</div>
       <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
       <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Build custom tables to manage any kind of data</p>
-      ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create Your First Table</button>` : ''}
+      ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn-empty">${getSvgIcon('plus', 14)} Create Your First Table</button>` : ''}
     </div>
   `;
 
   return `
     <!-- Table List Header -->
     <div class="table-toolbar">
-      <div class="table-search"><span>🔍</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
+      <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
       <div class="table-filter">
         <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="tbl-cat-filter">
           <option value="">All Categories</option>
@@ -4555,8 +4607,8 @@ function renderTableList(tables, whs, canCreate) {
               <td data-label="Actions">
                 <div class="table-actions">
                   <button class="action-btn view" data-tid="${t.id}" title="Open Table">👁️</button>
-                  ${canCreate ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Table">✏️</button>` : ''}
-                  ${canCreate ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">🗑️</button>` : ''}
+                  ${canCreate ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Table">${getSvgIcon('edit', 14)}</button>` : ''}
+                  ${canCreate ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                 </div>
               </td>
             </tr>`;
@@ -4610,8 +4662,8 @@ function renderTableView(tableId) {
               ${cols.map(c => `<td data-label="${c.name}">${renderCellValue(row[c.id], c)}</td>`).join('')}
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-row="${row.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-row="${row.id}" title="Delete">🗑️</button>
+                  <button class="action-btn edit" data-row="${row.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  <button class="action-btn delete" data-row="${row.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
               </td>` : ''}
             </tr>
@@ -4784,7 +4836,7 @@ function showTableBuilderModal(table) {
     <button class="btn btn-primary" id="t-save">${isEdit?'✓ Update':'+ Create'} Table</button>
   `;
 
-  const modal = createModal({ title: isEdit?'✏️ Edit Table':'📋 Build New Table', body, footer, size: 'lg' });
+  const modal = createModal({ title: isEdit?'Edit Table':'Build New Table', body, footer, size: 'lg' });
   modal.el.querySelector('#t-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#t-save')?.addEventListener('click', async () => {
     const name = document.getElementById('t-name').value.trim();
@@ -4835,7 +4887,7 @@ function renderColumnRow(col, i) {
         <input type="checkbox" class="col-req" ${col.required?'checked':''} />
         <label style="font-size:12px">Req.</label>
       </label>
-      <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0" onclick="this.closest('.col-row').remove()">🗑️</button>
+      <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 14)}</button>
     </div>
   `;
 }
@@ -4863,7 +4915,7 @@ function showRowModal(tableId, row) {
     <button class="btn btn-primary" id="r-save">${isEdit?'✓ Update':'+ Add'} Row</button>
   `;
 
-  const modal = createModal({ title: isEdit?'✏️ Edit Row':'➕ Add New Row', body, footer });
+  const modal = createModal({ title: isEdit?'Edit Row':'Add New Row', body, footer });
   modal.el.querySelector('#r-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#r-save')?.addEventListener('click', async () => {
     const rowData = {};
@@ -4945,17 +4997,17 @@ function renderBilling() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">💰 Billing & Taxation</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 24)} Billing & Taxation</h1>
           <p class="page-subtitle">Automated bill generation with tax computation</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          <button class="btn btn-primary" id="new-bill-btn">+ New Bill</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-primary" id="new-bill-btn">${getSvgIcon('plus', 14)} New Bill</button>
         </div>
       </div>
 
       <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <span style="font-size:20px">⚙️</span>
+        <span style="display:flex;align-items:center;color:var(--accent-amber)">${getSvgIcon('settings', 20)}</span>
         <div>
           <div style="font-size:13px;font-weight:700;color:var(--text-primary)">Active Tax Rules</div>
           <div style="font-size:12px;color:var(--text-muted)">Normal items: ${getTaxConfig().normal}% GST &nbsp;|&nbsp; Luxury items: ${getTaxConfig().luxury}% GST</div>
@@ -4968,7 +5020,7 @@ function renderBilling() {
       </div>
 
       <div class="table-toolbar">
-        <div class="table-search"><span>🔍</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
+        <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
         <div class="table-filter">
           ${user.role === 'super_admin' ? `
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="bill-wh-filter">
@@ -5190,10 +5242,10 @@ function showBillModal() {
 
   const footer = `
     <button class="btn btn-secondary" id="bill-cancel">Cancel</button>
-    <button class="btn btn-primary" id="bill-save">🧾 Generate Bill</button>
+    <button class="btn btn-primary" id="bill-save" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('check', 14)} Generate Bill</button>
   `;
 
-  const modal = createModal({ title: '🧾 New Invoice', body, footer, size: 'lg' });
+  const modal = createModal({ title: 'New Invoice', body, footer, size: 'lg' });
   modal.el.querySelector('#bill-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#bill-save')?.addEventListener('click', async () => {
     const customer = document.getElementById('bill-customer')?.value.trim();
@@ -5404,17 +5456,17 @@ function renderAnalytics() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">📈 Analytics & Reports</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 24)} Analytics & Reports</h1>
           <p class="page-subtitle">${isSA ? 'Global cross-warehouse analytics' : 'Warehouse performance analytics'}</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'" style="display:flex;align-items:center;gap:6px">${getSvgIcon('back', 14)} Dashboard</button>
         </div>
       </div>
 
       <!-- Filter Bar -->
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px 18px;margin-bottom:24px">
-        <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">🔽 Filters:</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:6px">${getSvgIcon('search', 16)} Filters:</span>
 
         <select class="form-control" style="width:auto;padding:7px 12px;font-size:13px" id="an-year">
           ${(billYears.length ? billYears : [new Date().getFullYear()]).map(y=>
@@ -5577,28 +5629,28 @@ function updateKPIs(totalRev, totalTax, avgBill, netRev, count) {
     <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#6366f1"></div>
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">💰</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
         <div class="stat-card-value">${formatCurrency(totalRev)}</div>
         <div class="stat-card-label">Total Revenue</div>
         <div class="stat-card-trend trend-up">${count} invoices</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#10b981"></div>
-        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">💵</div>
+        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('dollar', 20)}</div>
         <div class="stat-card-value">${formatCurrency(netRev)}</div>
         <div class="stat-card-label">Net Revenue</div>
         <div class="stat-card-trend trend-up">After tax</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#f59e0b"></div>
-        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">🏛️</div>
+        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('billing', 20)}</div>
         <div class="stat-card-value">${formatCurrency(totalTax)}</div>
         <div class="stat-card-label">Tax Collected</div>
         <div class="stat-card-trend">Automated</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#8b5cf6"></div>
-        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">🎯</div>
+        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('audit', 20)}</div>
         <div class="stat-card-value">${formatCurrency(avgBill)}</div>
         <div class="stat-card-label">Avg. Invoice</div>
         <div class="stat-card-trend trend-up">${count} total</div>
@@ -5762,9 +5814,11 @@ function updateWhBreakdown(bills, whs, totalRev) {
     const tax = bills.filter(b=>b.warehouseId===wh.id).reduce((s,b)=>s+(b.tax||0),0);
     const cnt = bills.filter(b=>b.warehouseId===wh.id).length;
     const pct = totalRev>0 ? Math.round(rev/totalRev*100) : 0;
+    const logoHtml = wh.logo ? `<span style="font-size:16px">${wh.logo}</span>` : getSvgIcon('warehouses', 16);
     return `
       <div class="revenue-bar" style="margin-bottom:12px">
-        <div class="revenue-bar-label">${wh.logo||'🏭'} ${wh.name}
+        <div class="revenue-bar-label" style="display:flex;align-items:center;gap:6px">
+          ${logoHtml} <span>${wh.name}</span>
           <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
         </div>
         <div class="revenue-bar-track"><div class="revenue-bar-fill" style="width:${pct}%"></div></div>
@@ -5823,15 +5877,15 @@ function renderAudit() {
     <div class="animate-slideUp">
       <div class="au_page-header">
         <div class="au_page-header-left">
-          <h1 class="au_page-title">🔍 Audit Logs</h1>
+          <h1 class="au_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('audit', 24)} Audit Logs</h1>
           <p class="au_page-subtitle">Complete activity trail for compliance and monitoring</p>
         </div>
         <div class="au_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
         </div>
       </div>
       <div class="table-toolbar">
-        <div class="table-search"><span>🔍</span><input type="text" id="audit-search" placeholder="Search logs..." /></div>
+        <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="audit-search" placeholder="Search logs..." /></div>
         <div class="table-filter">
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="audit-action-filter">
             <option value="">All Actions</option>
@@ -5853,7 +5907,20 @@ function renderAudit() {
   document.getElementById('audit-action-filter')?.addEventListener('change',()=>{au_page=1;renderAuditTable();});
 }
 
-const ACTION_ICONS = { login:'🔐', logout:'🚪', user_create:'👤➕', user_update:'👤✏️', user_delete:'👤🗑️', warehouse_create:'🏭➕', warehouse_update:'🏭✏️', warehouse_delete:'🏭🗑️', bill_create:'🧾', table_create:'📋➕', item_create:'📦➕' };
+const ACTION_ICONS = {
+  login: getSvgIcon('user', 14),
+  logout: getSvgIcon('user', 14),
+  user_create: getSvgIcon('user', 14),
+  user_update: getSvgIcon('user', 14),
+  user_delete: getSvgIcon('user', 14),
+  warehouse_create: getSvgIcon('warehouses', 14),
+  warehouse_update: getSvgIcon('warehouses', 14),
+  warehouse_delete: getSvgIcon('warehouses', 14),
+  bill_create: getSvgIcon('billing', 14),
+  table_create: getSvgIcon('tables', 14),
+  item_create: getSvgIcon('items', 14),
+  settings_update: getSvgIcon('settings', 14)
+};
 const ACTION_CLASSES = { login:'badge-info', user_create:'badge-success', user_delete:'badge-danger', warehouse_create:'badge-success', warehouse_delete:'badge-danger', bill_create:'badge-brand', table_create:'badge-success', item_create:'badge-success' };
 
 function renderAuditTable() {
@@ -5871,7 +5938,7 @@ function renderAuditTable() {
   if (!container) return;
 
   if (logs.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">🔍</div><h3 style="color:var(--text-secondary)">No logs found</h3></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);opacity:0.4;margin-bottom:16px">${getSvgIcon('audit', 40)}</div><h3 style="color:var(--text-secondary)">No logs found</h3></div>`;
     return;
   }
 
@@ -5884,7 +5951,7 @@ function renderAuditTable() {
             <td data-label="#" style="color:var(--text-muted);font-size:12px">${start+i+1}</td>
             <td data-label="Action">
               <span class="badge ${ACTION_CLASSES[log.action]||'badge-muted'}">
-                ${ACTION_ICONS[log.action]||'📝'} ${log.action.replace(/_/g,' ')}
+                <span style="display:inline-flex;align-items:center;gap:6px;color:var(--text-secondary)">${ACTION_ICONS[log.action]||getSvgIcon('info', 14)} ${log.action.replace(/_/g,' ')}</span>
               </span>
             </td>
             <td data-label="Description" style="font-size:13px">${log.description}</td>
@@ -5925,11 +5992,11 @@ function renderSettings() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">⚙️ System Settings</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 24)} System Settings</h1>
           <p class="page-subtitle">Platform configuration, preferences, and account management</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
         </div>
       </div>
 
@@ -5938,7 +6005,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">👤 Profile Settings</div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('user', 18)} Profile Settings</div>
               <div class="card-subtitle">Your account information</div>
             </div>
           </div>
@@ -5994,7 +6061,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">🏛️ Tax Configuration</div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Tax Configuration</div>
               <div class="card-subtitle">Configure global tax rates for billing engine</div>
             </div>
           </div>
@@ -6019,7 +6086,7 @@ function renderSettings() {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Tax Rules</button>
+            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>${getSvgIcon('check', 14)} Save Tax Rules</button>
             <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
           </div>
           <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:12px">
@@ -6035,7 +6102,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">🔔 Notifications</div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bell', 18)} Notifications</div>
               <div class="card-subtitle">Manage alert preferences</div>
             </div>
           </div>
@@ -6268,11 +6335,11 @@ function renderSubscription() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">💳 Subscription Management</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 24)} Subscription Management</h1>
           <p class="page-subtitle">Your current plan, limits, and upgrade options</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
         </div>
       </div>
 
@@ -6280,7 +6347,7 @@ function renderSubscription() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
         <div style="background:${isEnterprise ? 'linear-gradient(135deg,rgba(99,102,241,0.15),rgba(168,85,247,0.15))' : 'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(5,150,105,0.15))'};border:1px solid ${isEnterprise ? 'rgba(99,102,241,0.4)' : 'rgba(16,185,129,0.4)'};border-radius:16px;padding:28px">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-            <div style="font-size:36px">${isEnterprise ? '🟣' : '🟢'}</div>
+            <div style="color:${isEnterprise ? 'var(--accent-purple)' : 'var(--accent-emerald)'};display:flex;align-items:center">${getSvgIcon('subscription', 36)}</div>
             <div>
               <div style="font-size:22px;font-weight:900;color:var(--text-primary)">${isEnterprise ? 'Enterprise' : 'Starter'} Plan</div>
               <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Current Active Plan</div>
@@ -6309,12 +6376,12 @@ function renderSubscription() {
         <!-- Quick Stats -->
         <div style="display:flex;flex-direction:column;gap:12px">
           ${[
-            { icon:'🏭', label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
-            { icon:'📦', label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
-            { icon:'👑', label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
+            { icon:'warehouses', label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
+            { icon:'items', label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
+            { icon:'user', label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
           ].map(s=>`
-            <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px;flex:1">
-              <div style="font-size:24px">${s.icon}</div>
+            <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px;flex:1">
+              <div style="color:${s.color};display:flex;align-items:center">${getSvgIcon(s.icon, 24)}</div>
               <div>
                 <div style="font-size:18px;font-weight:800;color:${s.color}">${s.val}</div>
                 <div style="font-size:12px;color:var(--text-muted)">${s.label}</div>
@@ -6324,20 +6391,19 @@ function renderSubscription() {
         </div>
       </div>
 
-      <!-- Plan Features -->
       <div style="margin-bottom:32px">
         <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:16px">Plan Features</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           ${[
-            { icon:'🏭', feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
-            { icon:'👥', feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
-            { icon:'💰', feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
-            { icon:'📊', feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
-            { icon:'📋', feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
-            { icon:'🔍', feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
+            { icon:'warehouses', feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
+            { icon:'workforce', feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
+            { icon:'billing', feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
+            { icon:'analytics', feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
+            { icon:'tables', feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
+            { icon:'audit', feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
           ].map(f=>`
             <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px">
-              <span style="font-size:20px">${f.icon}</span>
+              <span style="display:flex;align-items:center;color:var(--text-secondary)">${getSvgIcon(f.icon, 20)}</span>
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${f.feat}</div>
                 <div style="font-size:12px;color:var(--text-muted)">Starter: ${f.starter}</div>

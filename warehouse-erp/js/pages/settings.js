@@ -1,6 +1,6 @@
 import { getCurrentUser, getStore, saveStore, getTaxConfig, saveTaxConfig, getBills, getAllUsers, getWarehouses, getItems, apiFetch, updateUser } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm } from '../modules/ui.js';
+import { showToast, confirm, getSvgIcon } from '../modules/ui.js';
 import { exportCSV, exportXLSX, exportPDF } from '../modules/exporter.js';
 
 export function renderSettings() {
@@ -13,11 +13,11 @@ export function renderSettings() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">⚙️ System Settings</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 24)} System Settings</h1>
           <p class="page-subtitle">Platform configuration, preferences, and account management</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
         </div>
       </div>
 
@@ -26,7 +26,7 @@ export function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">👤 Profile Settings</div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('user', 18)} Profile Settings</div>
               <div class="card-subtitle">Your account information</div>
             </div>
           </div>
@@ -82,7 +82,7 @@ export function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">🏛️ Tax Configuration</div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Tax Configuration</div>
               <div class="card-subtitle">Configure global tax rates for billing engine</div>
             </div>
           </div>
@@ -107,7 +107,7 @@ export function renderSettings() {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Tax Rules</button>
+            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>${getSvgIcon('check', 14)} Save Tax Rules</button>
             <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
           </div>
           <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:12px">
@@ -123,7 +123,7 @@ export function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">🔔 Notifications</div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bell', 18)} Notifications</div>
               <div class="card-subtitle">Manage alert preferences</div>
             </div>
           </div>

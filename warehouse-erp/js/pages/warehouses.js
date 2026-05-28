@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, getAllUsers, getBills, getPlanWarehouseLimit, getSubscription, addNotification, getItems, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce, getSvgIcon } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wh_currentView = 'grid';
@@ -29,59 +29,57 @@ function refreshShell() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">🏭 Warehouse Management</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 24)} Warehouse Management</h1>
           <p class="page-subtitle">Centralized control for all warehouse locations · <span style="color:var(--text-brand);font-weight:600">${planLabel}</span></p>
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" id="view-toggle">☰ Table</button>
           <button class="btn btn-primary" id="create-wh-btn" ${atLimit ? 'disabled title="Warehouse limit reached for your plan"' : ''}>
-            + New Warehouse ${atLimit ? '🔒' : ''}
+            ${getSvgIcon('plus', 14)} New Warehouse
           </button>
         </div>
       </div>
 
       ${atLimit ? `
       <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
-        <span style="font-size:20px">⚠️</span>
+        <span style="display:flex;align-items:center;color:var(--accent-amber)">${getSvgIcon('warning', 20)}</span>
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--text-primary)">Warehouse Limit Reached</div>
           <div style="font-size:12px;color:var(--text-muted)">Your <strong>Starter plan</strong> allows only 1 warehouse. <a href="#/subscription" style="color:var(--text-brand)">Upgrade to Enterprise</a> for unlimited warehouses.</div>
         </div>
       </div>` : ''}
 
-      <!-- Summary Stat Cards -->
-      <div class="stat-grid">
+      <div class="summary-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px">
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
+          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value" id="wh-count">${whs.length}</div>
           <div class="stat-card-label">Total Warehouses</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">✅</div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('check', 20)}</div>
           <div class="stat-card-value">${whs.filter(w=>w.status==='active').length}</div>
           <div class="stat-card-label">Active</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">👥</div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${allUsers.length}</div>
           <div class="stat-card-label">Total Staff</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">💰</div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
           <div class="stat-card-value">${formatCurrency(whs.reduce((s,w)=>s+(w.revenue||0),0))}</div>
           <div class="stat-card-label">Combined Revenue</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15)">📊</div>
+          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('subscription', 20)}</div>
           <div class="stat-card-value">${limit < 0 ? '∞' : limit}</div>
           <div class="stat-card-label">Plan Limit</div>
         </div>
       </div>
 
-      <!-- Search + Filter -->
       <div class="table-toolbar" style="margin-bottom:20px">
         <div class="table-search" style="max-width:400px;flex:none">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
           <input type="text" id="wh-search" placeholder="Search warehouses..." />
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
@@ -263,7 +261,7 @@ function attachWarehouseEvents() {
       const wh = getWarehouses().find(w => w.id === btn.dataset.id);
       const ok = await confirm(`Delete "${wh?.name || 'this warehouse'}"? All associated data will be removed.`, 'Delete Warehouse');
       if (ok) {
-        deleteWarehouse(btn.dataset.id);
+        await deleteWarehouse(btn.dataset.id);
         showToast('Warehouse deleted', `${wh?.name} has been removed`, 'success');
         refreshList();
       }
@@ -323,6 +321,7 @@ function showWarehouseModal(wh) {
           <label class="form-label">Tax Preference</label>
           <select id="m-wh-tax" class="form-control">
             <option value="standard" ${wh?.taxPreference==='standard'||!wh?'selected':''}>Standard</option>
+            <option value="custom" ${wh?.taxPreference==='custom'?'selected':''}>Custom Setup</option>
             <option value="luxury" ${wh?.taxPreference==='luxury'?'selected':''}>Luxury</option>
             <option value="none" ${wh?.taxPreference==='none'?'selected':''}>No Tax</option>
           </select>
@@ -353,7 +352,7 @@ function showWarehouseModal(wh) {
   const modal = createModal({ title: isEdit ? '✏️ Edit Warehouse' : '🏭 New Warehouse', body, footer });
 
   modal.el.querySelector('#m-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#m-save')?.addEventListener('click', async () => {
     const name         = document.getElementById('m-wh-name')?.value.trim();
     const businessName = document.getElementById('m-wh-biz')?.value.trim();
     const address      = document.getElementById('m-wh-address')?.value.trim();
@@ -382,10 +381,10 @@ function showWarehouseModal(wh) {
     };
 
     if (isEdit) {
-      updateWarehouse(wh.id, data);
+      await updateWarehouse(wh.id, data);
       showToast('Warehouse updated', `${name} has been updated`, 'success');
     } else {
-      createWarehouse(data);
+      await createWarehouse(data);
       addNotification('warehouse_create', 'Warehouse Created', `${name} is now active and ready`, '/warehouses');
       showToast('Warehouse created', `${name} is ready`, 'success');
     }

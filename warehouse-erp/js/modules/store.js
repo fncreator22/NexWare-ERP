@@ -390,37 +390,65 @@ export async function createWarehouse(data) {
   return warehouse;
 }
 
-export function updateWarehouse(id, data) {
+export async function updateWarehouse(id, data) {
   const s = getStore();
   const u = getCurrentUser();
   if (u.role !== 'super_admin' && (u.role !== 'admin' || u.warehouseId !== id)) return null;
 
+  const res = await apiFetch(`/warehouses/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  const warehouse = res.data;
   const idx = s.warehouses.findIndex(w => w.id === id);
-  if (idx === -1) return null;
-  s.warehouses[idx] = { ...s.warehouses[idx], ...data, updatedAt: new Date().toISOString() };
+  if (idx !== -1) {
+    s.warehouses[idx] = { ...s.warehouses[idx], ...warehouse };
+  }
   saveStore();
-  addAuditLog('warehouse_update', `Warehouse updated: ${s.warehouses[idx].name}`, s.currentUserId);
-  return s.warehouses[idx];
+  
+  await apiFetch('/audit-logs/', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'warehouse_update',
+      description: `Warehouse updated: ${warehouse.name}`,
+      warehouseId: id
+    })
+  });
+
+  await syncWithBackend();
+  return warehouse;
 }
 
-export function deleteWarehouse(id) {
+export async function deleteWarehouse(id) {
   const s = getStore();
   const u = getCurrentUser();
-  if (u.role !== 'super_admin') return;
+  if (u.role !== 'super_admin') return { error: 'Unauthorized' };
 
-  // Cascade Deletion to associated records to maintain data integrity
+  const res = await apiFetch(`/warehouses/${id}`, {
+    method: 'DELETE'
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  s.warehouses = s.warehouses.filter(w => w.id !== id);
   s.users = s.users.filter(usr => usr.warehouseId !== id);
   s.items = s.items.filter(item => item.warehouseId !== id);
   s.bills = s.bills.filter(bill => bill.warehouseId !== id);
   
-  // Also cascade to operational tables and their rows
   const affectedTables = s.tables.filter(t => t.warehouseId === id).map(t => t.id);
   affectedTables.forEach(tId => { delete s.tableData[tId]; });
   s.tables = s.tables.filter(t => t.warehouseId !== id);
 
-  s.warehouses = s.warehouses.filter(w => w.id !== id);
   saveStore();
-  addAuditLog('warehouse_delete', `Warehouse deleted (cascade)`, s.currentUserId);
+  await syncWithBackend();
+  return { success: true };
 }
 
 // ---- USERS / WORKFORCE ----
@@ -810,7 +838,7 @@ export function getTaxConfig(warehouseId) {
   // Support for regional compliance: Check for warehouse-specific overrides
   if (warehouseId) {
     const wh = s.warehouses.find(w => w.id === warehouseId);
-    if (wh && wh.taxConfig) return wh.taxConfig;
+    if (wh && wh.taxConfig && Object.keys(wh.taxConfig).length > 0) return wh.taxConfig;
   }
   
   return s.taxConfig;
@@ -825,6 +853,16 @@ export async function saveTaxConfig(config) {
   const s = getStore();
   s.taxConfig = { ...s.taxConfig, ...config };
   saveStore();
+  
+  // Persist updated rules to all warehouses with custom tax preferences
+  const customWhs = s.warehouses.filter(w => w.taxPreference === 'custom');
+  for (const wh of customWhs) {
+    wh.taxConfig = { ...config };
+    await apiFetch(`/warehouses/${wh.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ taxConfig: config })
+    });
+  }
   
   await apiFetch('/audit-logs/', {
     method: 'POST',

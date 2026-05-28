@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getWarehouses, getAllUsers, getItems, getBills, getAuditLogs, getSubscription, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { formatCurrency, formatDate } from '../modules/ui.js';
+import { formatCurrency, formatDate, getSvgIcon } from '../modules/ui.js';
 
 // Track chart instances so we can destroy before re-rendering
 const _dashboardCharts = {};
@@ -76,42 +76,42 @@ export function renderDashboard() {
       <div class="stat-grid" style="margin-bottom:20px">
         ${isSA ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#6366f1"></div>
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
+          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value">${whs.length}</div>
           <div class="stat-card-label">Warehouses</div>
           <div class="stat-card-trend trend-up">${sub.plan} plan</div>
         </div>` : ''}
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#10b981"></div>
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">💰</div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">${getSvgIcon('revenue', 20)}</div>
           <div class="stat-card-value">${formatCurrency(totalRevenue)}</div>
           <div class="stat-card-label">Revenue</div>
           <div class="stat-card-trend trend-up">Tax: ${formatCurrency(totalTax)}</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#8b5cf6"></div>
-          <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">🧾</div>
+          <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">${getSvgIcon('billing', 20)}</div>
           <div class="stat-card-value">${bills.length}</div>
           <div class="stat-card-label">Invoices</div>
           <div class="stat-card-trend trend-up">↑ This period</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#06b6d4"></div>
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">👥</div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${activeUsers}</div>
           <div class="stat-card-label">Active Users</div>
           <div class="stat-card-trend">${users.length} total</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#f59e0b"></div>
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">📦</div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
           <div class="stat-card-label">Stock Units</div>
           <div class="stat-card-trend ${lowStock.length>0?'trend-down':'trend-up'}">${lowStock.length} low stock</div>
         </div>
         ${isSA ? `<div class="stat-card" style="cursor:pointer" onclick="location.hash='#/subscription'">
           <div class="stat-card-glow" style="background:#f43f5e"></div>
-          <div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">💳</div>
+          <div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">${getSvgIcon('subscription', 20)}</div>
           <div class="stat-card-value" style="font-size:16px;text-transform:capitalize">${sub.plan}</div>
           <div class="stat-card-label">Plan</div>
           <div class="stat-card-trend trend-up">● Active</div>
@@ -125,7 +125,7 @@ export function renderDashboard() {
         <div class="chart-card col-8">
           <div class="chart-card-header">
             <div>
-              <div class="chart-card-title">📈 Revenue Trend</div>
+              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Trend</div>
               <div class="chart-card-subtitle">Last 6 months across all warehouses</div>
             </div>
             <div style="display:flex;gap:6px">
@@ -139,7 +139,7 @@ export function renderDashboard() {
         <!-- Activity Feed -->
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">⚡ Activity</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('clock', 18)} Activity</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/audit'" style="font-size:11px">All →</button>
           </div>
           <div style="display:flex;flex-direction:column;gap:0">
@@ -164,7 +164,7 @@ export function renderDashboard() {
         ${isSA ? `
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">🏭 Warehouses</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} Warehouses</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'" style="font-size:11px;padding:4px 10px">Manage</button>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px">
@@ -182,7 +182,7 @@ export function renderDashboard() {
           </div>
         </div>` : `<div class="chart-card">
           <div class="chart-card-header">
-            <div class="chart-card-title">🏭 My Warehouse</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} My Warehouse</div>
           </div>
           ${myWh ? `
           <div style="text-align:center;padding:8px 0">
@@ -199,7 +199,7 @@ export function renderDashboard() {
         <!-- Billing Quick Stats -->
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">💰 Billing Stats</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Billing Stats</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">View →</button>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px">
@@ -227,7 +227,7 @@ export function renderDashboard() {
         <!-- Low Stock Alerts -->
         <div class="chart-card col-4">
           <div class="chart-card-header">
-            <div class="chart-card-title">⚠️ Low Stock</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px;color:var(--accent-rose)">${getSvgIcon('warning', 18)} Low Stock</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
           </div>
           ${lowStock.length === 0
@@ -242,12 +242,12 @@ export function renderDashboard() {
             <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">Quick Actions</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               ${[
-                { icon:'📦', label:'Add Item',   href:'/items'     },
-                { icon:'🧾', label:'New Bill',   href:'/billing'   },
-                { icon:'👥', label:'Workforce',  href:'/workforce' },
-                { icon:'📈', label:'Reports',    href:'/analytics' },
+                { icon:'items', label:'Add Item',   href:'/items'     },
+                { icon:'billing', label:'New Bill',   href:'/billing'   },
+                { icon:'workforce', label:'Workforce',  href:'/workforce' },
+                { icon:'analytics', label:'Reports',    href:'/analytics' },
               ].filter(a=>isAdmin || (a.href!=='/workforce')).map(a=>`
-                <button class="btn btn-secondary btn-sm" onclick="location.hash='#${a.href}'" style="font-size:11px;padding:6px 8px;justify-content:flex-start;gap:5px">${a.icon} ${a.label}</button>
+                <button class="btn btn-secondary btn-sm" onclick="location.hash='#${a.href}'" style="font-size:11px;padding:6px 8px;justify-content:flex-start;gap:6px">${getSvgIcon(a.icon, 14)} ${a.label}</button>
               `).join('')}
             </div>
           </div>
@@ -261,7 +261,7 @@ export function renderDashboard() {
         <div class="chart-card col-5">
           <div class="chart-card-header">
             <div>
-              <div class="chart-card-title">💡 Smart Restock</div>
+              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Smart Restock</div>
               <div class="chart-card-subtitle">AI-prioritized inventory needs</div>
             </div>
           </div>
@@ -269,7 +269,7 @@ export function renderDashboard() {
             ${restockSuggestions.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text-muted)">Stock levels optimal</div>' :
               restockSuggestions.map(s => `
                 <div style="background:rgba(99,102,241,0.05);padding:12px;border-radius:10px;border:1px solid rgba(99,102,241,0.1);display:flex;align-items:center;gap:12px">
-                  <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>
+                  <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0">${getSvgIcon('items', 18)}</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:700;color:var(--text-primary)">${s.name}</div>
                     <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} sold recently · Priority: ${s.priority > 30 ? 'High 🔥' : 'Medium'}</div>
@@ -286,7 +286,7 @@ export function renderDashboard() {
         <!-- Revenue Summary -->
         <div class="chart-card col-7">
           <div class="chart-card-header">
-            <div class="chart-card-title">📊 Revenue Summary</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Summary</div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
             <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
@@ -303,7 +303,7 @@ export function renderDashboard() {
             </div>
           </div>
           <div style="margin-top:15px;padding:15px;background:linear-gradient(90deg, rgba(99,102,241,0.1), transparent);border-radius:12px;display:flex;align-items:center;gap:12px">
-            <div style="font-size:24px">📈</div>
+            <div style="display:flex;align-items:center;color:var(--accent-emerald)">${getSvgIcon('analytics', 24)}</div>
             <div>
               <div style="font-size:13px;font-weight:700">Projected Growth</div>
               <div style="font-size:11px;color:var(--text-muted)">Expected +12% increase based on current month volume</div>
@@ -317,7 +317,7 @@ export function renderDashboard() {
       <div class="dashboard-grid">
         <div class="chart-card col-6">
           <div class="chart-card-header">
-            <div class="chart-card-title">👥 Workforce Summary</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 18)} Workforce Summary</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px;padding:4px 10px">Manage</button>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
@@ -347,7 +347,7 @@ export function renderDashboard() {
         <!-- Warehouse Distribution -->
         <div class="chart-card col-6">
           <div class="chart-card-header">
-            <div class="chart-card-title">📊 Revenue by Warehouse</div>
+            <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue by Warehouse</div>
           </div>
           <div class="chart-container" style="height:160px"><canvas id="wh-chart"></canvas></div>
           <div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">
@@ -363,7 +363,7 @@ export function renderDashboard() {
           </div>
         </div>` : `
         <div class="chart-card col-6">
-          <div class="chart-card-header"><div class="chart-card-title">📋 My Tables</div></div>
+          <div class="chart-card-header"><div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('tables', 18)} My Tables</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn btn-secondary btn-sm" onclick="location.hash='#/tables'" style="width:100%">📋 View My Tables</button>
             <button class="btn btn-secondary btn-sm" onclick="location.hash='#/analytics'" style="width:100%">📈 View Reports</button>
@@ -376,7 +376,7 @@ export function renderDashboard() {
 
     <!-- Floating Action Button for Quick Invoicing -->
     <button class="fab" onclick="location.hash='#/billing'" title="Quick Invoice">
-      <span style="font-size:24px">🧾</span>
+      <span style="display:flex;align-items:center;justify-content:center;color:white">${getSvgIcon('billing', 24)}</span>
     </button>
   `);
 

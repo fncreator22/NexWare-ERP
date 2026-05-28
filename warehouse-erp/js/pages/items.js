@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce, getSvgIcon } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let it_searchQ = '';
@@ -30,14 +30,14 @@ export function renderItems() {
     <div class="animate-slideUp">
       <div class="it_page-header">
         <div class="it_page-header-left">
-          <h1 class="it_page-title">📦 Inventory Management</h1>
+          <h1 class="it_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('items', 24)} Inventory Management</h1>
           <p class="it_page-subtitle">Track items, stock levels, and pricing</p>
         </div>
         <div class="it_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
           ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="import-csv-btn">📥 Import CSV</button>
-            <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
+            <button class="btn btn-secondary btn-sm" id="import-csv-btn">${getSvgIcon('upload', 14)} Import CSV</button>
+            <button class="btn btn-primary" id="create-item-btn">${getSvgIcon('plus', 14)} Add Item</button>
           ` : ''}
         </div>
       </div>
@@ -48,7 +48,7 @@ export function renderItems() {
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
           <input type="text" id="item-search" placeholder="Search items..." />
         </div>
         <div class="table-filter">
@@ -96,10 +96,10 @@ function renderItemStats() {
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">⚠️</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('items', 20)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('analytics', 20)}</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('warning', 20)}</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
     </div>
   `;
 }
@@ -151,8 +151,8 @@ function renderItemsTable() {
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">🗑️</button>
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
               </td>` : ''}
             </tr>`;

@@ -4,7 +4,7 @@
 import { getCurrentUser, getSubscription, getWarehouses } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { navigate } from '../modules/router.js';
-import { formatDate, showToast } from '../modules/ui.js';
+import { formatDate, showToast, getSvgIcon } from '../modules/ui.js';
 
 export function renderSubscription() {
   const user = getCurrentUser();
@@ -24,11 +24,11 @@ export function renderSubscription() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">💳 Subscription Management</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 24)} Subscription Management</h1>
           <p class="page-subtitle">Your current plan, limits, and upgrade options</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
         </div>
       </div>
 
@@ -36,7 +36,7 @@ export function renderSubscription() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
         <div style="background:${isEnterprise ? 'linear-gradient(135deg,rgba(99,102,241,0.15),rgba(168,85,247,0.15))' : 'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(5,150,105,0.15))'};border:1px solid ${isEnterprise ? 'rgba(99,102,241,0.4)' : 'rgba(16,185,129,0.4)'};border-radius:16px;padding:28px">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-            <div style="font-size:36px">${isEnterprise ? '🟣' : '🟢'}</div>
+            <div style="color:${isEnterprise ? 'var(--accent-purple)' : 'var(--accent-emerald)'};display:flex;align-items:center">${getSvgIcon('subscription', 36)}</div>
             <div>
               <div style="font-size:22px;font-weight:900;color:var(--text-primary)">${isEnterprise ? 'Enterprise' : 'Starter'} Plan</div>
               <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Current Active Plan</div>
@@ -65,12 +65,12 @@ export function renderSubscription() {
         <!-- Quick Stats -->
         <div style="display:flex;flex-direction:column;gap:12px">
           ${[
-            { icon:'🏭', label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
-            { icon:'📦', label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
-            { icon:'👑', label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
+            { icon:'warehouses', label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
+            { icon:'items', label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
+            { icon:'user', label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
           ].map(s=>`
-            <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px;flex:1">
-              <div style="font-size:24px">${s.icon}</div>
+            <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px;flex:1">
+              <div style="color:${s.color};display:flex;align-items:center">${getSvgIcon(s.icon, 24)}</div>
               <div>
                 <div style="font-size:18px;font-weight:800;color:${s.color}">${s.val}</div>
                 <div style="font-size:12px;color:var(--text-muted)">${s.label}</div>
@@ -80,20 +80,19 @@ export function renderSubscription() {
         </div>
       </div>
 
-      <!-- Plan Features -->
       <div style="margin-bottom:32px">
         <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:16px">Plan Features</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           ${[
-            { icon:'🏭', feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
-            { icon:'👥', feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
-            { icon:'💰', feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
-            { icon:'📊', feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
-            { icon:'📋', feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
-            { icon:'🔍', feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
+            { icon:'warehouses', feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
+            { icon:'workforce', feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
+            { icon:'billing', feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
+            { icon:'analytics', feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
+            { icon:'tables', feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
+            { icon:'audit', feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
           ].map(f=>`
             <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px">
-              <span style="font-size:20px">${f.icon}</span>
+              <span style="display:flex;align-items:center;color:var(--text-secondary)">${getSvgIcon(f.icon, 20)}</span>
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${f.feat}</div>
                 <div style="font-size:12px;color:var(--text-muted)">Starter: ${f.starter}</div>

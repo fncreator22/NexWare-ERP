@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getTables, createTable, updateTable, deleteTable, getTableData, addTableRow, updateTableRow, deleteTableRow, getWarehouses } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, filterData, capitalize } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, filterData, capitalize, getSvgIcon } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 const COLUMN_TYPES = ['text','number','date','dropdown','checkbox','price','tags','status'];
@@ -22,12 +22,12 @@ export function renderTables() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">📋 Table Builder</h1>
+          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('tables', 24)} Table Builder</h1>
           <p class="page-subtitle">Airtable-style dynamic table management system</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn">${getSvgIcon('plus', 14)} New Table</button>` : ''}
         </div>
       </div>
 
@@ -45,17 +45,17 @@ export function renderTables() {
 function renderTableList(tables, whs, canCreate) {
   if (tables.length === 0) return `
     <div class="card" style="text-align:center;padding:80px 40px">
-      <div style="font-size:56px;margin-bottom:20px;opacity:0.4">📋</div>
+      <div style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);opacity:0.4;margin-bottom:20px">${getSvgIcon('tables', 56)}</div>
       <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
       <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Build custom tables to manage any kind of data</p>
-      ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create Your First Table</button>` : ''}
+      ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn-empty">${getSvgIcon('plus', 14)} Create Your First Table</button>` : ''}
     </div>
   `;
 
   return `
     <!-- Table List Header -->
     <div class="table-toolbar">
-      <div class="table-search"><span>🔍</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
+      <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
       <div class="table-filter">
         <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="tbl-cat-filter">
           <option value="">All Categories</option>
@@ -95,8 +95,8 @@ function renderTableList(tables, whs, canCreate) {
               <td data-label="Actions">
                 <div class="table-actions">
                   <button class="action-btn view" data-tid="${t.id}" title="Open Table">👁️</button>
-                  ${canCreate ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Table">✏️</button>` : ''}
-                  ${canCreate ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">🗑️</button>` : ''}
+                  ${canCreate ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Table">${getSvgIcon('edit', 14)}</button>` : ''}
+                  ${canCreate ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                 </div>
               </td>
             </tr>`;
@@ -150,8 +150,8 @@ function renderTableView(tableId) {
               ${cols.map(c => `<td data-label="${c.name}">${renderCellValue(row[c.id], c)}</td>`).join('')}
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-row="${row.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-row="${row.id}" title="Delete">🗑️</button>
+                  <button class="action-btn edit" data-row="${row.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  <button class="action-btn delete" data-row="${row.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
               </td>` : ''}
             </tr>
@@ -324,7 +324,7 @@ function showTableBuilderModal(table) {
     <button class="btn btn-primary" id="t-save">${isEdit?'✓ Update':'+ Create'} Table</button>
   `;
 
-  const modal = createModal({ title: isEdit?'✏️ Edit Table':'📋 Build New Table', body, footer, size: 'lg' });
+  const modal = createModal({ title: isEdit?'Edit Table':'Build New Table', body, footer, size: 'lg' });
   modal.el.querySelector('#t-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#t-save')?.addEventListener('click', async () => {
     const name = document.getElementById('t-name').value.trim();
@@ -375,7 +375,7 @@ function renderColumnRow(col, i) {
         <input type="checkbox" class="col-req" ${col.required?'checked':''} />
         <label style="font-size:12px">Req.</label>
       </label>
-      <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0" onclick="this.closest('.col-row').remove()">🗑️</button>
+      <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 14)}</button>
     </div>
   `;
 }
@@ -403,7 +403,7 @@ function showRowModal(tableId, row) {
     <button class="btn btn-primary" id="r-save">${isEdit?'✓ Update':'+ Add'} Row</button>
   `;
 
-  const modal = createModal({ title: isEdit?'✏️ Edit Row':'➕ Add New Row', body, footer });
+  const modal = createModal({ title: isEdit?'Edit Row':'Add New Row', body, footer });
   modal.el.querySelector('#r-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#r-save')?.addEventListener('click', async () => {
     const rowData = {};
