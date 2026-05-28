@@ -2,7 +2,81 @@
 
 ## Unified Business Operations & Management Platform
 
+> 🚀 **Landing Page Redesigned** — Professional SaaS showcase with fully interactive embedded ERP demo. No sign-in required to explore the platform.
+
 NexWare ERP is a modern SaaS-based operations platform designed to help businesses manage workforce operations, workflows, billing, inventory, reporting, and business activities from a single connected ecosystem.
+
+---
+
+## 🖥 Interactive ERP Showcase (Landing Page)
+
+The landing page (`warehouse-erp/landing.html`) has been completely redesigned as a **professional SaaS product showcase** with a fully interactive embedded ERP dashboard — no sign-in, no backend connection required.
+
+### What the Landing Page Includes
+
+| Section | Description |
+|:---|:---|
+| **Hero Section** | Animated hero with floating browser dashboard mockup, hero stats, and dual CTA buttons |
+| **Trust Bar** | Social proof logos from 6 demo enterprise clients |
+| **Metrics Strip** | 4 key system benchmarks (E2E test coverage, API latency, onboarding speed, RBAC tier count) |
+| **Features Grid** | 6 detailed feature cards (Warehouses, RBAC, Billing, Inventory, Tables, Audit Logs) |
+| **🎯 Interactive ERP Demo** | Live embedded ERP dashboard with 8 fully interactive pages |
+| **Workflow Section** | 4-step onboarding flow explanation |
+| **All Features Grid** | 9-cell capability matrix (JWT auth, WebSockets, CSV import, multi-tenant isolation, etc.) |
+| **Testimonials** | 3 role-realistic customer quotes |
+| **Pricing** | Starter $49/mo + Enterprise $199/mo with full feature lists |
+| **CTA Section** | Gradient call-to-action with dual buttons |
+| **Footer** | 4-column footer with technology credits and system status badge |
+
+### 🎯 Interactive ERP Demo — 8 Live Pages
+
+The showcase embeds a **pixel-perfect replica of the actual NexWare ERP dashboard** directly inside the landing page. Visitors can:
+
+- Click sidebar navigation items to switch between pages
+- Use the tab bar above the demo frame to jump directly to any module
+- Interact with search bars, dropdown filters, tab switchers, and sliders
+- View live Chart.js charts (revenue bar, revenue line, warehouse doughnut)
+- Scroll through realistic data tables
+
+**Available interactive pages:**
+
+| Page | What Visitors See |
+|:---|:---|
+| 📊 **Dashboard** | KPI cards, 6-month revenue bar chart, live activity feed, warehouse list, low-stock alerts |
+| 📦 **Inventory** | 247-item searchable table with SKU, category, price, stock, tax, warehouse columns |
+| 🧾 **Billing** | Financial stats strip, 5-invoice table with customer, date, tax, total, status |
+| 👥 **Workforce** | Role breakdown cards, 5-member team table with role badges and status |
+| 📋 **Tables** | 3 table schema cards, maintenance log rows with dropdown status badges |
+| 🔍 **Audit Logs** | 7-entry audit timeline with action type, description, user, warehouse, timestamp |
+| 📈 **Analytics** | Line revenue chart, warehouse doughnut chart, per-warehouse revenue breakdown table |
+| ⚙️ **Settings** | Profile editor, tax rate range sliders (Normal 5% / Luxury 15%), live preview |
+
+> ⚠️ **No backend dependency.** The demo uses purely static mock data embedded in HTML. Nothing is saved. No APIs are called. No real data is touched.
+
+### Dashboard Preview Images
+
+Four AI-generated ERP dashboard mockup images are stored in `warehouse-erp/assets/`:
+
+| File | Content |
+|:---|:---|
+| `dashboard-preview.png` | Main ERP dashboard — KPI cards, revenue chart, warehouse overview |
+| `inventory-preview.png` | Inventory management with SKU table and stock level badges |
+| `billing-preview.png` | Billing panel with invoice list and financial analytics |
+| `workforce-audit-preview.png` | Workforce + audit logs side-by-side panel |
+
+### Technical Design Notes
+
+- **Zero dependencies** beyond Chart.js (loaded via CDN) — no framework required
+- Design tokens exactly mirror the real app's `variables.css` and `components.css`
+- Sidebar uses the same `.demo-item`, `.demo-section-label`, `.demo-sidebar` patterns as the production `shell.js`
+- Demo pages switch via pure CSS class toggling (`display:flex` vs `display:none`) with a `pageIn` keyframe animation
+- Chart.js instances are destroyed and re-created on page switch to prevent canvas leaks
+- Tax rate sliders in Settings respond in real-time (purely visual — no data mutation)
+- Scroll reveal powered by `IntersectionObserver` — no dependencies
+- Fully responsive: sidebar hidden on mobile, demo content remains scrollable
+
+---
+
 
 The platform is built for organizations that require operational clarity, scalable management, and centralized control without the complexity of traditional enterprise ERP systems.
 
