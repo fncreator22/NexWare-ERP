@@ -151,6 +151,15 @@
   margin-left: 68px;
 }
 
+.app-shell.collapsed .sidebar-logo {
+  padding: var(--space-5) 0;
+  justify-content: center;
+}
+
+.app-shell.collapsed .sidebar-logo-icon {
+  margin: 0;
+}
+
 /* Smooth logo transition */
 .sidebar-logo-text-wrapper {
   display: flex;
@@ -221,6 +230,16 @@
   opacity: 0;
   width: 0;
   pointer-events: none;
+}
+
+.app-shell.collapsed .sidebar-footer {
+  padding: var(--space-4) var(--space-2);
+}
+
+.app-shell.collapsed .sidebar-user {
+  padding: var(--space-2) 0;
+  justify-content: center;
+  gap: 0;
 }
 
 /* Sidebar collapse toggle button in topbar */

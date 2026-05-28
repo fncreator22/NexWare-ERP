@@ -228,6 +228,9 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   // Command Palette
   initPalette();
   document.getElementById('cmd-palette-btn')?.addEventListener('click', togglePalette);
+
+  // Intelligent JS tooltips system initialization
+  initGlobalTooltips();
 }
 
 function toggleSidebar() {
@@ -353,6 +356,8 @@ function showProfileDropdown(anchor) {
     <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">🚪 Sign Out</div>
   `;
 
+  document.body.appendChild(dropdown);
+
   dropdown.querySelectorAll('.dropdown-item').forEach(el => {
     el.addEventListener('mouseenter', () => el.style.background = 'rgba(99,102,241,0.08)');
     el.addEventListener('mouseleave', () => el.style.background = 'transparent');
@@ -374,4 +379,88 @@ export function setPageContent(html) {
 
 export function getPageContent() {
   return document.getElementById('page-content');
+}
+
+// ---- DYNAMIC JS TOOLTIPS ENGINE ----
+let tooltipsInitialized = false;
+
+function initGlobalTooltips() {
+  if (tooltipsInitialized) return;
+  tooltipsInitialized = true;
+
+  document.addEventListener('mouseenter', (e) => {
+    const trigger = e.target.closest?.('[data-tooltip]');
+    if (!trigger) return;
+
+    const text = trigger.getAttribute('data-tooltip');
+    if (!text) return;
+
+    // Cache original text and temporarily strip attribute to prevent CSS tooltip double-renders
+    trigger.dataset.tooltipVal = text;
+    trigger.removeAttribute('data-tooltip');
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'js-tooltip animate-scaleUp';
+    tooltip.textContent = text;
+    tooltip.style.cssText = `
+      position: fixed;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      font-size: var(--text-xs);
+      font-weight: 500;
+      color: var(--text-primary);
+      box-shadow: var(--shadow-md);
+      pointer-events: none;
+      z-index: 10000;
+      white-space: nowrap;
+      transition: opacity var(--transition-fast);
+      opacity: 0;
+    `;
+
+    document.body.appendChild(tooltip);
+
+    const rect = trigger.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    const tW = tooltipRect.width;
+    const tH = tooltipRect.height;
+    const offset = 8;
+
+    // Calculate vertical position (default to above)
+    let top = rect.top - tH - offset;
+
+    // Edge check: If top space is restricted, display below trigger
+    if (top < 10) {
+      top = rect.bottom + offset;
+    }
+
+    // Centered horizontal positioning
+    let left = rect.left + (rect.width - tW) / 2;
+
+    // Horizontal margins boundary clamping to prevent off-screen clipping
+    if (left < 10) {
+      left = 10;
+    } else if (left + tW > winW - 10) {
+      left = winW - tW - 10;
+    }
+
+    tooltip.style.top = top + 'px';
+    tooltip.style.left = left + 'px';
+    tooltip.style.opacity = '1';
+
+    const cleanTooltip = () => {
+      tooltip.style.opacity = '0';
+      setTimeout(() => tooltip.remove(), 100);
+      trigger.setAttribute('data-tooltip', text);
+      trigger.removeEventListener('mouseleave', cleanTooltip);
+      trigger.removeEventListener('click', cleanTooltip);
+    };
+
+    trigger.addEventListener('mouseleave', cleanTooltip);
+    trigger.addEventListener('click', cleanTooltip);
+  }, { capture: true });
 }

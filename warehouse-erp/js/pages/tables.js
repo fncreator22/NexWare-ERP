@@ -274,10 +274,15 @@ function showTableBuilderModal(table) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Access Roles</label>
-          <select id="t-roles" class="form-control" multiple style="height:80px">
-            ${['admin','manager','staff','employee'].map(r=>`<option value="${r}" ${(table?.roles||[]).includes(r)?'selected':''}>${capitalize(r)}</option>`).join('')}
-          </select>
+          <label class="form-label">Access Roles <span style="font-size:11px;color:var(--text-muted)">(All roles can access if none selected)</span></label>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:var(--bg-input);padding:10px 14px;border-radius:8px;border:1px solid var(--border-default)">
+            ${['admin','manager','staff','employee'].map(r => `
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--text-secondary);cursor:pointer;margin:0">
+                <input type="checkbox" name="t-roles-chk" value="${r}" ${(table?.roles||[]).includes(r)?'checked':''} style="width:16px;height:16px;accent-color:var(--brand-500);cursor:pointer;margin:0" />
+                <span>${capitalize(r)}</span>
+              </label>
+            `).join('')}
+          </div>
         </div>
       </div>
 
@@ -339,7 +344,7 @@ function showTableBuilderModal(table) {
       options: row.querySelector('.col-options')?.value || ''
     })).filter(c=>c.name);
 
-    const roles = Array.from(document.getElementById('t-roles').selectedOptions).map(o=>o.value);
+    const roles = Array.from(body.querySelectorAll('input[name="t-roles-chk"]:checked')).map(chk => chk.value);
     const data = { name, category: document.getElementById('t-cat').value, description: document.getElementById('t-desc').value, warehouseId: document.getElementById('t-wh').value, columns: cols, roles, headerColor: selectedColor };
 
     let res;
@@ -365,17 +370,26 @@ function showTableBuilderModal(table) {
 }
 
 function renderColumnRow(col, i) {
+  const isDropdown = col.type === 'dropdown';
   return `
-    <div class="col-row" style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px">
-      <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
-      <select class="col-type form-control" style="margin:0;width:130px">
-        ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
-      </select>
-      <label class="checkbox-group" style="white-space:nowrap">
-        <input type="checkbox" class="col-req" ${col.required?'checked':''} />
-        <label style="font-size:12px">Req.</label>
-      </label>
-      <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 14)}</button>
+    <div class="col-row" style="display:flex;flex-direction:column;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:12px;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center">
+        <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
+        <select class="col-type form-control" style="margin:0;width:130px" onchange="const p=this.closest('.col-row'); const opt=p.querySelector('.col-opts-wrapper'); if (this.value==='dropdown') { opt.style.display='block'; } else { opt.style.display='none'; }">
+          ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
+        </select>
+        <label class="checkbox-group" style="white-space:nowrap;display:flex;align-items:center;gap:4px;margin:0;cursor:pointer">
+          <input type="checkbox" class="col-req" ${col.required?'checked':''} style="margin:0;cursor:pointer" />
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Req.</span>
+        </label>
+        <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 14)}</button>
+      </div>
+      <div class="col-opts-wrapper" style="display:${isDropdown?'block':'none'};margin-top:2px">
+        <label class="form-label" style="font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:4px;color:var(--text-secondary)">
+          ${getSvgIcon('info', 12)} <span>Dropdown Options (comma-separated list, e.g. High, Medium, Low)</span>
+        </label>
+        <input type="text" class="col-options form-control" value="${col.options||''}" placeholder="e.g. Ok, Maintenance Required, Out of Service" style="margin:0;font-size:12px;padding:6px 10px" />
+      </div>
     </div>
   `;
 }

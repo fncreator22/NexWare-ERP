@@ -594,6 +594,10 @@ export function getTables(warehouseId) {
     tables = tables.filter(t => !t.warehouseId || myWhs.includes(t.warehouseId));
   } else {
     tables = tables.filter(t => t.warehouseId === u.warehouseId);
+    // Dynamic roles restriction check: filter by allowed roles if not admin/super_admin
+    if (u.role !== 'admin') {
+      tables = tables.filter(t => !t.roles || t.roles.length === 0 || t.roles.includes(u.role));
+    }
   }
   if (warehouseId) tables = tables.filter(t => t.warehouseId === warehouseId);
   return tables;

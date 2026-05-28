@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-28T20:22:04.864Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-28T20:28:32.564Z
 
 
 // ===== modules/store.js =====
@@ -598,6 +598,10 @@ function getTables(warehouseId) {
     tables = tables.filter(t => !t.warehouseId || myWhs.includes(t.warehouseId));
   } else {
     tables = tables.filter(t => t.warehouseId === u.warehouseId);
+    // Dynamic roles restriction check: filter by allowed roles if not admin/super_admin
+    if (u.role !== 'admin') {
+      tables = tables.filter(t => !t.roles || t.roles.length === 0 || t.roles.includes(u.role));
+    }
   }
   if (warehouseId) tables = tables.filter(t => t.warehouseId === warehouseId);
   return tables;
@@ -1872,6 +1876,9 @@ function renderShell(pageTitle, pageSubtitle, content) {
   // Command Palette
   initPalette();
   document.getElementById('cmd-palette-btn')?.addEventListener('click', togglePalette);
+
+  // Intelligent JS tooltips system initialization
+  initGlobalTooltips();
 }
 
 function toggleSidebar() {
@@ -1997,6 +2004,8 @@ function showProfileDropdown(anchor) {
     <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">🚪 Sign Out</div>
   `;
 
+  document.body.appendChild(dropdown);
+
   dropdown.querySelectorAll('.dropdown-item').forEach(el => {
     el.addEventListener('mouseenter', () => el.style.background = 'rgba(99,102,241,0.08)');
     el.addEventListener('mouseleave', () => el.style.background = 'transparent');
@@ -2018,6 +2027,90 @@ function setPageContent(html) {
 
 function getPageContent() {
   return document.getElementById('page-content');
+}
+
+// ---- DYNAMIC JS TOOLTIPS ENGINE ----
+let tooltipsInitialized = false;
+
+function initGlobalTooltips() {
+  if (tooltipsInitialized) return;
+  tooltipsInitialized = true;
+
+  document.addEventListener('mouseenter', (e) => {
+    const trigger = e.target.closest?.('[data-tooltip]');
+    if (!trigger) return;
+
+    const text = trigger.getAttribute('data-tooltip');
+    if (!text) return;
+
+    // Cache original text and temporarily strip attribute to prevent CSS tooltip double-renders
+    trigger.dataset.tooltipVal = text;
+    trigger.removeAttribute('data-tooltip');
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'js-tooltip animate-scaleUp';
+    tooltip.textContent = text;
+    tooltip.style.cssText = `
+      position: fixed;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      font-size: var(--text-xs);
+      font-weight: 500;
+      color: var(--text-primary);
+      box-shadow: var(--shadow-md);
+      pointer-events: none;
+      z-index: 10000;
+      white-space: nowrap;
+      transition: opacity var(--transition-fast);
+      opacity: 0;
+    `;
+
+    document.body.appendChild(tooltip);
+
+    const rect = trigger.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    const tW = tooltipRect.width;
+    const tH = tooltipRect.height;
+    const offset = 8;
+
+    // Calculate vertical position (default to above)
+    let top = rect.top - tH - offset;
+
+    // Edge check: If top space is restricted, display below trigger
+    if (top < 10) {
+      top = rect.bottom + offset;
+    }
+
+    // Centered horizontal positioning
+    let left = rect.left + (rect.width - tW) / 2;
+
+    // Horizontal margins boundary clamping to prevent off-screen clipping
+    if (left < 10) {
+      left = 10;
+    } else if (left + tW > winW - 10) {
+      left = winW - tW - 10;
+    }
+
+    tooltip.style.top = top + 'px';
+    tooltip.style.left = left + 'px';
+    tooltip.style.opacity = '1';
+
+    const cleanTooltip = () => {
+      tooltip.style.opacity = '0';
+      setTimeout(() => tooltip.remove(), 100);
+      trigger.setAttribute('data-tooltip', text);
+      trigger.removeEventListener('mouseleave', cleanTooltip);
+      trigger.removeEventListener('click', cleanTooltip);
+    };
+
+    trigger.addEventListener('mouseleave', cleanTooltip);
+    trigger.addEventListener('click', cleanTooltip);
+  }, { capture: true });
 }
 
 // ===== components/palette.js =====
@@ -4786,10 +4879,15 @@ function showTableBuilderModal(table) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Access Roles</label>
-          <select id="t-roles" class="form-control" multiple style="height:80px">
-            ${['admin','manager','staff','employee'].map(r=>`<option value="${r}" ${(table?.roles||[]).includes(r)?'selected':''}>${capitalize(r)}</option>`).join('')}
-          </select>
+          <label class="form-label">Access Roles <span style="font-size:11px;color:var(--text-muted)">(All roles can access if none selected)</span></label>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:var(--bg-input);padding:10px 14px;border-radius:8px;border:1px solid var(--border-default)">
+            ${['admin','manager','staff','employee'].map(r => `
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--text-secondary);cursor:pointer;margin:0">
+                <input type="checkbox" name="t-roles-chk" value="${r}" ${(table?.roles||[]).includes(r)?'checked':''} style="width:16px;height:16px;accent-color:var(--brand-500);cursor:pointer;margin:0" />
+                <span>${capitalize(r)}</span>
+              </label>
+            `).join('')}
+          </div>
         </div>
       </div>
 
@@ -4851,7 +4949,7 @@ function showTableBuilderModal(table) {
       options: row.querySelector('.col-options')?.value || ''
     })).filter(c=>c.name);
 
-    const roles = Array.from(document.getElementById('t-roles').selectedOptions).map(o=>o.value);
+    const roles = Array.from(body.querySelectorAll('input[name="t-roles-chk"]:checked')).map(chk => chk.value);
     const data = { name, category: document.getElementById('t-cat').value, description: document.getElementById('t-desc').value, warehouseId: document.getElementById('t-wh').value, columns: cols, roles, headerColor: selectedColor };
 
     let res;
@@ -4877,17 +4975,26 @@ function showTableBuilderModal(table) {
 }
 
 function renderColumnRow(col, i) {
+  const isDropdown = col.type === 'dropdown';
   return `
-    <div class="col-row" style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px">
-      <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
-      <select class="col-type form-control" style="margin:0;width:130px">
-        ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
-      </select>
-      <label class="checkbox-group" style="white-space:nowrap">
-        <input type="checkbox" class="col-req" ${col.required?'checked':''} />
-        <label style="font-size:12px">Req.</label>
-      </label>
-      <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 14)}</button>
+    <div class="col-row" style="display:flex;flex-direction:column;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:12px;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center">
+        <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
+        <select class="col-type form-control" style="margin:0;width:130px" onchange="const p=this.closest('.col-row'); const opt=p.querySelector('.col-opts-wrapper'); if (this.value==='dropdown') { opt.style.display='block'; } else { opt.style.display='none'; }">
+          ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
+        </select>
+        <label class="checkbox-group" style="white-space:nowrap;display:flex;align-items:center;gap:4px;margin:0;cursor:pointer">
+          <input type="checkbox" class="col-req" ${col.required?'checked':''} style="margin:0;cursor:pointer" />
+          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Req.</span>
+        </label>
+        <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 14)}</button>
+      </div>
+      <div class="col-opts-wrapper" style="display:${isDropdown?'block':'none'};margin-top:2px">
+        <label class="form-label" style="font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:4px;color:var(--text-secondary)">
+          ${getSvgIcon('info', 12)} <span>Dropdown Options (comma-separated list, e.g. High, Medium, Low)</span>
+        </label>
+        <input type="text" class="col-options form-control" value="${col.options||''}" placeholder="e.g. Ok, Maintenance Required, Out of Service" style="margin:0;font-size:12px;padding:6px 10px" />
+      </div>
     </div>
   `;
 }
