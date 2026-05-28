@@ -14,7 +14,7 @@ export function renderLogin() {
     <div class="auth-page">
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
-        <div class="auth-logo">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.href='landing.html'">
           <div class="auth-logo-icon">⚡</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
@@ -75,7 +75,7 @@ export function renderSignup() {
     <div class="auth-page">
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
-        <div class="auth-logo">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.href='landing.html'">
           <div class="auth-logo-icon">⚡</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
@@ -98,7 +98,7 @@ export function renderSignup() {
           <div style="margin-bottom:16px">
             <label class="checkbox-group">
               <input type="checkbox" required />
-              <label style="color:var(--text-muted);font-size:13px">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
+              <label style="color:var(--text-muted);font-size:13px">I agree to the <a href="#/terms">Terms of Service</a> and <a href="#/privacy">Privacy Policy</a></label>
             </label>
           </div>
           <button type="submit" class="btn btn-primary" id="signup-btn">Create Account — It's Free</button>
@@ -144,8 +144,10 @@ export function renderWarehouseRegistration() {
     <div class="warehouse-reg-page">
       ${authBgHTML()}
       <header class="warehouse-reg-header">
-        <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚡</div>
-        <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
+        <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.href='landing.html'">
+          <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚡</div>
+          <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
+        </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
           <div style="font-size:13px;color:var(--text-muted)">Signed in as <strong style="color:var(--text-primary)">${user.name}</strong></div>
           <button class="btn btn-ghost btn-sm" id="wh-signout-btn">Sign out</button>

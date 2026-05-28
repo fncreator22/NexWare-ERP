@@ -18,6 +18,7 @@ import { getCurrentUser, getWarehouses, getStore, seedDemoData } from './modules
 
 // Pages
 import { renderLogin, renderSignup, renderWarehouseRegistration } from './pages/auth.js';
+import { renderPrivacy, renderTerms } from './pages/legal.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderWarehouses } from './pages/warehouses.js';
 import { renderWorkforce } from './pages/workforce.js';
@@ -45,6 +46,8 @@ const routes = {
   '/audit': renderAudit,
   '/settings': renderSettings,
   '/subscription': renderSubscription,
+  '/privacy': renderPrivacy,
+  '/terms': renderTerms,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -82,7 +85,8 @@ function resolveRoute() {
   try {
     const path = getActivePath();
     const user = getCurrentUser();
-    const publicRoutes = ['/login', '/signup'];
+    const publicRoutes = ['/login', '/signup', '/privacy', '/terms'];
+    const redirectIfLoggedIn = ['/login', '/signup'];
 
     // Not logged in
     if (!user) {
@@ -101,8 +105,8 @@ function resolveRoute() {
         safeNavigate('/register-warehouse');
         return;
       }
-      // Redirect away from public routes if already logged in
-      if (publicRoutes.includes(path)) {
+      // Redirect away from certain public routes if already logged in
+      if (redirectIfLoggedIn.includes(path)) {
         safeNavigate('/dashboard');
         return;
       }

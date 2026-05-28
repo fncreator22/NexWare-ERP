@@ -153,7 +153,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   document.getElementById('app').innerHTML = `
     <div class="app-shell ${isCollapsed ? 'collapsed' : ''}">
       <aside class="sidebar" id="sidebar">
-        <div class="sidebar-logo">
+        <div class="sidebar-logo" style="cursor:pointer" onclick="location.hash='#/dashboard'">
           <div style="display:flex;align-items:center;gap:var(--space-3);flex:1">
             <div class="sidebar-logo-icon">⚡</div>
             <div class="sidebar-logo-text-wrapper">
