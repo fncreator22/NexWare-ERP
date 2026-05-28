@@ -6,75 +6,94 @@ import { navigate, getCurrentPath } from '../modules/router.js';
 import { capitalize, positionFixedElement } from '../modules/ui.js';
 import { initPalette, togglePalette } from './palette.js';
 
+export function getSvgIcon(name, size = 18) {
+  const icons = {
+    dashboard: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
+    warehouses: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M3 7v14M21 7v14M10 21V13h4v8M3 7l9-4 9 4M7 21h2v-3h-2v3zM15 21h2v-3h-2v3z"/></svg>`,
+    workforce: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    items: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
+    tables: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>`,
+    billing: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><line x1="7" y1="15" x2="7.01" y2="15"/><line x1="11" y1="15" x2="13" y2="15"/></svg>`,
+    analytics: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><polyline points="18.7 8 13 14 9 10 4.7 14.3"/></svg>`,
+    settings: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+    audit: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>`,
+    subscription: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+    collapse: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
+    search: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+    bell: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`
+  };
+  return icons[name] || '';
+}
+
 const SUPER_ADMIN_NAV = [
   { section: 'Overview', items: [
-    { path: '/dashboard', icon: '📊', label: 'Dashboard' },
+    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   ]},
   { section: 'Operations', items: [
-    { path: '/warehouses', icon: '🏭', label: 'Warehouses' },
-    { path: '/workforce', icon: '👥', label: 'Workforce' },
-    { path: '/items', icon: '📦', label: 'Inventory' },
-    { path: '/tables', icon: '📋', label: 'Tables' },
+    { path: '/warehouses', icon: 'warehouses', label: 'Warehouses' },
+    { path: '/workforce', icon: 'workforce', label: 'Workforce' },
+    { path: '/items', icon: 'items', label: 'Inventory' },
+    { path: '/tables', icon: 'tables', label: 'Tables' },
   ]},
   { section: 'Finance', items: [
-    { path: '/billing', icon: '💰', label: 'Billing' },
-    { path: '/analytics', icon: '📈', label: 'Global Reports' },
+    { path: '/billing', icon: 'billing', label: 'Billing' },
+    { path: '/analytics', icon: 'analytics', label: 'Global Reports' },
   ]},
   { section: 'System', items: [
-    { path: '/settings', icon: '⚙️', label: 'System Settings' },
-    { path: '/audit', icon: '🔍', label: 'Audit Logs' },
+    { path: '/settings', icon: 'settings', label: 'System Settings' },
+    { path: '/audit', icon: 'audit', label: 'Audit Logs' },
   ]},
 ];
 
 const ADMIN_NAV = [
   { section: 'Overview', items: [
-    { path: '/dashboard', icon: '📊', label: 'Dashboard' },
+    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   ]},
   { section: 'Operations', items: [
-    { path: '/warehouses', icon: '🏭', label: 'Warehouse' },
-    { path: '/workforce', icon: '👥', label: 'User Management' },
-    { path: '/items', icon: '📦', label: 'Item Management' },
-    { path: '/tables', icon: '📋', label: 'Tables' },
+    { path: '/warehouses', icon: 'warehouses', label: 'Warehouse' },
+    { path: '/workforce', icon: 'workforce', label: 'User Management' },
+    { path: '/items', icon: 'items', label: 'Item Management' },
+    { path: '/tables', icon: 'tables', label: 'Tables' },
   ]},
   { section: 'Finance', items: [
-    { path: '/billing', icon: '💰', label: 'Billing' },
-    { path: '/analytics', icon: '📈', label: 'Reports' },
+    { path: '/billing', icon: 'billing', label: 'Billing' },
+    { path: '/analytics', icon: 'analytics', label: 'Reports' },
   ]},
   { section: 'System', items: [
-    { path: '/audit', icon: '🔍', label: 'Audit Logs' },
+    { path: '/audit', icon: 'audit', label: 'Audit Logs' },
   ]},
 ];
 
 const MANAGER_NAV = [
   { section: 'Overview', items: [
-    { path: '/dashboard', icon: '📊', label: 'Dashboard' },
+    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   ]},
   { section: 'Operations', items: [
-    { path: '/items', icon: '📦', label: 'Items' },
-    { path: '/tables', icon: '📋', label: 'Tables' },
-    { path: '/billing', icon: '💰', label: 'Billing' },
+    { path: '/items', icon: 'items', label: 'Items' },
+    { path: '/tables', icon: 'tables', label: 'Tables' },
+    { path: '/billing', icon: 'billing', label: 'Billing' },
   ]},
   { section: 'Reports', items: [
-    { path: '/analytics', icon: '📈', label: 'Analytics' },
+    { path: '/analytics', icon: 'analytics', label: 'Analytics' },
   ]},
 ];
 
 const STAFF_NAV = [
   { section: 'Overview', items: [
-    { path: '/dashboard', icon: '📊', label: 'Dashboard' },
+    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   ]},
   { section: 'Work', items: [
-    { path: '/tables', icon: '📋', label: 'My Tables' },
-    { path: '/billing', icon: '💰', label: 'Billing' },
+    { path: '/tables', icon: 'tables', label: 'My Tables' },
+    { path: '/billing', icon: 'billing', label: 'Billing' },
   ]},
 ];
 
 const EMPLOYEE_NAV = [
   { section: 'Overview', items: [
-    { path: '/dashboard', icon: '📊', label: 'Dashboard' },
+    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   ]},
   { section: 'My Work', items: [
-    { path: '/tables', icon: '📋', label: 'My Tables' },
+    { path: '/tables', icon: 'tables', label: 'My Tables' },
   ]},
 ];
 
@@ -99,13 +118,15 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   const notifications = getNotifications();
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  const isCollapsed = localStorage.getItem('wareops_sidebar_collapsed') === 'true';
+
   const navHTML = nav.map(section => `
     <div class="sidebar-section">
       <div class="sidebar-section-label">${section.section}</div>
       ${section.items.map(item => `
-        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}">
-          <span class="sidebar-item-icon">${item.icon}</span>
-          <span>${item.label}</span>
+        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" title="${item.label}">
+          <span class="sidebar-item-icon">${getSvgIcon(item.icon)}</span>
+          <span class="sidebar-item-label">${item.label}</span>
         </div>
       `).join('')}
     </div>
@@ -130,12 +151,12 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   `;
 
   document.getElementById('app').innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell ${isCollapsed ? 'collapsed' : ''}">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-logo">
           <div style="display:flex;align-items:center;gap:var(--space-3);flex:1">
             <div class="sidebar-logo-icon">⚡</div>
-            <div class="sidebar-logo-text">
+            <div class="sidebar-logo-text-wrapper">
               <div class="sidebar-logo-name">WareOps</div>
               <div class="sidebar-logo-tagline">Enterprise ERP</div>
             </div>
@@ -144,7 +165,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
         <nav class="sidebar-nav" id="sidebar-nav">${navHTML}</nav>
         ${sidebarWidget}
         <div class="sidebar-footer">
-          <div class="sidebar-user" id="user-menu-btn">
+          <div class="sidebar-user" id="user-menu-btn" title="${user.name} (${capitalize(user.role)})">
             <div class="sidebar-user-avatar">${user.avatar}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
@@ -157,14 +178,17 @@ export function renderShell(pageTitle, pageSubtitle, content) {
       <main class="main-content">
         <header class="topbar">
           <button class="topbar-menu-btn" id="topbar-menu-btn">☰</button>
+          <button class="topbar-collapse-btn" id="topbar-collapse-btn" title="Toggle Sidebar">
+            ${getSvgIcon('collapse', 20)}
+          </button>
           <div class="topbar-breadcrumb">${breadcrumb}</div>
           <div class="topbar-actions">
             <div class="topbar-search" id="cmd-palette-btn" style="cursor:pointer" title="Search Everything (Ctrl+K)">
-              <span style="color:var(--text-muted);font-size:14px">🔍</span>
+              <span style="color:var(--text-muted);display:flex;align-items:center">${getSvgIcon('search', 16)}</span>
               <input type="text" placeholder="Search (Ctrl+K)" id="global-search" readonly style="cursor:pointer" />
             </div>
             <div class="icon-btn notif-btn" id="notif-btn" data-tooltip="Notifications" style="position:relative">
-              🔔
+              ${getSvgIcon('bell', 18)}
               ${unreadCount > 0 ? `<span class="badge" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--accent-rose);border-radius:50%;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base)">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
             </div>
             <div class="icon-btn" data-tooltip="Profile" id="profile-btn">${user.avatar}</div>
@@ -185,6 +209,16 @@ export function renderShell(pageTitle, pageSubtitle, content) {
       navigate(item.dataset.path);
       closeSidebar();
     });
+  });
+
+  // Collapsible sidebar toggle
+  document.getElementById('topbar-collapse-btn')?.addEventListener('click', () => {
+    const shell = document.querySelector('.app-shell');
+    if (shell) {
+      shell.classList.toggle('collapsed');
+      const collapsed = shell.classList.contains('collapsed');
+      localStorage.setItem('wareops_sidebar_collapsed', collapsed);
+    }
   });
 
   // Mobile sidebar toggle

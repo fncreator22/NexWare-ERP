@@ -141,3 +141,109 @@
   z-index: calc(var(--z-sticky) - 1);
 }
 .sidebar-overlay.visible { display: block; }
+
+/* Collapsible Sidebar Styles */
+.app-shell.collapsed .sidebar {
+  width: 68px;
+}
+
+.app-shell.collapsed .main-content {
+  margin-left: 68px;
+}
+
+/* Smooth logo transition */
+.sidebar-logo-text-wrapper {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  width: auto;
+  overflow: hidden;
+  transition: opacity var(--transition-base), width var(--transition-base);
+}
+
+.app-shell.collapsed .sidebar-logo-text-wrapper {
+  opacity: 0;
+  width: 0;
+  pointer-events: none;
+}
+
+/* Smooth section label hide */
+.sidebar-section-label {
+  transition: opacity var(--transition-base), height var(--transition-base), padding var(--transition-base);
+  overflow: hidden;
+}
+
+.app-shell.collapsed .sidebar-section-label {
+  opacity: 0;
+  height: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+/* Smooth sidebar item label hide */
+.sidebar-item-label {
+  opacity: 1;
+  transition: opacity var(--transition-base), width var(--transition-base), margin var(--transition-base);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-shell.collapsed .sidebar-item-label {
+  opacity: 0;
+  width: 0;
+  margin-left: 0;
+  pointer-events: none;
+}
+
+/* Hide health widget smoothly when collapsed */
+.sidebar-widget {
+  transition: opacity var(--transition-base), height var(--transition-base), padding var(--transition-base), margin var(--transition-base);
+  overflow: hidden;
+}
+
+.app-shell.collapsed .sidebar-widget {
+  opacity: 0;
+  height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  pointer-events: none;
+}
+
+/* Smooth footer user details hide */
+.sidebar-user-info {
+  transition: opacity var(--transition-base), width var(--transition-base);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-shell.collapsed .sidebar-user-info {
+  opacity: 0;
+  width: 0;
+  pointer-events: none;
+}
+
+/* Sidebar collapse toggle button in topbar */
+.topbar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.topbar-collapse-btn:hover {
+  background: var(--glass-bg);
+  color: var(--text-primary);
+}
+
+@media (max-width: 1023px) {
+  .topbar-collapse-btn {
+    display: none !important;
+  }
+}
