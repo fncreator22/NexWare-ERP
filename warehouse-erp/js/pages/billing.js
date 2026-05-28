@@ -274,7 +274,7 @@ function showBillModal() {
 
   const modal = createModal({ title: '🧾 New Invoice', body, footer, size: 'lg' });
   modal.el.querySelector('#bill-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#bill-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#bill-save')?.addEventListener('click', async () => {
     const customer = document.getElementById('bill-customer')?.value.trim();
     if (!customer) { showToast('Validation','Customer name required','warning'); return; }
     if (billItems.length === 0) { showToast('Validation','Add at least one item','warning'); return; }
@@ -291,11 +291,15 @@ function showBillModal() {
     const subtotal = billItems.reduce((s,i)=>s+(i.qty*i.price),0);
     const tax = billItems.reduce((s,i)=>s+(i.qty*i.price*(TAX_RATES[i.taxCategory]||TAX_RATES.normal)),0);
     const total = subtotal + tax;
-    const bill = createBill({ customer, warehouseId, items: billItems.map(i=>({...i})), subtotal, tax, total });
-    showToast('Bill generated!', `${bill.billNo} — ${formatCurrency(total)}`, 'success');
+    const res = await createBill({ customer, warehouseId, items: billItems.map(i=>({...i})), subtotal, tax, total });
+    if (res && res.error) {
+      showToast('Error Generating Bill', res.error, 'error');
+      return;
+    }
+    showToast('Bill generated!', `${res.billNo} — ${formatCurrency(total)}`, 'success');
     billItems = [];
     modal.close();
-    navigate(getCurrentPath());
+    renderBilling();
   });
 }
 

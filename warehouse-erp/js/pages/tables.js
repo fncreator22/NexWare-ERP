@@ -203,7 +203,15 @@ function attachTableListEvents() {
     document.querySelectorAll('.action-btn.delete[data-tid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this table and all its data?', 'Delete Table');
-        if (ok) { deleteTable(btn.dataset.tid); showToast('Table deleted','','success'); renderTables(); }
+        if (ok) {
+          const res = await deleteTable(btn.dataset.tid);
+          if (res && res.error) {
+            showToast('Error Deleting Table', res.error, 'error');
+            return;
+          }
+          showToast('Table deleted','','success');
+          renderTables();
+        }
       });
     });
   }
@@ -219,7 +227,15 @@ function attachTableListEvents() {
   document.querySelectorAll('.action-btn.delete[data-row]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const ok = await confirm('Delete this row?', 'Delete Row');
-      if (ok) { deleteTableRow(activeTblId, btn.dataset.row); showToast('Row deleted','','success'); renderTables(); }
+      if (ok) {
+        const res = await deleteTableRow(activeTblId, btn.dataset.row);
+        if (res && res.error) {
+          showToast('Error Deleting Row', res.error, 'error');
+          return;
+        }
+        showToast('Row deleted','','success');
+        renderTables();
+      }
     });
   });
 }
@@ -310,7 +326,7 @@ function showTableBuilderModal(table) {
 
   const modal = createModal({ title: isEdit?'✏️ Edit Table':'📋 Build New Table', body, footer, size: 'lg' });
   modal.el.querySelector('#t-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#t-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#t-save')?.addEventListener('click', async () => {
     const name = document.getElementById('t-name').value.trim();
     if (!name) { showToast('Validation','Table name is required','warning'); return; }
     // Collect columns
@@ -326,8 +342,22 @@ function showTableBuilderModal(table) {
     const roles = Array.from(document.getElementById('t-roles').selectedOptions).map(o=>o.value);
     const data = { name, category: document.getElementById('t-cat').value, description: document.getElementById('t-desc').value, warehouseId: document.getElementById('t-wh').value, columns: cols, roles, headerColor: selectedColor };
 
-    if (isEdit) { updateTable(table.id, data); showToast('Table updated',`${name} updated`,'success'); }
-    else { createTable(data); showToast('Table created',`${name} is ready`,'success'); }
+    let res;
+    if (isEdit) {
+      res = await updateTable(table.id, data);
+      if (res && res.error) {
+        showToast('Error Updating Table', res.error, 'error');
+        return;
+      }
+      showToast('Table updated',`${name} updated`,'success');
+    } else {
+      res = await createTable(data);
+      if (res && res.error) {
+        showToast('Error Creating Table', res.error, 'error');
+        return;
+      }
+      showToast('Table created',`${name} is ready`,'success');
+    }
     modal.close();
     activeTblId = null;
     renderTables();
@@ -375,16 +405,36 @@ function showRowModal(tableId, row) {
 
   const modal = createModal({ title: isEdit?'✏️ Edit Row':'➕ Add New Row', body, footer });
   modal.el.querySelector('#r-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#r-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#r-save')?.addEventListener('click', async () => {
     const rowData = {};
+    let hasValidationError = false;
     cols.forEach(col => {
       const inp = document.getElementById(`rf-${col.id}`);
       if (!inp) return;
       rowData[col.id] = col.type === 'checkbox' ? inp.checked : inp.value;
-      if (col.required && !rowData[col.id] && col.type !== 'checkbox') { showToast('Validation',`${col.name} is required`,'warning'); return; }
+      if (col.required && !rowData[col.id] && col.type !== 'checkbox') {
+        showToast('Validation',`${col.name} is required`,'warning');
+        hasValidationError = true;
+      }
     });
-    if (isEdit) { updateTableRow(tableId, row.id, rowData); showToast('Row updated','','success'); }
-    else { addTableRow(tableId, rowData); showToast('Row added','','success'); }
+    if (hasValidationError) return;
+
+    let res;
+    if (isEdit) {
+      res = await updateTableRow(tableId, row.id, rowData);
+      if (res && res.error) {
+        showToast('Error Updating Row', res.error, 'error');
+        return;
+      }
+      showToast('Row updated','','success');
+    } else {
+      res = await addTableRow(tableId, rowData);
+      if (res && res.error) {
+        showToast('Error Adding Row', res.error, 'error');
+        return;
+      }
+      showToast('Row added','','success');
+    }
     modal.close();
     renderTables();
   });

@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-27T17:11:47.705Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-28T19:14:20.871Z
 
 
 // ===== modules/store.js =====
@@ -91,9 +91,17 @@ function resetStore() {
 }
 
 // ---- API AND SYNCHRONIZATION ----
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const getApiBaseUrl = () => {
+  if (typeof window === 'undefined') return 'http://127.0.0.1:8000/api/v1';
+  let hostname = window.location.hostname || '127.0.0.1';
+  if (hostname === 'localhost' || hostname === '[::1]') {
+    hostname = '127.0.0.1';
+  }
+  return `http://${hostname}:8000/api/v1`;
+};
+const API_BASE_URL = getApiBaseUrl();
 
-export async function apiFetch(path, options = {}) {
+async function apiFetch(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
   const token = localStorage.getItem('access_token');
   
@@ -108,7 +116,8 @@ export async function apiFetch(path, options = {}) {
   
   const config = {
     ...options,
-    headers
+    headers,
+    credentials: 'include'
   };
   
   try {
@@ -127,7 +136,8 @@ export async function apiFetch(path, options = {}) {
     
     const data = await res.json();
     if (!res.ok) {
-      return { error: data.message || 'An error occurred.' };
+      const errMsg = (data.error && data.error.message) || data.message || 'An error occurred.';
+      return { error: errMsg };
     }
     return data;
   } catch (err) {
@@ -136,21 +146,39 @@ export async function apiFetch(path, options = {}) {
   }
 }
 
-export async function syncWithBackend() {
+function normalize(data) {
+  if (!data) return data;
+  if (Array.isArray(data)) {
+    return data.map(item => normalize(item));
+  }
+  if (typeof data === 'object') {
+    const item = { ...data };
+    if (item._id && !item.id) {
+      item.id = String(item._id);
+    }
+    if (item.warehouse_id !== undefined && item.warehouseId === undefined) {
+      item.warehouseId = item.warehouse_id;
+    }
+    if (item.tenant_id !== undefined && item.tenantId === undefined) {
+      item.tenantId = item.tenant_id;
+    }
+    if (item.user_id !== undefined && item.userId === undefined) {
+      item.userId = item.user_id;
+    }
+    if (item.user_name !== undefined && item.userName === undefined) {
+      item.userName = item.user_name;
+    }
+    return item;
+  }
+  return data;
+}
+
+async function syncWithBackend() {
   const token = localStorage.getItem('access_token');
   if (!token) return;
   
   try {
-    // Helper to normalize _id to id recursively / mapped
-    const normalize = (items) => {
-      if (!Array.isArray(items)) return [];
-      return items.map(item => {
-        if (item && item._id && !item.id) {
-          item.id = item._id;
-        }
-        return item;
-      });
-    };
+
 
     // 1. Fetch Warehouses
     const whRes = await apiFetch('/warehouses/');
@@ -204,6 +232,21 @@ export async function syncWithBackend() {
       _store.notifications = [];
     }
 
+    // 7. Fetch Dynamic Tables & Row Data
+    const tableRes = await apiFetch('/dynamic-tables/');
+    if (tableRes && tableRes.success && Array.isArray(tableRes.data)) {
+      _store.tables = normalize(tableRes.data);
+      const tableRowsData = {};
+      await Promise.all(_store.tables.map(async (table) => {
+        const rowsRes = await apiFetch(`/dynamic-tables/${table.id}/rows`);
+        tableRowsData[table.id] = (rowsRes && rowsRes.success && Array.isArray(rowsRes.data)) ? normalize(rowsRes.data) : [];
+      }));
+      _store.tableData = tableRowsData;
+    } else {
+      _store.tables = [];
+      _store.tableData = {};
+    }
+
     saveStore();
     
     // Automatically trigger/maintain WebSocket connection broker
@@ -226,7 +269,7 @@ function getCurrentUser() {
   return s.users.find(u => u.id === s.currentUserId) || null;
 }
 
-export async function login(email, password) {
+async function login(email, password) {
   const res = await apiFetch('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password })
@@ -236,7 +279,8 @@ export async function login(email, password) {
     return { error: res.error };
   }
   
-  const { access_token, user } = res.data;
+  let { access_token, user } = res.data;
+  user = normalize(user);
   localStorage.setItem('access_token', access_token);
   
   const s = getStore();
@@ -258,18 +302,31 @@ export async function login(email, password) {
   return user;
 }
 
-export async function logout() {
+async function logout() {
   const token = localStorage.getItem('access_token');
-  if (token) {
-    await apiFetch('/auth/logout', { method: 'POST' });
-  }
+  
+  // Clear client-side authentication and session state synchronously first
   localStorage.removeItem('access_token');
   const s = getStore();
   s.currentUserId = null;
   saveStore();
+
+  // Perform backend logout notification in the background
+  if (token) {
+    try {
+      await apiFetch('/auth/logout', { 
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (err) {
+      console.warn('[Store] Backend logout request failed:', err);
+    }
+  }
 }
 
-export async function signup(name, email, password) {
+async function signup(name, email, password) {
   const res = await apiFetch('/auth/signup', {
     method: 'POST',
     body: JSON.stringify({ name, email, password })
@@ -316,7 +373,7 @@ function getStockHealth(warehouseId) {
   return Math.round(((items.length - lowStock) / items.length) * 100);
 }
 
-export async function createWarehouse(data) {
+async function createWarehouse(data) {
   const res = await apiFetch('/warehouses/', {
     method: 'POST',
     body: JSON.stringify(data)
@@ -387,7 +444,7 @@ function getAllUsers() {
   );
 }
 
-export async function createUser(data) {
+async function createUser(data) {
   const u = getCurrentUser();
   if (u.role !== 'super_admin' && u.role !== 'admin') {
     return { error: 'Unauthorized: Only Super Admins and Admins can create workforce members.' };
@@ -415,7 +472,7 @@ export async function createUser(data) {
   return { user };
 }
 
-export async function updateUser(id, data) {
+async function updateUser(id, data) {
   const res = await apiFetch(`/workforce/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data)
@@ -443,7 +500,7 @@ export async function updateUser(id, data) {
   return user;
 }
 
-export async function deleteUser(id) {
+async function deleteUser(id) {
   const res = await apiFetch(`/workforce/${id}`, {
     method: 'DELETE'
   });
@@ -473,61 +530,33 @@ function getItems(warehouseId) {
   return s.items.filter(i => i.warehouseId === u.warehouseId);
 }
 
-function createItem(data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null; // Employees cannot create items
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
-
-  // SKU Uniqueness check to prevent tracking errors
-  if (data.sku && s.items.find(i => i.sku === data.sku)) {
-    return { error: 'SKU already exists in the system' };
-  }
-
-  const id = 'item' + Date.now();
-  const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
-  s.items.push(item);
-
-  saveStore();
-  addAuditLog('item_create', `Item created: ${data.name} (SKU: ${data.sku})`, s.currentUserId);
-  addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
-  return item;
+async function createItem(data) {
+  const res = await apiFetch('/items/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-function updateItem(id, data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-
-  const idx = s.items.findIndex(i => i.id === id);
-  if (idx === -1) return null;
-  const target = s.items[idx];
-
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return null;
-  if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
-
-  // SKU Uniqueness check for updates
-  if (data.sku && s.items.find(i => i.sku === data.sku && i.id !== id)) {
-    return { error: 'SKU already exists' };
-  }
-
-  s.items[idx] = { ...s.items[idx], ...data, updatedAt: new Date().toISOString() };
-  saveStore();
-  addNotification('item_update', 'Inventory Updated', `${s.items[idx].name} stock or details updated`, '/items', s.items[idx].warehouseId);
-  return s.items[idx];
+async function updateItem(id, data) {
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-function deleteItem(id) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
-
-  const target = s.items.find(i => i.id === id);
-  if (!target) return;
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return;
-
-  s.items = s.items.filter(i => i.id !== id);
-  saveStore();
+async function deleteItem(id) {
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'DELETE'
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return true;
 }
 
 // ---- TABLES ----
@@ -546,50 +575,33 @@ function getTables(warehouseId) {
   return tables;
 }
 
-function createTable(data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || !['super_admin','admin'].includes(u.role)) return null;
-  if (u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
-
-  const id = 'tbl' + Date.now();
-  const table = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId, status: 'active' };
-  s.tables.push(table);
-  s.tableData[id] = [];
-  saveStore();
-  addAuditLog('table_create', `Table created: ${data.name}`, s.currentUserId);
-  addNotification('table_create', 'New Operational Table', `${data.name} has been created`, '/tables', data.warehouseId);
-  return table;
+async function createTable(data) {
+  const res = await apiFetch('/dynamic-tables/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-function updateTable(id, data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || !['super_admin','admin'].includes(u.role)) return null;
-
-  const idx = s.tables.findIndex(t => t.id === id);
-  if (idx === -1) return null;
-  const target = s.tables[idx];
-
-  if (u.role === 'admin' && target.warehouseId !== u.warehouseId) return null;
-  if (data.warehouseId && u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
-
-  s.tables[idx] = { ...s.tables[idx], ...data, updatedAt: new Date().toISOString() };
-  saveStore();
-  return s.tables[idx];
+async function updateTable(id, data) {
+  const res = await apiFetch(`/dynamic-tables/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-function deleteTable(id) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || !['super_admin','admin'].includes(u.role)) return;
-
-  const target = s.tables.find(t => t.id === id);
-  if (!target || (u.role === 'admin' && target.warehouseId !== u.warehouseId)) return;
-
-  s.tables = s.tables.filter(t => t.id !== id);
-  delete s.tableData[id];
-  saveStore();
+async function deleteTable(id) {
+  const res = await apiFetch(`/dynamic-tables/${id}`, {
+    method: 'DELETE'
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return true;
 }
 
 function getTableData(tableId) {
@@ -597,48 +609,33 @@ function getTableData(tableId) {
   return s.tableData[tableId] || [];
 }
 
-function addTableRow(tableId, row) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-
-  const table = s.tables.find(t => t.id === tableId);
-  if (!table) return null;
-  if (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId) return null;
-
-  if (!s.tableData[tableId]) s.tableData[tableId] = [];
-  const rowId = 'row' + Date.now();
-  s.tableData[tableId].push({ id: rowId, ...row, createdAt: new Date().toISOString() });
-  saveStore();
-  addNotification('table_update', 'Table Data Update', `New entry added to ${table.name}`, '/tables', table.warehouseId);
-  return rowId;
+async function addTableRow(tableId, row) {
+  const res = await apiFetch(`/dynamic-tables/${tableId}/rows`, {
+    method: 'POST',
+    body: JSON.stringify(row)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-function updateTableRow(tableId, rowId, data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
-
-  const table = s.tables.find(t => t.id === tableId);
-  if (!table || (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId)) return;
-
-  if (!s.tableData[tableId]) return;
-  const idx = s.tableData[tableId].findIndex(r => r.id === rowId);
-  if (idx > -1) { s.tableData[tableId][idx] = { ...s.tableData[tableId][idx], ...data }; }
-  saveStore();
+async function updateTableRow(tableId, rowId, data) {
+  const res = await apiFetch(`/dynamic-tables/${tableId}/rows/${rowId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-function deleteTableRow(tableId, rowId) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
-
-  const table = s.tables.find(t => t.id === tableId);
-  if (!table || (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId)) return;
-
-  if (!s.tableData[tableId]) return;
-  s.tableData[tableId] = s.tableData[tableId].filter(r => r.id !== rowId);
-  saveStore();
+async function deleteTableRow(tableId, rowId) {
+  const res = await apiFetch(`/dynamic-tables/${tableId}/rows/${rowId}`, {
+    method: 'DELETE'
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return true;
 }
 
 // ---- BILLS ----
@@ -668,38 +665,14 @@ function getBills(warehouseId) {
   );
 }
 
-function createBill(data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
-
-  // Manual Inventory Synchronization: Decrement stock for billed items
-  if (data.items && Array.isArray(data.items)) {
-    data.items.forEach(billItem => {
-      const itemIdx = s.items.findIndex(i => i.id === billItem.id);
-      if (itemIdx !== -1) {
-        s.items[itemIdx].stock = Math.max(0, (s.items[itemIdx].stock || 0) - billItem.qty);
-      }
-    });
-  }
-
-  const id = 'bill' + Date.now();
-  // Regional Tax Snapshot: Use warehouse-specific tax config if available
-  const taxConfig = getTaxConfig(data.warehouseId);
-  const bill = { 
-    id, ...data, 
-    taxConfigSnapshot: { ...taxConfig }, // Snapshot for record integrity
-    createdAt: new Date().toISOString(), 
-    createdBy: s.currentUserId, 
-    billNo: 'INV-' + String(s.bills.length + 1).padStart(4, '0') 
-  };
-  s.bills.push(bill);
-
-  saveStore();
-  addAuditLog('bill_create', `Bill generated: ${bill.billNo} — $${data.total}`, s.currentUserId);
-  addNotification('bill_create', 'New Invoice Generated', `${bill.billNo} for ${data.customer} — $${data.total}`, '/billing', data.warehouseId);
-  return bill;
+async function createBill(data) {
+  const res = await apiFetch('/billing/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
 // ---- AUDIT LOGS ----
@@ -753,7 +726,7 @@ function getNotifications() {
   return s.notifications.filter(n => n.userId === u.id).sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp));
 }
 
-export async function addNotification(type, title, message, link, targetWarehouseId = null) {
+async function addNotification(type, title, message, link, targetWarehouseId = null) {
   const s = getStore();
   const u = getCurrentUser();
   let targets = [];
@@ -818,17 +791,17 @@ export async function addNotification(type, title, message, link, targetWarehous
   await syncWithBackend();
 }
 
-export async function clearNotifications() {
+async function clearNotifications() {
   await apiFetch('/realtime/notifications/clear', { method: 'DELETE' });
   await syncWithBackend();
 }
 
-export async function markNotificationRead(id) {
+async function markNotificationRead(id) {
   await apiFetch(`/realtime/notifications/${id}/read`, { method: 'PUT' });
   await syncWithBackend();
 }
 
-export async function markAllNotificationsRead() {
+async function markAllNotificationsRead() {
   await apiFetch('/realtime/notifications/read-all', { method: 'PUT' });
   await syncWithBackend();
 }
@@ -852,11 +825,21 @@ function getTaxRates(warehouseId) {
   return { luxury: (cfg.luxury || 0) / 100, normal: (cfg.normal || 0) / 100 };
 }
 
-function saveTaxConfig(config) {
+async function saveTaxConfig(config) {
   const s = getStore();
   s.taxConfig = { ...s.taxConfig, ...config };
   saveStore();
-  addAuditLog('settings_update', `Tax config updated: Normal ${config.normal}%, Luxury ${config.luxury}%`, s.currentUserId);
+  
+  await apiFetch('/audit-logs/', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'settings_update',
+      description: `Tax config updated: Normal ${config.normal}%, Luxury ${config.luxury}%`,
+      warehouseId: s.currentWarehouseId || null
+    })
+  });
+  
+  await syncWithBackend();
 }
 
 // ---- SUBSCRIPTION ----
@@ -888,7 +871,11 @@ function connectWebSocket() {
     return;
   }
 
-  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws?token=${token}`;
+  let hostname = window.location.hostname || '127.0.0.1';
+  if (hostname === 'localhost' || hostname === '[::1]') {
+    hostname = '127.0.0.1';
+  }
+  const wsUrl = `ws://${hostname}:8000/api/v1/realtime/ws?token=${token}`;
   console.log('[WebSocket] Connecting to:', wsUrl);
   ws = new WebSocket(wsUrl);
 
@@ -898,7 +885,7 @@ function connectWebSocket() {
       console.log('[WebSocket] Event received:', payload);
       
       // Auto-synchronize the client dataset when real-time updates are received
-      if (payload.event_type) {
+      if (payload.type || payload.event_type) {
         syncWithBackend();
       }
     } catch (err) {
@@ -1136,19 +1123,23 @@ function paginate(data, page, perPage = 10) {
  * Auto-positions a fixed element relative to an anchor, ensuring it stays within the viewport.
  */
 function positionFixedElement(anchor, element, options = {}) {
-  const { offset = 8, preferredAlign = 'right' } = options;
+  const { offset = 8, preferredAlign = 'right', preferredVertical = 'bottom' } = options;
   const rect = anchor.getBoundingClientRect();
   const winW = window.innerWidth;
   const winH = window.innerHeight;
 
   // Append to body if not already there to measure
   if (!element.parentElement) document.body.appendChild(element);
+
+  // Set max width to fit viewport dynamically and prevent horizontal clipping
+  element.style.maxWidth = (winW - 20) + 'px';
+  element.style.boxSizing = 'border-box';
   
   const elRect = element.getBoundingClientRect();
   const elW = elRect.width;
   const elH = elRect.height;
 
-  let top = rect.bottom + offset;
+  let top = preferredVertical === 'top' ? rect.top - elH - offset : rect.bottom + offset;
   let left = preferredAlign === 'left' ? rect.left : rect.right - elW;
 
   // Horizontal edge detection
@@ -1158,9 +1149,15 @@ function positionFixedElement(anchor, element, options = {}) {
     left = winW - elW - 10;
   }
 
-  // Vertical edge detection (flip to top if no space below)
-  if (top + elH > winH - 10 && rect.top > elH + offset) {
-    top = rect.top - elH - offset;
+  // Vertical edge detection
+  if (preferredVertical === 'top') {
+    if (top < 10 && rect.bottom + elH + offset < winH - 10) {
+      top = rect.bottom + offset; // Flip to bottom
+    }
+  } else {
+    if (top + elH > winH - 10 && rect.top > elH + offset) {
+      top = rect.top - elH - offset; // Flip to top
+    }
   }
 
   element.style.position = 'fixed';
@@ -1192,6 +1189,14 @@ function formatNumber(num) {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
   if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
   return num.toString();
+}
+
+function debounce(func, delay = 300) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => func.apply(this, args), delay);
+  };
 }
 
 // ===== modules/exporter.js =====
@@ -1882,14 +1887,16 @@ function showProfileDropdown(anchor) {
   const dropdown = document.createElement('div');
   dropdown.id = 'profile-dropdown';
   dropdown.className = 'dropdown-menu animate-scaleUp';
+  dropdown.style.cssText = 'min-width:220px;';
   
   const isSidebar = anchor.id === 'user-menu-btn';
-  dropdown.style.cssText = isSidebar
-    ? 'position:absolute;bottom:calc(100% + 8px);left:0;min-width:220px;z-index:var(--z-dropdown);'
-    : 'position:absolute;top:calc(100% + 8px);right:0;min-width:220px;z-index:var(--z-dropdown);';
   
-  anchor.style.position = 'relative';
-  anchor.appendChild(dropdown);
+  // Use positionFixedElement to position the profile dropdown perfectly relative to anchor
+  positionFixedElement(anchor, dropdown, {
+    offset: 8,
+    preferredAlign: isSidebar ? 'left' : 'right',
+    preferredVertical: isSidebar ? 'top' : 'bottom'
+  });
 
   dropdown.innerHTML = `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
@@ -1909,10 +1916,10 @@ function showProfileDropdown(anchor) {
   });
 
   setTimeout(() => document.addEventListener('click', (e) => {
-    if (!dropdown.contains(e.target)) dropdown.remove();
+    if (!dropdown.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) dropdown.remove();
   }, { once: true }), 50);
   
-  dropdown.querySelector('#dd-logout')?.addEventListener('click', () => { logout(); navigate('/login'); });
+  dropdown.querySelector('#dd-logout')?.addEventListener('click', async () => { dropdown.remove(); await logout(); navigate('/login'); });
   dropdown.querySelector('#dd-settings')?.addEventListener('click', () => { navigate('/settings'); dropdown.remove(); });
   dropdown.querySelector('#dd-subscription')?.addEventListener('click', () => { navigate('/subscription'); dropdown.remove(); });
 }
@@ -2400,8 +2407,8 @@ function renderWarehouseRegistration() {
     </div>
   `;
 
-  document.getElementById('wh-signout-btn')?.addEventListener('click', () => {
-    logout();
+  document.getElementById('wh-signout-btn')?.addEventListener('click', async () => {
+    await logout();
     navigate('/login');
   });
 
@@ -2944,7 +2951,7 @@ function refreshShell() {
           <p class="page-subtitle">Centralized control for all warehouse locations · <span style="color:var(--text-brand);font-weight:600">${planLabel}</span></p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" id="view-toggle">⊞ Grid</button>
+          <button class="btn btn-secondary btn-sm" id="view-toggle">☰ Table</button>
           <button class="btn btn-primary" id="create-wh-btn" ${atLimit ? 'disabled title="Warehouse limit reached for your plan"' : ''}>
             + New Warehouse ${atLimit ? '🔒' : ''}
           </button>
@@ -3019,11 +3026,16 @@ function refreshShell() {
     showWarehouseModal(null);
   });
 
-  document.getElementById('wh-search')?.addEventListener('input', e => { wh_searchQuery = e.target.value; refreshList(); });
+  const debouncedSearch = debounce(q => {
+    wh_searchQuery = q;
+    refreshList();
+  }, 300);
+
+  document.getElementById('wh-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('wh-status-filter')?.addEventListener('change', refreshList);
   document.getElementById('view-toggle')?.addEventListener('click', (e) => {
     wh_currentView = wh_currentView === 'grid' ? 'table' : 'grid';
-    e.target.textContent = wh_currentView === 'grid' ? '⊞ Grid' : '☰ Table';
+    e.target.textContent = wh_currentView === 'grid' ? '☰ Table' : '⊞ Grid';
     refreshList();
   });
 
@@ -3038,7 +3050,9 @@ function refreshList() {
   if (statusFilter) whs = whs.filter(w => w.status === statusFilter);
   const allUsers = getAllUsers();
   const container = document.getElementById('wh-container');
-  if (container) container.innerHTML = renderWarehouseGrid(whs, allUsers);
+  if (container) {
+    container.innerHTML = wh_currentView === 'table' ? renderWarehouseTable(whs, allUsers) : renderWarehouseGrid(whs, allUsers);
+  }
   // Update count
   const countEl = document.getElementById('wh-count');
   if (countEl) countEl.textContent = getWarehouses().length;
@@ -3088,6 +3102,68 @@ function renderWarehouseGrid(whs, allUsers) {
   </div>`;
 }
 
+function renderWarehouseTable(whs, allUsers) {
+  if (whs.length === 0) return `
+    <div class="card" style="text-align:center;padding:64px">
+      <div style="font-size:48px;margin-bottom:16px;opacity:0.4">🏭</div>
+      <h3 style="color:var(--text-secondary);margin-bottom:8px">No warehouses found</h3>
+      <p style="color:var(--text-muted);font-size:14px;margin-bottom:24px">Create your first warehouse to get started</p>
+      <button class="btn btn-primary" onclick="document.getElementById('create-wh-btn').click()">+ Create Warehouse</button>
+    </div>
+  `;
+
+  return `
+    <div class="card animate-slideUp">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Logo</th>
+              <th>Name</th>
+              <th>Business Name</th>
+              <th>Contact Info</th>
+              <th>Staff</th>
+              <th>Items</th>
+              <th>Revenue</th>
+              <th>Status</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${whs.map(wh => {
+              const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
+              return `
+                <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
+                  <td data-label="Logo"><div style="font-size:24px">${wh.logo || '🏭'}</div></td>
+                  <td data-label="Name">
+                    <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">📍 ${wh.address}</div>
+                  </td>
+                  <td data-label="Business Name">${wh.businessName}</td>
+                  <td data-label="Contact Info">
+                    <div style="font-size:12px">${wh.email}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">📞 ${wh.contact}</div>
+                  </td>
+                  <td data-label="Staff"><span class="badge badge-brand">${staff}</span></td>
+                  <td data-label="Items"><span class="badge badge-info">${wh.items || 0}</span></td>
+                  <td data-label="Revenue"><strong style="color:var(--accent-emerald)">${formatCurrency(wh.revenue || 0)}</strong></td>
+                  <td data-label="Status"><span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'}">${wh.status}</span></td>
+                  <td data-label="Actions" style="text-align:right" onclick="event.stopPropagation()">
+                    <div style="display:inline-flex;gap:4px">
+                      <button class="action-btn edit" data-id="${wh.id}" title="Edit">✏️</button>
+                      <button class="action-btn delete" data-id="${wh.id}" title="Delete">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 function attachWarehouseEvents() {
   // Edit buttons
   document.querySelectorAll('.action-btn.edit[data-id]').forEach(btn => {
@@ -3112,10 +3188,10 @@ function attachWarehouseEvents() {
     });
   });
 
-  // Warehouse card click → warehouse detail dashboard
-  document.querySelectorAll('.warehouse-card[data-wh-id]').forEach(card => {
-    card.addEventListener('click', () => {
-      const whId = card.dataset.whId;
+  // Warehouse card/row click → warehouse detail dashboard
+  document.querySelectorAll('.warehouse-card[data-wh-id], .warehouse-row[data-wh-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const whId = el.dataset.whId;
       navigate('/warehouses/' + whId);
     });
   });
@@ -3555,7 +3631,13 @@ function renderWorkforce() {
   renderWorkforceTable();
 
   document.getElementById('create-user-btn')?.addEventListener('click', () => showUserModal(null));
-  document.getElementById('wf-search')?.addEventListener('input', e => { wf_searchQ = e.target.value; wf_page = 1; renderWorkforceTable(); });
+  const debouncedSearch = debounce(q => {
+    wf_searchQ = q;
+    wf_page = 1;
+    renderWorkforceTable();
+  }, 300);
+
+  document.getElementById('wf-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('role-filter')?.addEventListener('change', e => { roleFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
   document.getElementById('wh-filter-wf')?.addEventListener('change', e => { wf_whFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
 }
@@ -3848,7 +3930,13 @@ function renderItems() {
 
   document.getElementById('create-item-btn')?.addEventListener('click', () => showItemModal(null));
   document.getElementById('import-csv-btn')?.addEventListener('click', () => showImportModal());
-  document.getElementById('item-search')?.addEventListener('input', e => { it_searchQ = e.target.value; it_page = 1; renderItemsTable(); });
+  const debouncedSearch = debounce(q => {
+    it_searchQ = q;
+    it_page = 1;
+    renderItemsTable();
+  }, 300);
+
+  document.getElementById('item-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('cat-filter')?.addEventListener('change', e => { categoryFilter = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
 
@@ -3945,7 +4033,16 @@ function renderItemsTable() {
     container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
-        if (ok) { deleteItem(btn.dataset.iid); showToast('Item deleted','','success'); renderItemStats(); renderItemsTable(); }
+        if (ok) {
+          const res = await deleteItem(btn.dataset.iid);
+          if (res && res.error) {
+            showToast('Error Deleting Item', res.error, 'error');
+            return;
+          }
+          showToast('Item deleted','','success');
+          renderItemStats();
+          renderItemsTable();
+        }
       });
     });
   }
@@ -4017,7 +4114,7 @@ function showItemModal(item) {
 
   const modal = createModal({ title: isEdit ? '✏️ Edit Item' : '📦 Add New Item', body, footer });
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-i-name').value.trim();
     const category = document.getElementById('m-i-cat').value;
     const price = parseFloat(document.getElementById('m-i-price').value);
@@ -4025,8 +4122,23 @@ function showItemModal(item) {
     const warehouseId = document.getElementById('m-i-wh').value;
     if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
     const data = { name, category, price, stock, warehouseId, sku: document.getElementById('m-i-sku').value||`SKU-${Date.now()}`, unit: document.getElementById('m-i-unit').value, taxCategory: document.getElementById('m-i-tax').value };
-    if (isEdit) { updateItem(item.id, data); showToast('Item updated',`${name} updated`,'success'); }
-    else { createItem(data); showToast('Item added',`${name} added to inventory`,'success'); }
+    
+    let res;
+    if (isEdit) {
+      res = await updateItem(item.id, data);
+      if (res && res.error) {
+        showToast('Error Updating Item', res.error, 'error');
+        return;
+      }
+      showToast('Item updated',`${name} updated`,'success');
+    } else {
+      res = await createItem(data);
+      if (res && res.error) {
+        showToast('Error Creating Item', res.error, 'error');
+        return;
+      }
+      showToast('Item added',`${name} added to inventory`,'success');
+    }
     modal.close();
     renderItemStats();
     renderItemsTable();
@@ -4140,7 +4252,8 @@ function showImportModal() {
     formData.append('file', selectedFile);
 
     const token = localStorage.getItem('access_token');
-    const url = 'http://localhost:8000/api/v1/items/import';
+    const hostname = window.location.hostname || '127.0.0.1';
+    const url = `http://${hostname}:8000/api/v1/items/import`;
 
     try {
       const res = await fetch(url, {
@@ -4148,7 +4261,8 @@ function showImportModal() {
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: formData
+        body: formData,
+        credentials: 'include'
       });
       
       clearInterval(interval);
@@ -4158,7 +4272,8 @@ function showImportModal() {
       const data = await res.json();
       
       if (!res.ok) {
-        showToast('Import Failed', data.message || 'An error occurred during CSV parsing.', 'error');
+        const errMsg = (data.error && data.error.message) || data.message || 'An error occurred during CSV parsing.';
+        showToast('Import Failed', errMsg, 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
         return;
@@ -4195,7 +4310,8 @@ function showImportModal() {
           });
         }
       } else {
-        showToast('Import Failed', data.message || 'Malformed CSV format.', 'error');
+        const errMsg = (data.error && data.error.message) || data.message || 'Malformed CSV format.';
+        showToast('Import Failed', errMsg, 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
       }
@@ -4415,7 +4531,15 @@ function attachTableListEvents() {
     document.querySelectorAll('.action-btn.delete[data-tid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this table and all its data?', 'Delete Table');
-        if (ok) { deleteTable(btn.dataset.tid); showToast('Table deleted','','success'); renderTables(); }
+        if (ok) {
+          const res = await deleteTable(btn.dataset.tid);
+          if (res && res.error) {
+            showToast('Error Deleting Table', res.error, 'error');
+            return;
+          }
+          showToast('Table deleted','','success');
+          renderTables();
+        }
       });
     });
   }
@@ -4431,7 +4555,15 @@ function attachTableListEvents() {
   document.querySelectorAll('.action-btn.delete[data-row]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const ok = await confirm('Delete this row?', 'Delete Row');
-      if (ok) { deleteTableRow(activeTblId, btn.dataset.row); showToast('Row deleted','','success'); renderTables(); }
+      if (ok) {
+        const res = await deleteTableRow(activeTblId, btn.dataset.row);
+        if (res && res.error) {
+          showToast('Error Deleting Row', res.error, 'error');
+          return;
+        }
+        showToast('Row deleted','','success');
+        renderTables();
+      }
     });
   });
 }
@@ -4522,7 +4654,7 @@ function showTableBuilderModal(table) {
 
   const modal = createModal({ title: isEdit?'✏️ Edit Table':'📋 Build New Table', body, footer, size: 'lg' });
   modal.el.querySelector('#t-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#t-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#t-save')?.addEventListener('click', async () => {
     const name = document.getElementById('t-name').value.trim();
     if (!name) { showToast('Validation','Table name is required','warning'); return; }
     // Collect columns
@@ -4538,8 +4670,22 @@ function showTableBuilderModal(table) {
     const roles = Array.from(document.getElementById('t-roles').selectedOptions).map(o=>o.value);
     const data = { name, category: document.getElementById('t-cat').value, description: document.getElementById('t-desc').value, warehouseId: document.getElementById('t-wh').value, columns: cols, roles, headerColor: selectedColor };
 
-    if (isEdit) { updateTable(table.id, data); showToast('Table updated',`${name} updated`,'success'); }
-    else { createTable(data); showToast('Table created',`${name} is ready`,'success'); }
+    let res;
+    if (isEdit) {
+      res = await updateTable(table.id, data);
+      if (res && res.error) {
+        showToast('Error Updating Table', res.error, 'error');
+        return;
+      }
+      showToast('Table updated',`${name} updated`,'success');
+    } else {
+      res = await createTable(data);
+      if (res && res.error) {
+        showToast('Error Creating Table', res.error, 'error');
+        return;
+      }
+      showToast('Table created',`${name} is ready`,'success');
+    }
     modal.close();
     activeTblId = null;
     renderTables();
@@ -4587,16 +4733,36 @@ function showRowModal(tableId, row) {
 
   const modal = createModal({ title: isEdit?'✏️ Edit Row':'➕ Add New Row', body, footer });
   modal.el.querySelector('#r-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#r-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#r-save')?.addEventListener('click', async () => {
     const rowData = {};
+    let hasValidationError = false;
     cols.forEach(col => {
       const inp = document.getElementById(`rf-${col.id}`);
       if (!inp) return;
       rowData[col.id] = col.type === 'checkbox' ? inp.checked : inp.value;
-      if (col.required && !rowData[col.id] && col.type !== 'checkbox') { showToast('Validation',`${col.name} is required`,'warning'); return; }
+      if (col.required && !rowData[col.id] && col.type !== 'checkbox') {
+        showToast('Validation',`${col.name} is required`,'warning');
+        hasValidationError = true;
+      }
     });
-    if (isEdit) { updateTableRow(tableId, row.id, rowData); showToast('Row updated','','success'); }
-    else { addTableRow(tableId, rowData); showToast('Row added','','success'); }
+    if (hasValidationError) return;
+
+    let res;
+    if (isEdit) {
+      res = await updateTableRow(tableId, row.id, rowData);
+      if (res && res.error) {
+        showToast('Error Updating Row', res.error, 'error');
+        return;
+      }
+      showToast('Row updated','','success');
+    } else {
+      res = await addTableRow(tableId, rowData);
+      if (res && res.error) {
+        showToast('Error Adding Row', res.error, 'error');
+        return;
+      }
+      showToast('Row added','','success');
+    }
     modal.close();
     renderTables();
   });
@@ -4685,7 +4851,13 @@ function renderBilling() {
 
   renderBillsTable();
   document.getElementById('new-bill-btn')?.addEventListener('click', () => showBillModal());
-  document.getElementById('bill-search')?.addEventListener('input', e => { bl_searchQ = e.target.value; bl_page=1; renderBillsTable(); });
+  const debouncedSearch = debounce(q => {
+    bl_searchQ = q;
+    bl_page = 1;
+    renderBillsTable();
+  }, 300);
+
+  document.getElementById('bill-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('bill-wh-filter')?.addEventListener('change', () => { bl_page=1; renderBillsTable(); });
 
   // Expose printBill and showBillModal globally
@@ -4891,7 +5063,7 @@ function showBillModal() {
 
   const modal = createModal({ title: '🧾 New Invoice', body, footer, size: 'lg' });
   modal.el.querySelector('#bill-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#bill-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#bill-save')?.addEventListener('click', async () => {
     const customer = document.getElementById('bill-customer')?.value.trim();
     if (!customer) { showToast('Validation','Customer name required','warning'); return; }
     if (billItems.length === 0) { showToast('Validation','Add at least one item','warning'); return; }
@@ -4908,11 +5080,15 @@ function showBillModal() {
     const subtotal = billItems.reduce((s,i)=>s+(i.qty*i.price),0);
     const tax = billItems.reduce((s,i)=>s+(i.qty*i.price*(TAX_RATES[i.taxCategory]||TAX_RATES.normal)),0);
     const total = subtotal + tax;
-    const bill = createBill({ customer, warehouseId, items: billItems.map(i=>({...i})), subtotal, tax, total });
-    showToast('Bill generated!', `${bill.billNo} — ${formatCurrency(total)}`, 'success');
+    const res = await createBill({ customer, warehouseId, items: billItems.map(i=>({...i})), subtotal, tax, total });
+    if (res && res.error) {
+      showToast('Error Generating Bill', res.error, 'error');
+      return;
+    }
+    showToast('Bill generated!', `${res.billNo} — ${formatCurrency(total)}`, 'success');
     billItems = [];
     modal.close();
-    navigate(getCurrentPath());
+    renderBilling();
   });
 }
 
@@ -5813,13 +5989,18 @@ function renderSettings() {
   `);
 
   // Profile save
-  document.getElementById('profile-form')?.addEventListener('submit', e => {
+  document.getElementById('profile-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const name = document.getElementById('s-name').value.trim();
     if (!name) return;
-    const s = getStore();
-    const u = s.users.find(u=>u.id===s.currentUserId);
-    if (u) { u.name = name; u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2); saveStore(); showToast('Profile updated','Your name has been updated','success'); }
+    
+    const res = await updateUser(user.id, { name });
+    if (res && res.error) {
+      showToast('Error Updating Profile', res.error, 'error');
+      return;
+    }
+    showToast('Profile updated','Your name has been updated','success');
+    renderSettings();
   });
 
   // Password change
@@ -5840,7 +6021,7 @@ function renderSettings() {
   });
 
   // TAX SAVE — actually persist to store
-  document.getElementById('save-tax-btn')?.addEventListener('click', () => {
+  document.getElementById('save-tax-btn')?.addEventListener('click', async () => {
     if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change tax rates','error'); return; }
     const normal = parseFloat(document.getElementById('tax-normal')?.value);
     const luxury = parseFloat(document.getElementById('tax-luxury')?.value);
@@ -5848,7 +6029,7 @@ function renderSettings() {
       showToast('Invalid values','Tax rates must be between 0 and 100','error');
       return;
     }
-    saveTaxConfig({ normal, luxury });
+    await saveTaxConfig({ normal, luxury });
     showToast('Tax rules saved', `Normal: ${normal}% | Luxury: ${luxury}% — applied to future bills`, 'success');
     // Show inline confirmation
     const msg = document.getElementById('tax-saved-msg');
@@ -5859,13 +6040,28 @@ function renderSettings() {
 
   // Notification toggles
   document.querySelectorAll('.notif-toggle-input').forEach(input => {
-    input.addEventListener('change', () => {
+    input.addEventListener('change', async () => {
       const s = getStore();
       const u = s.users.find(usr => usr.id === s.currentUserId);
       if (!u.settings) u.settings = {};
       if (!u.settings.notifications) u.settings.notifications = {};
       u.settings.notifications[input.dataset.key] = input.checked;
-      saveStore();
+      
+      const res = await updateUser(u.id, { settings: u.settings });
+      if (res && res.error) {
+        showToast('Error Saving Preference', res.error, 'error');
+        return;
+      }
+      
+      await apiFetch('/audit-logs/', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'settings_update',
+          description: `Notification preference changed: ${input.dataset.key} set to ${input.checked ? 'enabled' : 'disabled'}`,
+          warehouseId: s.currentWarehouseId || null
+        })
+      });
+      
       showToast('Preference saved', `${input.dataset.key} alerts ${input.checked ? 'enabled' : 'disabled'}`, 'info');
       renderSettings(); // Re-render to update toggle colors
     });
@@ -6111,7 +6307,14 @@ function safeNavigate(path) {
   window.location.hash = '#' + path;
 }
 
+function cleanupGlobalUI() {
+  document.getElementById('profile-dropdown')?.remove();
+  document.getElementById('notif-dropdown')?.remove();
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+}
+
 function resolveRoute() {
+  cleanupGlobalUI();
   const appEl = document.getElementById('app');
   if (!appEl) return;
 
@@ -6198,11 +6401,27 @@ function renderErrorPage(err) {
 // Handle hash changes
 window.addEventListener('hashchange', resolveRoute);
 
+// Force SPA UI re-render when store and backend synchronize successfully
+window.addEventListener('wareops_storage_sync', () => {
+  _lastResolvedPath = null;
+  resolveRoute();
+});
+
 // Initialize app when DOM is ready
-function init() {
+async function init() {
   try {
     const currentPath = getActivePath();
     const user = getCurrentUser();
+
+    // Prioritize full synchronization before routing to prevent race conditions on page load/refresh
+    if (user && localStorage.getItem('access_token')) {
+      try {
+        const { syncWithBackend } = await import('./modules/store.js');
+        await syncWithBackend();
+      } catch (syncErr) {
+        console.warn('[WareOps] Initial background sync failed:', syncErr);
+      }
+    }
 
     if (!currentPath) {
       if (!user) {

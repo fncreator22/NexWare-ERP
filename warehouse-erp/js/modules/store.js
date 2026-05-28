@@ -87,7 +87,15 @@ export function resetStore() {
 }
 
 // ---- API AND SYNCHRONIZATION ----
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const getApiBaseUrl = () => {
+  if (typeof window === 'undefined') return 'http://127.0.0.1:8000/api/v1';
+  let hostname = window.location.hostname || '127.0.0.1';
+  if (hostname === 'localhost' || hostname === '[::1]') {
+    hostname = '127.0.0.1';
+  }
+  return `http://${hostname}:8000/api/v1`;
+};
+const API_BASE_URL = getApiBaseUrl();
 
 export async function apiFetch(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
@@ -104,7 +112,8 @@ export async function apiFetch(path, options = {}) {
   
   const config = {
     ...options,
-    headers
+    headers,
+    credentials: 'include'
   };
   
   try {
@@ -123,7 +132,8 @@ export async function apiFetch(path, options = {}) {
     
     const data = await res.json();
     if (!res.ok) {
-      return { error: data.message || 'An error occurred.' };
+      const errMsg = (data.error && data.error.message) || data.message || 'An error occurred.';
+      return { error: errMsg };
     }
     return data;
   } catch (err) {
@@ -132,21 +142,39 @@ export async function apiFetch(path, options = {}) {
   }
 }
 
+export function normalize(data) {
+  if (!data) return data;
+  if (Array.isArray(data)) {
+    return data.map(item => normalize(item));
+  }
+  if (typeof data === 'object') {
+    const item = { ...data };
+    if (item._id && !item.id) {
+      item.id = String(item._id);
+    }
+    if (item.warehouse_id !== undefined && item.warehouseId === undefined) {
+      item.warehouseId = item.warehouse_id;
+    }
+    if (item.tenant_id !== undefined && item.tenantId === undefined) {
+      item.tenantId = item.tenant_id;
+    }
+    if (item.user_id !== undefined && item.userId === undefined) {
+      item.userId = item.user_id;
+    }
+    if (item.user_name !== undefined && item.userName === undefined) {
+      item.userName = item.user_name;
+    }
+    return item;
+  }
+  return data;
+}
+
 export async function syncWithBackend() {
   const token = localStorage.getItem('access_token');
   if (!token) return;
   
   try {
-    // Helper to normalize _id to id recursively / mapped
-    const normalize = (items) => {
-      if (!Array.isArray(items)) return [];
-      return items.map(item => {
-        if (item && item._id && !item.id) {
-          item.id = item._id;
-        }
-        return item;
-      });
-    };
+
 
     // 1. Fetch Warehouses
     const whRes = await apiFetch('/warehouses/');
@@ -200,6 +228,21 @@ export async function syncWithBackend() {
       _store.notifications = [];
     }
 
+    // 7. Fetch Dynamic Tables & Row Data
+    const tableRes = await apiFetch('/dynamic-tables/');
+    if (tableRes && tableRes.success && Array.isArray(tableRes.data)) {
+      _store.tables = normalize(tableRes.data);
+      const tableRowsData = {};
+      await Promise.all(_store.tables.map(async (table) => {
+        const rowsRes = await apiFetch(`/dynamic-tables/${table.id}/rows`);
+        tableRowsData[table.id] = (rowsRes && rowsRes.success && Array.isArray(rowsRes.data)) ? normalize(rowsRes.data) : [];
+      }));
+      _store.tableData = tableRowsData;
+    } else {
+      _store.tables = [];
+      _store.tableData = {};
+    }
+
     saveStore();
     
     // Automatically trigger/maintain WebSocket connection broker
@@ -232,7 +275,8 @@ export async function login(email, password) {
     return { error: res.error };
   }
   
-  const { access_token, user } = res.data;
+  let { access_token, user } = res.data;
+  user = normalize(user);
   localStorage.setItem('access_token', access_token);
   
   const s = getStore();
@@ -256,13 +300,26 @@ export async function login(email, password) {
 
 export async function logout() {
   const token = localStorage.getItem('access_token');
-  if (token) {
-    await apiFetch('/auth/logout', { method: 'POST' });
-  }
+  
+  // Clear client-side authentication and session state synchronously first
   localStorage.removeItem('access_token');
   const s = getStore();
   s.currentUserId = null;
   saveStore();
+
+  // Perform backend logout notification in the background
+  if (token) {
+    try {
+      await apiFetch('/auth/logout', { 
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (err) {
+      console.warn('[Store] Backend logout request failed:', err);
+    }
+  }
 }
 
 export async function signup(name, email, password) {
@@ -469,61 +526,33 @@ export function getItems(warehouseId) {
   return s.items.filter(i => i.warehouseId === u.warehouseId);
 }
 
-export function createItem(data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null; // Employees cannot create items
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
-
-  // SKU Uniqueness check to prevent tracking errors
-  if (data.sku && s.items.find(i => i.sku === data.sku)) {
-    return { error: 'SKU already exists in the system' };
-  }
-
-  const id = 'item' + Date.now();
-  const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
-  s.items.push(item);
-
-  saveStore();
-  addAuditLog('item_create', `Item created: ${data.name} (SKU: ${data.sku})`, s.currentUserId);
-  addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
-  return item;
+export async function createItem(data) {
+  const res = await apiFetch('/items/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-export function updateItem(id, data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-
-  const idx = s.items.findIndex(i => i.id === id);
-  if (idx === -1) return null;
-  const target = s.items[idx];
-
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return null;
-  if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
-
-  // SKU Uniqueness check for updates
-  if (data.sku && s.items.find(i => i.sku === data.sku && i.id !== id)) {
-    return { error: 'SKU already exists' };
-  }
-
-  s.items[idx] = { ...s.items[idx], ...data, updatedAt: new Date().toISOString() };
-  saveStore();
-  addNotification('item_update', 'Inventory Updated', `${s.items[idx].name} stock or details updated`, '/items', s.items[idx].warehouseId);
-  return s.items[idx];
+export async function updateItem(id, data) {
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-export function deleteItem(id) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
-
-  const target = s.items.find(i => i.id === id);
-  if (!target) return;
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return;
-
-  s.items = s.items.filter(i => i.id !== id);
-  saveStore();
+export async function deleteItem(id) {
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'DELETE'
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return true;
 }
 
 // ---- TABLES ----
@@ -542,50 +571,33 @@ export function getTables(warehouseId) {
   return tables;
 }
 
-export function createTable(data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || !['super_admin','admin'].includes(u.role)) return null;
-  if (u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
-
-  const id = 'tbl' + Date.now();
-  const table = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId, status: 'active' };
-  s.tables.push(table);
-  s.tableData[id] = [];
-  saveStore();
-  addAuditLog('table_create', `Table created: ${data.name}`, s.currentUserId);
-  addNotification('table_create', 'New Operational Table', `${data.name} has been created`, '/tables', data.warehouseId);
-  return table;
+export async function createTable(data) {
+  const res = await apiFetch('/dynamic-tables/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-export function updateTable(id, data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || !['super_admin','admin'].includes(u.role)) return null;
-
-  const idx = s.tables.findIndex(t => t.id === id);
-  if (idx === -1) return null;
-  const target = s.tables[idx];
-
-  if (u.role === 'admin' && target.warehouseId !== u.warehouseId) return null;
-  if (data.warehouseId && u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
-
-  s.tables[idx] = { ...s.tables[idx], ...data, updatedAt: new Date().toISOString() };
-  saveStore();
-  return s.tables[idx];
+export async function updateTable(id, data) {
+  const res = await apiFetch(`/dynamic-tables/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-export function deleteTable(id) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || !['super_admin','admin'].includes(u.role)) return;
-
-  const target = s.tables.find(t => t.id === id);
-  if (!target || (u.role === 'admin' && target.warehouseId !== u.warehouseId)) return;
-
-  s.tables = s.tables.filter(t => t.id !== id);
-  delete s.tableData[id];
-  saveStore();
+export async function deleteTable(id) {
+  const res = await apiFetch(`/dynamic-tables/${id}`, {
+    method: 'DELETE'
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return true;
 }
 
 export function getTableData(tableId) {
@@ -593,48 +605,33 @@ export function getTableData(tableId) {
   return s.tableData[tableId] || [];
 }
 
-export function addTableRow(tableId, row) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-
-  const table = s.tables.find(t => t.id === tableId);
-  if (!table) return null;
-  if (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId) return null;
-
-  if (!s.tableData[tableId]) s.tableData[tableId] = [];
-  const rowId = 'row' + Date.now();
-  s.tableData[tableId].push({ id: rowId, ...row, createdAt: new Date().toISOString() });
-  saveStore();
-  addNotification('table_update', 'Table Data Update', `New entry added to ${table.name}`, '/tables', table.warehouseId);
-  return rowId;
+export async function addTableRow(tableId, row) {
+  const res = await apiFetch(`/dynamic-tables/${tableId}/rows`, {
+    method: 'POST',
+    body: JSON.stringify(row)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-export function updateTableRow(tableId, rowId, data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
-
-  const table = s.tables.find(t => t.id === tableId);
-  if (!table || (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId)) return;
-
-  if (!s.tableData[tableId]) return;
-  const idx = s.tableData[tableId].findIndex(r => r.id === rowId);
-  if (idx > -1) { s.tableData[tableId][idx] = { ...s.tableData[tableId][idx], ...data }; }
-  saveStore();
+export async function updateTableRow(tableId, rowId, data) {
+  const res = await apiFetch(`/dynamic-tables/${tableId}/rows/${rowId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
-export function deleteTableRow(tableId, rowId) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
-
-  const table = s.tables.find(t => t.id === tableId);
-  if (!table || (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId)) return;
-
-  if (!s.tableData[tableId]) return;
-  s.tableData[tableId] = s.tableData[tableId].filter(r => r.id !== rowId);
-  saveStore();
+export async function deleteTableRow(tableId, rowId) {
+  const res = await apiFetch(`/dynamic-tables/${tableId}/rows/${rowId}`, {
+    method: 'DELETE'
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return true;
 }
 
 // ---- BILLS ----
@@ -664,38 +661,14 @@ export function getBills(warehouseId) {
   );
 }
 
-export function createBill(data) {
-  const s = getStore();
-  const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
-
-  // Manual Inventory Synchronization: Decrement stock for billed items
-  if (data.items && Array.isArray(data.items)) {
-    data.items.forEach(billItem => {
-      const itemIdx = s.items.findIndex(i => i.id === billItem.id);
-      if (itemIdx !== -1) {
-        s.items[itemIdx].stock = Math.max(0, (s.items[itemIdx].stock || 0) - billItem.qty);
-      }
-    });
-  }
-
-  const id = 'bill' + Date.now();
-  // Regional Tax Snapshot: Use warehouse-specific tax config if available
-  const taxConfig = getTaxConfig(data.warehouseId);
-  const bill = { 
-    id, ...data, 
-    taxConfigSnapshot: { ...taxConfig }, // Snapshot for record integrity
-    createdAt: new Date().toISOString(), 
-    createdBy: s.currentUserId, 
-    billNo: 'INV-' + String(s.bills.length + 1).padStart(4, '0') 
-  };
-  s.bills.push(bill);
-
-  saveStore();
-  addAuditLog('bill_create', `Bill generated: ${bill.billNo} — $${data.total}`, s.currentUserId);
-  addNotification('bill_create', 'New Invoice Generated', `${bill.billNo} for ${data.customer} — $${data.total}`, '/billing', data.warehouseId);
-  return bill;
+export async function createBill(data) {
+  const res = await apiFetch('/billing/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  if (res && res.error) return { error: res.error };
+  await syncWithBackend();
+  return normalize(res.data);
 }
 
 // ---- AUDIT LOGS ----
@@ -848,11 +821,21 @@ export function getTaxRates(warehouseId) {
   return { luxury: (cfg.luxury || 0) / 100, normal: (cfg.normal || 0) / 100 };
 }
 
-export function saveTaxConfig(config) {
+export async function saveTaxConfig(config) {
   const s = getStore();
   s.taxConfig = { ...s.taxConfig, ...config };
   saveStore();
-  addAuditLog('settings_update', `Tax config updated: Normal ${config.normal}%, Luxury ${config.luxury}%`, s.currentUserId);
+  
+  await apiFetch('/audit-logs/', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'settings_update',
+      description: `Tax config updated: Normal ${config.normal}%, Luxury ${config.luxury}%`,
+      warehouseId: s.currentWarehouseId || null
+    })
+  });
+  
+  await syncWithBackend();
 }
 
 // ---- SUBSCRIPTION ----
@@ -884,7 +867,11 @@ export function connectWebSocket() {
     return;
   }
 
-  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws?token=${token}`;
+  let hostname = window.location.hostname || '127.0.0.1';
+  if (hostname === 'localhost' || hostname === '[::1]') {
+    hostname = '127.0.0.1';
+  }
+  const wsUrl = `ws://${hostname}:8000/api/v1/realtime/ws?token=${token}`;
   console.log('[WebSocket] Connecting to:', wsUrl);
   ws = new WebSocket(wsUrl);
 
@@ -894,7 +881,7 @@ export function connectWebSocket() {
       console.log('[WebSocket] Event received:', payload);
       
       // Auto-synchronize the client dataset when real-time updates are received
-      if (payload.event_type) {
+      if (payload.type || payload.event_type) {
         syncWithBackend();
       }
     } catch (err) {

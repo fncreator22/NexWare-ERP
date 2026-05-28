@@ -221,8 +221,8 @@ export function renderWarehouseRegistration() {
     </div>
   `;
 
-  document.getElementById('wh-signout-btn')?.addEventListener('click', () => {
-    logout();
+  document.getElementById('wh-signout-btn')?.addEventListener('click', async () => {
+    await logout();
     navigate('/login');
   });
 

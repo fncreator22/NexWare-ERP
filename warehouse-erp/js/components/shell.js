@@ -346,7 +346,7 @@ function showProfileDropdown(anchor) {
     if (!dropdown.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) dropdown.remove();
   }, { once: true }), 50);
   
-  dropdown.querySelector('#dd-logout')?.addEventListener('click', () => { logout(); navigate('/login'); });
+  dropdown.querySelector('#dd-logout')?.addEventListener('click', async () => { dropdown.remove(); await logout(); navigate('/login'); });
   dropdown.querySelector('#dd-settings')?.addEventListener('click', () => { navigate('/settings'); dropdown.remove(); });
   dropdown.querySelector('#dd-subscription')?.addEventListener('click', () => { navigate('/subscription'); dropdown.remove(); });
 }

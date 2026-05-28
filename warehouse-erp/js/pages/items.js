@@ -177,7 +177,16 @@ function renderItemsTable() {
     container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
-        if (ok) { deleteItem(btn.dataset.iid); showToast('Item deleted','','success'); renderItemStats(); renderItemsTable(); }
+        if (ok) {
+          const res = await deleteItem(btn.dataset.iid);
+          if (res && res.error) {
+            showToast('Error Deleting Item', res.error, 'error');
+            return;
+          }
+          showToast('Item deleted','','success');
+          renderItemStats();
+          renderItemsTable();
+        }
       });
     });
   }
@@ -249,7 +258,7 @@ function showItemModal(item) {
 
   const modal = createModal({ title: isEdit ? '✏️ Edit Item' : '📦 Add New Item', body, footer });
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-i-name').value.trim();
     const category = document.getElementById('m-i-cat').value;
     const price = parseFloat(document.getElementById('m-i-price').value);
@@ -257,8 +266,23 @@ function showItemModal(item) {
     const warehouseId = document.getElementById('m-i-wh').value;
     if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
     const data = { name, category, price, stock, warehouseId, sku: document.getElementById('m-i-sku').value||`SKU-${Date.now()}`, unit: document.getElementById('m-i-unit').value, taxCategory: document.getElementById('m-i-tax').value };
-    if (isEdit) { updateItem(item.id, data); showToast('Item updated',`${name} updated`,'success'); }
-    else { createItem(data); showToast('Item added',`${name} added to inventory`,'success'); }
+    
+    let res;
+    if (isEdit) {
+      res = await updateItem(item.id, data);
+      if (res && res.error) {
+        showToast('Error Updating Item', res.error, 'error');
+        return;
+      }
+      showToast('Item updated',`${name} updated`,'success');
+    } else {
+      res = await createItem(data);
+      if (res && res.error) {
+        showToast('Error Creating Item', res.error, 'error');
+        return;
+      }
+      showToast('Item added',`${name} added to inventory`,'success');
+    }
     modal.close();
     renderItemStats();
     renderItemsTable();
@@ -372,7 +396,8 @@ function showImportModal() {
     formData.append('file', selectedFile);
 
     const token = localStorage.getItem('access_token');
-    const url = 'http://localhost:8000/api/v1/items/import';
+    const hostname = window.location.hostname || '127.0.0.1';
+    const url = `http://${hostname}:8000/api/v1/items/import`;
 
     try {
       const res = await fetch(url, {
@@ -380,7 +405,8 @@ function showImportModal() {
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: formData
+        body: formData,
+        credentials: 'include'
       });
       
       clearInterval(interval);
@@ -390,7 +416,8 @@ function showImportModal() {
       const data = await res.json();
       
       if (!res.ok) {
-        showToast('Import Failed', data.message || 'An error occurred during CSV parsing.', 'error');
+        const errMsg = (data.error && data.error.message) || data.message || 'An error occurred during CSV parsing.';
+        showToast('Import Failed', errMsg, 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
         return;
@@ -427,7 +454,8 @@ function showImportModal() {
           });
         }
       } else {
-        showToast('Import Failed', data.message || 'Malformed CSV format.', 'error');
+        const errMsg = (data.error && data.error.message) || data.message || 'Malformed CSV format.';
+        showToast('Import Failed', errMsg, 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
       }

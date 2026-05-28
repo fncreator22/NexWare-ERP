@@ -63,7 +63,14 @@ function safeNavigate(path) {
   window.location.hash = '#' + path;
 }
 
+function cleanupGlobalUI() {
+  document.getElementById('profile-dropdown')?.remove();
+  document.getElementById('notif-dropdown')?.remove();
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+}
+
 function resolveRoute() {
+  cleanupGlobalUI();
   const appEl = document.getElementById('app');
   if (!appEl) return;
 
@@ -150,11 +157,27 @@ function renderErrorPage(err) {
 // Handle hash changes
 window.addEventListener('hashchange', resolveRoute);
 
+// Force SPA UI re-render when store and backend synchronize successfully
+window.addEventListener('wareops_storage_sync', () => {
+  _lastResolvedPath = null;
+  resolveRoute();
+});
+
 // Initialize app when DOM is ready
-function init() {
+async function init() {
   try {
     const currentPath = getActivePath();
     const user = getCurrentUser();
+
+    // Prioritize full synchronization before routing to prevent race conditions on page load/refresh
+    if (user && localStorage.getItem('access_token')) {
+      try {
+        const { syncWithBackend } = await import('./modules/store.js');
+        await syncWithBackend();
+      } catch (syncErr) {
+        console.warn('[WareOps] Initial background sync failed:', syncErr);
+      }
+    }
 
     if (!currentPath) {
       if (!user) {

@@ -1,4 +1,4 @@
-import { getCurrentUser, getStore, saveStore, getTaxConfig, saveTaxConfig, getBills, getAllUsers, getWarehouses, getItems } from '../modules/store.js';
+import { getCurrentUser, getStore, saveStore, getTaxConfig, saveTaxConfig, getBills, getAllUsers, getWarehouses, getItems, apiFetch, updateUser } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { showToast, confirm } from '../modules/ui.js';
 import { exportCSV, exportXLSX, exportPDF } from '../modules/exporter.js';
@@ -209,13 +209,18 @@ export function renderSettings() {
   `);
 
   // Profile save
-  document.getElementById('profile-form')?.addEventListener('submit', e => {
+  document.getElementById('profile-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const name = document.getElementById('s-name').value.trim();
     if (!name) return;
-    const s = getStore();
-    const u = s.users.find(u=>u.id===s.currentUserId);
-    if (u) { u.name = name; u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2); saveStore(); showToast('Profile updated','Your name has been updated','success'); }
+    
+    const res = await updateUser(user.id, { name });
+    if (res && res.error) {
+      showToast('Error Updating Profile', res.error, 'error');
+      return;
+    }
+    showToast('Profile updated','Your name has been updated','success');
+    renderSettings();
   });
 
   // Password change
@@ -236,7 +241,7 @@ export function renderSettings() {
   });
 
   // TAX SAVE — actually persist to store
-  document.getElementById('save-tax-btn')?.addEventListener('click', () => {
+  document.getElementById('save-tax-btn')?.addEventListener('click', async () => {
     if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change tax rates','error'); return; }
     const normal = parseFloat(document.getElementById('tax-normal')?.value);
     const luxury = parseFloat(document.getElementById('tax-luxury')?.value);
@@ -244,7 +249,7 @@ export function renderSettings() {
       showToast('Invalid values','Tax rates must be between 0 and 100','error');
       return;
     }
-    saveTaxConfig({ normal, luxury });
+    await saveTaxConfig({ normal, luxury });
     showToast('Tax rules saved', `Normal: ${normal}% | Luxury: ${luxury}% — applied to future bills`, 'success');
     // Show inline confirmation
     const msg = document.getElementById('tax-saved-msg');
@@ -255,13 +260,28 @@ export function renderSettings() {
 
   // Notification toggles
   document.querySelectorAll('.notif-toggle-input').forEach(input => {
-    input.addEventListener('change', () => {
+    input.addEventListener('change', async () => {
       const s = getStore();
       const u = s.users.find(usr => usr.id === s.currentUserId);
       if (!u.settings) u.settings = {};
       if (!u.settings.notifications) u.settings.notifications = {};
       u.settings.notifications[input.dataset.key] = input.checked;
-      saveStore();
+      
+      const res = await updateUser(u.id, { settings: u.settings });
+      if (res && res.error) {
+        showToast('Error Saving Preference', res.error, 'error');
+        return;
+      }
+      
+      await apiFetch('/audit-logs/', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'settings_update',
+          description: `Notification preference changed: ${input.dataset.key} set to ${input.checked ? 'enabled' : 'disabled'}`,
+          warehouseId: s.currentWarehouseId || null
+        })
+      });
+      
       showToast('Preference saved', `${input.dataset.key} alerts ${input.checked ? 'enabled' : 'disabled'}`, 'info');
       renderSettings(); // Re-render to update toggle colors
     });

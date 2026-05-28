@@ -20,7 +20,7 @@ function strip(code) {
   
   // Remove export keywords while keeping the declarations
   code = code.replace(/export\s+default\s+/g, '');
-  code = code.replace(/export\s+(function|class|const|let|var)\s+/g, '$1 ');
+  code = code.replace(/export\s+(async\s+)?(function|class|const|let|var)\s+/g, '$1$2 ');
   
   // Remove export blocks (e.g. export { a, b };)
   code = code.replace(/export\s*\{[\s\S]*?\};?/g, '');
