@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getAuditLogs } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { formatDateTime, filterData, getSvgIcon } from '../modules/ui.js';
+import { formatDateTime, filterData } from '../modules/ui.js';
 
 let au_searchQ = '';
 let au_page = 1;
@@ -15,15 +15,15 @@ export function renderAudit() {
     <div class="animate-slideUp">
       <div class="au_page-header">
         <div class="au_page-header-left">
-          <h1 class="au_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('audit', 24)} Audit Logs</h1>
+          <h1 class="au_page-title">🔍 Audit Logs</h1>
           <p class="au_page-subtitle">Complete activity trail for compliance and monitoring</p>
         </div>
         <div class="au_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
       <div class="table-toolbar">
-        <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="audit-search" placeholder="Search logs..." /></div>
+        <div class="table-search"><span>🔍</span><input type="text" id="audit-search" placeholder="Search logs..." /></div>
         <div class="table-filter">
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="audit-action-filter">
             <option value="">All Actions</option>
@@ -45,20 +45,7 @@ export function renderAudit() {
   document.getElementById('audit-action-filter')?.addEventListener('change',()=>{au_page=1;renderAuditTable();});
 }
 
-const ACTION_ICONS = {
-  login: getSvgIcon('user', 14),
-  logout: getSvgIcon('user', 14),
-  user_create: getSvgIcon('user', 14),
-  user_update: getSvgIcon('user', 14),
-  user_delete: getSvgIcon('user', 14),
-  warehouse_create: getSvgIcon('warehouses', 14),
-  warehouse_update: getSvgIcon('warehouses', 14),
-  warehouse_delete: getSvgIcon('warehouses', 14),
-  bill_create: getSvgIcon('billing', 14),
-  table_create: getSvgIcon('tables', 14),
-  item_create: getSvgIcon('items', 14),
-  settings_update: getSvgIcon('settings', 14)
-};
+const ACTION_ICONS = { login:'🔐', logout:'🚪', user_create:'👤➕', user_update:'👤✏️', user_delete:'👤🗑️', warehouse_create:'🏭➕', warehouse_update:'🏭✏️', warehouse_delete:'🏭🗑️', bill_create:'🧾', table_create:'📋➕', item_create:'📦➕' };
 const ACTION_CLASSES = { login:'badge-info', user_create:'badge-success', user_delete:'badge-danger', warehouse_create:'badge-success', warehouse_delete:'badge-danger', bill_create:'badge-brand', table_create:'badge-success', item_create:'badge-success' };
 
 function renderAuditTable() {
@@ -76,7 +63,7 @@ function renderAuditTable() {
   if (!container) return;
 
   if (logs.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);opacity:0.4;margin-bottom:16px">${getSvgIcon('audit', 40)}</div><h3 style="color:var(--text-secondary)">No logs found</h3></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">🔍</div><h3 style="color:var(--text-secondary)">No logs found</h3></div>`;
     return;
   }
 
@@ -89,7 +76,7 @@ function renderAuditTable() {
             <td data-label="#" style="color:var(--text-muted);font-size:12px">${start+i+1}</td>
             <td data-label="Action">
               <span class="badge ${ACTION_CLASSES[log.action]||'badge-muted'}">
-                <span style="display:inline-flex;align-items:center;gap:6px;color:var(--text-secondary)">${ACTION_ICONS[log.action]||getSvgIcon('info', 14)} ${log.action.replace(/_/g,' ')}</span>
+                ${ACTION_ICONS[log.action]||'📝'} ${log.action.replace(/_/g,' ')}
               </span>
             </td>
             <td data-label="Description" style="font-size:13px">${log.description}</td>

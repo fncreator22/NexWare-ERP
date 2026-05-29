@@ -53,16 +53,21 @@ The showcase embeds a **pixel-perfect replica of the actual NexWare ERP dashboar
 
 > ⚠️ **No backend dependency.** The demo uses purely static mock data embedded in HTML. Nothing is saved. No APIs are called. No real data is touched.
 
-### Dashboard Preview Images
+### 🖼️ Dashboard Preview Images
 
-Four AI-generated ERP dashboard mockup images are stored in `warehouse-erp/assets/`:
+Four premium ERP dashboard mockups are integrated into the platform assets:
 
-| File | Content |
-|:---|:---|
-| `dashboard-preview.png` | Main ERP dashboard — KPI cards, revenue chart, warehouse overview |
-| `inventory-preview.png` | Inventory management with SKU table and stock level badges |
-| `billing-preview.png` | Billing panel with invoice list and financial analytics |
-| `workforce-audit-preview.png` | Workforce + audit logs side-by-side panel |
+#### 📊 Main Enterprise Dashboard
+![Main ERP Dashboard Mockup](warehouse-erp/assets/dashboard-preview.png)
+
+#### 📦 Inventory & Stock Coordination
+![Inventory SKU and Stock Mockup](warehouse-erp/assets/inventory-preview.png)
+
+#### 🧾 Automated Billing & Taxation
+![Billing and Invoice Mockup](warehouse-erp/assets/billing-preview.png)
+
+#### 👥 Workforce & Real-time Audit Logs
+![Workforce and Audit Logs Mockup](warehouse-erp/assets/workforce-audit-preview.png)
 
 ### Technical Design Notes
 

@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce, getSvgIcon } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let it_searchQ = '';
@@ -30,14 +30,14 @@ export function renderItems() {
     <div class="animate-slideUp">
       <div class="it_page-header">
         <div class="it_page-header-left">
-          <h1 class="it_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('items', 24)} Inventory Management</h1>
+          <h1 class="it_page-title">📦 Inventory Management</h1>
           <p class="it_page-subtitle">Track items, stock levels, and pricing</p>
         </div>
         <div class="it_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="import-csv-btn">${getSvgIcon('upload', 14)} Import CSV</button>
-            <button class="btn btn-primary" id="create-item-btn">${getSvgIcon('plus', 14)} Add Item</button>
+            <button class="btn btn-secondary btn-sm" id="import-csv-btn">📥 Import CSV</button>
+            <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
         </div>
       </div>
@@ -48,7 +48,7 @@ export function renderItems() {
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
+          <span>🔍</span>
           <input type="text" id="item-search" placeholder="Search items..." />
         </div>
         <div class="table-filter">
@@ -96,10 +96,10 @@ function renderItemStats() {
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('items', 20)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('analytics', 20)}</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('warning', 20)}</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">⚠️</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
     </div>
   `;
 }
@@ -151,8 +151,8 @@ function renderItemsTable() {
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">✏️</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">🗑️</button>
                 </div>
               </td>` : ''}
             </tr>`;
@@ -177,16 +177,7 @@ function renderItemsTable() {
     container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
-        if (ok) {
-          const res = await deleteItem(btn.dataset.iid);
-          if (res && res.error) {
-            showToast('Error Deleting Item', res.error, 'error');
-            return;
-          }
-          showToast('Item deleted','','success');
-          renderItemStats();
-          renderItemsTable();
-        }
+        if (ok) { deleteItem(btn.dataset.iid); showToast('Item deleted','','success'); renderItemStats(); renderItemsTable(); }
       });
     });
   }
@@ -258,7 +249,7 @@ function showItemModal(item) {
 
   const modal = createModal({ title: isEdit ? '✏️ Edit Item' : '📦 Add New Item', body, footer });
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', () => {
     const name = document.getElementById('m-i-name').value.trim();
     const category = document.getElementById('m-i-cat').value;
     const price = parseFloat(document.getElementById('m-i-price').value);
@@ -266,23 +257,8 @@ function showItemModal(item) {
     const warehouseId = document.getElementById('m-i-wh').value;
     if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
     const data = { name, category, price, stock, warehouseId, sku: document.getElementById('m-i-sku').value||`SKU-${Date.now()}`, unit: document.getElementById('m-i-unit').value, taxCategory: document.getElementById('m-i-tax').value };
-    
-    let res;
-    if (isEdit) {
-      res = await updateItem(item.id, data);
-      if (res && res.error) {
-        showToast('Error Updating Item', res.error, 'error');
-        return;
-      }
-      showToast('Item updated',`${name} updated`,'success');
-    } else {
-      res = await createItem(data);
-      if (res && res.error) {
-        showToast('Error Creating Item', res.error, 'error');
-        return;
-      }
-      showToast('Item added',`${name} added to inventory`,'success');
-    }
+    if (isEdit) { updateItem(item.id, data); showToast('Item updated',`${name} updated`,'success'); }
+    else { createItem(data); showToast('Item added',`${name} added to inventory`,'success'); }
     modal.close();
     renderItemStats();
     renderItemsTable();
@@ -396,8 +372,7 @@ function showImportModal() {
     formData.append('file', selectedFile);
 
     const token = localStorage.getItem('access_token');
-    const hostname = window.location.hostname || '127.0.0.1';
-    const url = `http://${hostname}:8000/api/v1/items/import`;
+    const url = 'http://localhost:8000/api/v1/items/import';
 
     try {
       const res = await fetch(url, {
@@ -405,8 +380,7 @@ function showImportModal() {
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: formData,
-        credentials: 'include'
+        body: formData
       });
       
       clearInterval(interval);
@@ -416,8 +390,7 @@ function showImportModal() {
       const data = await res.json();
       
       if (!res.ok) {
-        const errMsg = (data.error && data.error.message) || data.message || 'An error occurred during CSV parsing.';
-        showToast('Import Failed', errMsg, 'error');
+        showToast('Import Failed', data.message || 'An error occurred during CSV parsing.', 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
         return;
@@ -454,8 +427,7 @@ function showImportModal() {
           });
         }
       } else {
-        const errMsg = (data.error && data.error.message) || data.message || 'Malformed CSV format.';
-        showToast('Import Failed', errMsg, 'error');
+        showToast('Import Failed', data.message || 'Malformed CSV format.', 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
       }

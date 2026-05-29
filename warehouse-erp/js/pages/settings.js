@@ -1,6 +1,6 @@
-import { getCurrentUser, getStore, saveStore, getTaxConfig, saveTaxConfig, getBills, getAllUsers, getWarehouses, getItems, apiFetch, updateUser } from '../modules/store.js';
+import { getCurrentUser, getStore, saveStore, getTaxConfig, saveTaxConfig, getBills, getAllUsers, getWarehouses, getItems, getCurrency, saveCurrency } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, getSvgIcon } from '../modules/ui.js';
+import { showToast, confirm } from '../modules/ui.js';
 import { exportCSV, exportXLSX, exportPDF } from '../modules/exporter.js';
 
 export function renderSettings() {
@@ -8,16 +8,17 @@ export function renderSettings() {
   const isSuperAdmin = user.role === 'super_admin';
   const isAdmin = ['super_admin','admin'].includes(user.role);
   const taxCfg = getTaxConfig();
+  const currency = getCurrency();
 
   renderShell('Settings', 'Platform configuration and preferences', `
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 24)} System Settings</h1>
+          <h1 class="page-title">⚙️ System Settings</h1>
           <p class="page-subtitle">Platform configuration, preferences, and account management</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
 
@@ -26,7 +27,7 @@ export function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('user', 18)} Profile Settings</div>
+              <div class="card-title">👤 Profile Settings</div>
               <div class="card-subtitle">Your account information</div>
             </div>
           </div>
@@ -82,7 +83,7 @@ export function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Tax Configuration</div>
+              <div class="card-title">🏛️ Tax Configuration</div>
               <div class="card-subtitle">Configure global tax rates for billing engine</div>
             </div>
           </div>
@@ -107,7 +108,7 @@ export function renderSettings() {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>${getSvgIcon('check', 14)} Save Tax Rules</button>
+            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Tax Rules</button>
             <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
           </div>
           <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:12px">
@@ -119,11 +120,37 @@ export function renderSettings() {
           </div>
         </div>` : ''}
 
+        <!-- Currency Configuration -->
+        <div class="card col-6">
+          <div class="card-header">
+            <div>
+              <div class="card-title">💵 Currency Settings</div>
+              <div class="card-subtitle">Select global and warehouse currency preferences</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Global Base Currency</label>
+            <select id="s-global-currency" class="form-control" ${!isSuperAdmin ? 'disabled style="opacity:0.7"' : ''}>
+              <option value="USD" ${currency==='USD'?'selected':''}>USD ($) - US Dollar</option>
+              <option value="INR" ${currency==='INR'?'selected':''}>INR (₹) - Indian Rupee</option>
+              <option value="EUR" ${currency==='EUR'?'selected':''}>EUR (€) - Euro</option>
+              <option value="GBP" ${currency==='GBP'?'selected':''}>GBP (£) - British Pound</option>
+              <option value="AED" ${currency==='AED'?'selected':''}>AED (د.إ) - UAE Dirham</option>
+              <option value="SGD" ${currency==='SGD'?'selected':''}>SGD (S$) - Singapore Dollar</option>
+            </select>
+            <div class="form-hint">Sets the base currency for global financial metrics, invoices, and analytics.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Currency</button>
+            <span id="currency-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
+          </div>
+        </div>
+
         <!-- Notifications -->
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bell', 18)} Notifications</div>
+              <div class="card-title">🔔 Notifications</div>
               <div class="card-subtitle">Manage alert preferences</div>
             </div>
           </div>
@@ -209,18 +236,13 @@ export function renderSettings() {
   `);
 
   // Profile save
-  document.getElementById('profile-form')?.addEventListener('submit', async e => {
+  document.getElementById('profile-form')?.addEventListener('submit', e => {
     e.preventDefault();
     const name = document.getElementById('s-name').value.trim();
     if (!name) return;
-    
-    const res = await updateUser(user.id, { name });
-    if (res && res.error) {
-      showToast('Error Updating Profile', res.error, 'error');
-      return;
-    }
-    showToast('Profile updated','Your name has been updated','success');
-    renderSettings();
+    const s = getStore();
+    const u = s.users.find(u=>u.id===s.currentUserId);
+    if (u) { u.name = name; u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2); saveStore(); showToast('Profile updated','Your name has been updated','success'); }
   });
 
   // Password change
@@ -241,7 +263,7 @@ export function renderSettings() {
   });
 
   // TAX SAVE — actually persist to store
-  document.getElementById('save-tax-btn')?.addEventListener('click', async () => {
+  document.getElementById('save-tax-btn')?.addEventListener('click', () => {
     if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change tax rates','error'); return; }
     const normal = parseFloat(document.getElementById('tax-normal')?.value);
     const luxury = parseFloat(document.getElementById('tax-luxury')?.value);
@@ -249,39 +271,35 @@ export function renderSettings() {
       showToast('Invalid values','Tax rates must be between 0 and 100','error');
       return;
     }
-    await saveTaxConfig({ normal, luxury });
-    showToast('Tax rules saved', `Normal: ${normal}% | Luxury: ${luxury}% — applied to future bills`, 'success');
-    // Show inline confirmation
-    const msg = document.getElementById('tax-saved-msg');
+    saveTaxConfig({ normal, luxury }).then(() => {
+      showToast('Tax rules saved', `Normal: ${normal}% | Luxury: ${luxury}% — applied to future bills`, 'success');
+      // Show inline confirmation
+      const msg = document.getElementById('tax-saved-msg');
+      if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 3000); }
+      // Update the displayed active rates
+      document.querySelectorAll('#tax-saved-msg').forEach(el => el.style.display='inline');
+    });
+  });
+
+  // CURRENCY SAVE — actually persist to store
+  document.getElementById('save-currency-btn')?.addEventListener('click', () => {
+    if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change base currency','error'); return; }
+    const currency = document.getElementById('s-global-currency').value;
+    saveCurrency(currency);
+    showToast('Currency updated', `Platform currency set to: ${currency}`, 'success');
+    const msg = document.getElementById('currency-saved-msg');
     if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 3000); }
-    // Update the displayed active rates
-    document.querySelectorAll('#tax-saved-msg').forEach(el => el.style.display='inline');
   });
 
   // Notification toggles
   document.querySelectorAll('.notif-toggle-input').forEach(input => {
-    input.addEventListener('change', async () => {
+    input.addEventListener('change', () => {
       const s = getStore();
       const u = s.users.find(usr => usr.id === s.currentUserId);
       if (!u.settings) u.settings = {};
       if (!u.settings.notifications) u.settings.notifications = {};
       u.settings.notifications[input.dataset.key] = input.checked;
-      
-      const res = await updateUser(u.id, { settings: u.settings });
-      if (res && res.error) {
-        showToast('Error Saving Preference', res.error, 'error');
-        return;
-      }
-      
-      await apiFetch('/audit-logs/', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'settings_update',
-          description: `Notification preference changed: ${input.dataset.key} set to ${input.checked ? 'enabled' : 'disabled'}`,
-          warehouseId: s.currentWarehouseId || null
-        })
-      });
-      
+      saveStore();
       showToast('Preference saved', `${input.dataset.key} alerts ${input.checked ? 'enabled' : 'disabled'}`, 'info');
       renderSettings(); // Re-render to update toggle colors
     });

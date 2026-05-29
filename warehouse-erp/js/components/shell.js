@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, logout, getWarehouses, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, getSubscription, getStockHealth } from '../modules/store.js';
 import { navigate, getCurrentPath } from '../modules/router.js';
-import { capitalize, positionFixedElement, getSvgIcon } from '../modules/ui.js';
+import { capitalize, positionFixedElement, getSvgIcon, timeSince } from '../modules/ui.js';
 import { initPalette, togglePalette } from './palette.js';
 
 
@@ -313,14 +313,6 @@ function showNotificationDropdown(anchor) {
   });
 
   setTimeout(() => document.addEventListener('click', () => dropdown.remove(), { once: true }), 50);
-}
-
-function timeSince(iso) {
-  const secs = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (secs < 60) return 'just now';
-  if (secs < 3600) return Math.floor(secs/60) + 'm ago';
-  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
-  return Math.floor(secs/86400) + 'd ago';
 }
 
 function showProfileDropdown(anchor) {

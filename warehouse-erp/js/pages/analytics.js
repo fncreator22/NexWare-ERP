@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getBills, getItems, getAllUsers, getWarehouses, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { formatCurrency, formatDate, getSvgIcon } from '../modules/ui.js';
+import { formatCurrency, formatDate } from '../modules/ui.js';
 
 // Persisted filter state (survives re-renders within session)
 let an_whFilter  = '';
@@ -31,17 +31,17 @@ export function renderAnalytics() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 24)} Analytics & Reports</h1>
+          <h1 class="page-title">📈 Analytics & Reports</h1>
           <p class="page-subtitle">${isSA ? 'Global cross-warehouse analytics' : 'Warehouse performance analytics'}</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'" style="display:flex;align-items:center;gap:6px">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
 
       <!-- Filter Bar -->
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px 18px;margin-bottom:24px">
-        <span style="font-size:13px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:6px">${getSvgIcon('search', 16)} Filters:</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">🔽 Filters:</span>
 
         <select class="form-control" style="width:auto;padding:7px 12px;font-size:13px" id="an-year">
           ${(billYears.length ? billYears : [new Date().getFullYear()]).map(y=>
@@ -204,28 +204,28 @@ function updateKPIs(totalRev, totalTax, avgBill, netRev, count) {
     <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#6366f1"></div>
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">💰</div>
         <div class="stat-card-value">${formatCurrency(totalRev)}</div>
         <div class="stat-card-label">Total Revenue</div>
         <div class="stat-card-trend trend-up">${count} invoices</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#10b981"></div>
-        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('dollar', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">💵</div>
         <div class="stat-card-value">${formatCurrency(netRev)}</div>
         <div class="stat-card-label">Net Revenue</div>
         <div class="stat-card-trend trend-up">After tax</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#f59e0b"></div>
-        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('billing', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">🏛️</div>
         <div class="stat-card-value">${formatCurrency(totalTax)}</div>
         <div class="stat-card-label">Tax Collected</div>
         <div class="stat-card-trend">Automated</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#8b5cf6"></div>
-        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('audit', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">🎯</div>
         <div class="stat-card-value">${formatCurrency(avgBill)}</div>
         <div class="stat-card-label">Avg. Invoice</div>
         <div class="stat-card-trend trend-up">${count} total</div>
@@ -389,11 +389,9 @@ function updateWhBreakdown(bills, whs, totalRev) {
     const tax = bills.filter(b=>b.warehouseId===wh.id).reduce((s,b)=>s+(b.tax||0),0);
     const cnt = bills.filter(b=>b.warehouseId===wh.id).length;
     const pct = totalRev>0 ? Math.round(rev/totalRev*100) : 0;
-    const logoHtml = wh.logo ? `<span style="font-size:16px">${wh.logo}</span>` : getSvgIcon('warehouses', 16);
     return `
       <div class="revenue-bar" style="margin-bottom:12px">
-        <div class="revenue-bar-label" style="display:flex;align-items:center;gap:6px">
-          ${logoHtml} <span>${wh.name}</span>
+        <div class="revenue-bar-label">${wh.logo||'🏭'} ${wh.name}
           <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
         </div>
         <div class="revenue-bar-track"><div class="revenue-bar-fill" style="width:${pct}%"></div></div>

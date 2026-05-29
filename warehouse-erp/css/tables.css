@@ -80,3 +80,323 @@
 .table-empty-icon { font-size: 48px; margin-bottom: var(--space-4); opacity: 0.4; }
 .table-empty-title { font-size: var(--text-base); font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-2); }
 .table-empty-desc { font-size: var(--text-sm); color: var(--text-muted); }
+
+
+/* =========================================================
+   SPREADSHEET WORKSPACE — Airtable-style grid
+   ========================================================= */
+
+/* Toolbar */
+.ss-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.ss-toolbar-left  { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ss-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.ss-table-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 13px;
+}
+
+/* Collaboration indicator area */
+.ss-collab-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ss-collab-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-indigo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: white;
+  font-weight: 700;
+  border: 2px solid var(--bg-base);
+  cursor: default;
+}
+
+/* Save indicator */
+.ss-save-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--accent-cyan);
+  animation: fadeIn 0.2s;
+}
+.ss-save-spinner {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Main spreadsheet container */
+.ss-container {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-card);
+  height: calc(100vh - 240px);
+  min-height: 400px;
+}
+
+.ss-grid-wrap {
+  overflow: auto;
+  flex: 1;
+  position: relative;
+}
+
+/* The spreadsheet table itself */
+.ss-grid {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  table-layout: auto;
+}
+
+/* Column headers */
+.ss-th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 0;
+  background: var(--bg-elevated, #1a1d3a);
+  border-bottom: 2px solid var(--header-color, #6366f1);
+  border-right: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  user-select: none;
+}
+.ss-th:first-child { border-left: none; }
+.ss-th-row-num {
+  width: 48px;
+  min-width: 48px;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  background: var(--bg-elevated, #1a1d3a);
+}
+.ss-th-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ss-col-type-icon { font-size: 12px; opacity: 0.7; font-style: normal; }
+.ss-col-name      { color: var(--text-secondary); }
+.ss-req-dot       { color: var(--accent-rose); font-size: 14px; line-height: 1; }
+
+.ss-th-actions {
+  width: 56px;
+  min-width: 56px;
+}
+
+/* Row cells */
+.ss-td {
+  padding: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid rgba(255,255,255,0.04);
+  vertical-align: middle;
+  position: relative;
+  background: var(--bg-card);
+  transition: background 0.1s;
+}
+.ss-td-row-num {
+  width: 48px;
+  min-width: 48px;
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border-subtle);
+  text-align: center;
+}
+.ss-td-actions {
+  width: 56px;
+  min-width: 56px;
+  text-align: center;
+}
+.ss-row-num {
+  font-size: 11px;
+  color: var(--text-disabled);
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 4px;
+}
+
+/* Row states */
+.ss-row:hover .ss-td { background: rgba(99,102,241,0.04); }
+.ss-row:hover .ss-td-row-num { background: rgba(99,102,241,0.08); }
+.ss-row-virtual .ss-td { background: rgba(255,255,255,0.01); }
+.ss-row-virtual:hover .ss-td { background: rgba(99,102,241,0.03); }
+.ss-row-new .ss-td { animation: rowFadeIn 0.4s ease; }
+.ss-row-locked .ss-td { background: rgba(245,158,11,0.04); }
+
+@keyframes rowFadeIn {
+  from { background: rgba(99,102,241,0.12); }
+  to   { background: transparent; }
+}
+
+/* Remote update highlight flash */
+.ss-cell-updated {
+  animation: cellFlash 0.8s ease;
+}
+@keyframes cellFlash {
+  0%   { background: rgba(6,182,212,0.25); }
+  100% { background: transparent; }
+}
+
+/* Lock indicator */
+.ss-lock-indicator {
+  font-size: 13px;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Inline cell inputs */
+.ss-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  transition: background 0.15s;
+  box-sizing: border-box;
+}
+.ss-input:focus {
+  background: rgba(99,102,241,0.08);
+  box-shadow: inset 0 0 0 2px rgba(99,102,241,0.5);
+  border-radius: 4px;
+}
+.ss-input::placeholder { color: var(--text-disabled); }
+
+.ss-select {
+  height: 34px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+.ss-status-select option[value="Done"]        { color: #10b981; }
+.ss-status-select option[value="In Progress"] { color: #f59e0b; }
+.ss-status-select option[value="Todo"]        { color: #94a3b8; }
+
+.ss-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  cursor: pointer;
+  padding: 0 10px;
+}
+.ss-checkbox input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent-indigo);
+  cursor: pointer;
+}
+
+.ss-cell-placeholder { display: block; height: 34px; }
+.ss-cell-virtual     { cursor: cell; }
+.ss-cell-virtual:hover .ss-cell-placeholder {
+  background: rgba(99,102,241,0.06);
+  border-radius: 3px;
+}
+
+/* Action buttons inside grid */
+.ss-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.15s;
+  color: var(--text-muted);
+}
+.ss-row:hover .ss-action-btn { opacity: 1; }
+.ss-del-row:hover       { background: rgba(244,63,94,0.15); color: var(--accent-rose); }
+.ss-save-new-row        { opacity: 1 !important; background: rgba(99,102,241,0.15); color: var(--accent-indigo); }
+.ss-save-new-row:hover  { background: rgba(99,102,241,0.3); }
+
+/* Status bar */
+.ss-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.01);
+  flex-shrink: 0;
+}
+
+/* Color picker (shared with schema modal) */
+.color-picker-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.color-swatch:hover  { transform: scale(1.15); }
+.color-swatch.selected { border-color: white; transform: scale(1.2); }
+
+/* Scrollbar styling for the grid */
+.ss-grid-wrap::-webkit-scrollbar       { width: 8px; height: 8px; }
+.ss-grid-wrap::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+.ss-grid-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+.ss-grid-wrap::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .ss-toolbar { flex-direction: column; align-items: flex-start; }
+  .ss-toolbar-right { width: 100%; justify-content: flex-end; }
+  .ss-container { height: calc(100vh - 300px); }
+}

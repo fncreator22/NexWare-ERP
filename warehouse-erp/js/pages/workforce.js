@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getAllUsers, createUser, updateUser, deleteUser, getWarehouses } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce, getSvgIcon } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wf_searchQ = '';
@@ -22,12 +22,12 @@ export function renderWorkforce() {
     <div class="animate-slideUp">
       <div class="wf_page-header">
         <div class="wf_page-header-left">
-          <h1 class="wf_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 24)} Workforce Management</h1>
+          <h1 class="wf_page-title">👥 Workforce Management</h1>
           <p class="wf_page-subtitle">Centralized user and role management across all warehouses</p>
         </div>
         <div class="wf_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
-          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">${getSvgIcon('plus', 14)} Add User</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
       </div>
 
@@ -37,7 +37,7 @@ export function renderWorkforce() {
       <!-- Table Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
+          <span>🔍</span>
           <input type="text" id="wf-search" placeholder="Search by name, email..." />
         </div>
         <div class="table-filter">
@@ -85,15 +85,15 @@ function renderWorkforceStats() {
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('user', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">👤</div>
         <div class="stat-card-value">${users.length}</div>
         <div class="stat-card-label">Total Users</div>
       </div>
       ${roles.map(r => {
         const count = users.filter(u=>u.role===r).length;
         const colors = {admin:'rgba(6,182,212,0.15)',manager:'rgba(16,185,129,0.15)',staff:'rgba(245,158,11,0.15)',employee:'rgba(100,116,139,0.15)'};
-        const icons = {admin:getSvgIcon('warehouses', 20),manager:getSvgIcon('user', 20),staff:getSvgIcon('billing', 20),employee:getSvgIcon('workforce', 20)};
-        return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]};display:flex;align-items:center;justify-content:center">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
+        const icons = {admin:'🏭',manager:'👔',staff:'🧾',employee:'👨‍💼'};
+        return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]}">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
       }).join('')}
     </div>
   `;
@@ -154,8 +154,8 @@ function renderWorkforceTable() {
               <td data-label="Actions">
                 ${['super_admin', 'admin'].includes(currentUser.role) ? `
                 <div class="table-actions">
-                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">✏️</button>
+                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">🗑️</button>
                 </div>` : '—'}
               </td>
             </tr>`;
@@ -261,7 +261,7 @@ function showUserModal(u) {
     <button class="btn btn-primary" id="m-u-save">${isEdit ? '✓ Update' : '+ Add'} User</button>
   `;
 
-  const modal = createModal({ title: isEdit ? 'Edit User' : 'Add New User', body, footer });
+  const modal = createModal({ title: isEdit ? '✏️ Edit User' : '👤 Add New User', body, footer });
   modal.el.querySelector('#m-u-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#m-u-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-u-name').value.trim();

@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-28T20:28:32.564Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-29T07:34:17.320Z
 
 
 // ===== modules/store.js =====
@@ -83,6 +83,9 @@ function getStore() {
 
 function saveStore() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(_store));
+  if (typeof window !== 'undefined') {
+    window.wareops_currency = getActiveCurrency();
+  }
 }
 
 function resetStore() {
@@ -91,15 +94,7 @@ function resetStore() {
 }
 
 // ---- API AND SYNCHRONIZATION ----
-const getApiBaseUrl = () => {
-  if (typeof window === 'undefined') return 'http://127.0.0.1:8000/api/v1';
-  let hostname = window.location.hostname || '127.0.0.1';
-  if (hostname === 'localhost' || hostname === '[::1]') {
-    hostname = '127.0.0.1';
-  }
-  return `http://${hostname}:8000/api/v1`;
-};
-const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = 'http://localhost:8000/api/v1';
 
 async function apiFetch(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
@@ -116,8 +111,7 @@ async function apiFetch(path, options = {}) {
   
   const config = {
     ...options,
-    headers,
-    credentials: 'include'
+    headers
   };
   
   try {
@@ -136,8 +130,7 @@ async function apiFetch(path, options = {}) {
     
     const data = await res.json();
     if (!res.ok) {
-      const errMsg = (data.error && data.error.message) || data.message || 'An error occurred.';
-      return { error: errMsg };
+      return { error: data.message || 'An error occurred.' };
     }
     return data;
   } catch (err) {
@@ -146,39 +139,21 @@ async function apiFetch(path, options = {}) {
   }
 }
 
-function normalize(data) {
-  if (!data) return data;
-  if (Array.isArray(data)) {
-    return data.map(item => normalize(item));
-  }
-  if (typeof data === 'object') {
-    const item = { ...data };
-    if (item._id && !item.id) {
-      item.id = String(item._id);
-    }
-    if (item.warehouse_id !== undefined && item.warehouseId === undefined) {
-      item.warehouseId = item.warehouse_id;
-    }
-    if (item.tenant_id !== undefined && item.tenantId === undefined) {
-      item.tenantId = item.tenant_id;
-    }
-    if (item.user_id !== undefined && item.userId === undefined) {
-      item.userId = item.user_id;
-    }
-    if (item.user_name !== undefined && item.userName === undefined) {
-      item.userName = item.user_name;
-    }
-    return item;
-  }
-  return data;
-}
-
 async function syncWithBackend() {
   const token = localStorage.getItem('access_token');
   if (!token) return;
   
   try {
-
+    // Helper to normalize _id to id recursively / mapped
+    const normalize = (items) => {
+      if (!Array.isArray(items)) return [];
+      return items.map(item => {
+        if (item && item._id && !item.id) {
+          item.id = item._id;
+        }
+        return item;
+      });
+    };
 
     // 1. Fetch Warehouses
     const whRes = await apiFetch('/warehouses/');
@@ -232,21 +207,6 @@ async function syncWithBackend() {
       _store.notifications = [];
     }
 
-    // 7. Fetch Dynamic Tables & Row Data
-    const tableRes = await apiFetch('/dynamic-tables/');
-    if (tableRes && tableRes.success && Array.isArray(tableRes.data)) {
-      _store.tables = normalize(tableRes.data);
-      const tableRowsData = {};
-      await Promise.all(_store.tables.map(async (table) => {
-        const rowsRes = await apiFetch(`/dynamic-tables/${table.id}/rows`);
-        tableRowsData[table.id] = (rowsRes && rowsRes.success && Array.isArray(rowsRes.data)) ? normalize(rowsRes.data) : [];
-      }));
-      _store.tableData = tableRowsData;
-    } else {
-      _store.tables = [];
-      _store.tableData = {};
-    }
-
     saveStore();
     
     // Automatically trigger/maintain WebSocket connection broker
@@ -279,8 +239,7 @@ async function login(email, password) {
     return { error: res.error };
   }
   
-  let { access_token, user } = res.data;
-  user = normalize(user);
+  const { access_token, user } = res.data;
   localStorage.setItem('access_token', access_token);
   
   const s = getStore();
@@ -304,26 +263,13 @@ async function login(email, password) {
 
 async function logout() {
   const token = localStorage.getItem('access_token');
-  
-  // Clear client-side authentication and session state synchronously first
+  if (token) {
+    await apiFetch('/auth/logout', { method: 'POST' });
+  }
   localStorage.removeItem('access_token');
   const s = getStore();
   s.currentUserId = null;
   saveStore();
-
-  // Perform backend logout notification in the background
-  if (token) {
-    try {
-      await apiFetch('/auth/logout', { 
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-    } catch (err) {
-      console.warn('[Store] Backend logout request failed:', err);
-    }
-  }
 }
 
 async function signup(name, email, password) {
@@ -405,54 +351,35 @@ async function updateWarehouse(id, data) {
   });
 
   if (res.error) {
-    return { error: res.error };
+    console.error('Failed to update warehouse in database:', res.error);
   }
 
-  const warehouse = res.data;
   const idx = s.warehouses.findIndex(w => w.id === id);
-  if (idx !== -1) {
-    s.warehouses[idx] = { ...s.warehouses[idx], ...warehouse };
-  }
+  if (idx === -1) return null;
+  s.warehouses[idx] = { ...s.warehouses[idx], ...data, ...(res.data || {}), updatedAt: new Date().toISOString() };
   saveStore();
-  
-  await apiFetch('/audit-logs/', {
-    method: 'POST',
-    body: JSON.stringify({
-      action: 'warehouse_update',
-      description: `Warehouse updated: ${warehouse.name}`,
-      warehouseId: id
-    })
-  });
-
-  await syncWithBackend();
-  return warehouse;
+  addAuditLog('warehouse_update', `Warehouse updated: ${s.warehouses[idx].name}`, s.currentUserId);
+  return s.warehouses[idx];
 }
 
-async function deleteWarehouse(id) {
+function deleteWarehouse(id) {
   const s = getStore();
   const u = getCurrentUser();
-  if (u.role !== 'super_admin') return { error: 'Unauthorized' };
+  if (u.role !== 'super_admin') return;
 
-  const res = await apiFetch(`/warehouses/${id}`, {
-    method: 'DELETE'
-  });
-
-  if (res.error) {
-    return { error: res.error };
-  }
-
-  s.warehouses = s.warehouses.filter(w => w.id !== id);
+  // Cascade Deletion to associated records to maintain data integrity
   s.users = s.users.filter(usr => usr.warehouseId !== id);
   s.items = s.items.filter(item => item.warehouseId !== id);
   s.bills = s.bills.filter(bill => bill.warehouseId !== id);
   
+  // Also cascade to operational tables and their rows
   const affectedTables = s.tables.filter(t => t.warehouseId === id).map(t => t.id);
   affectedTables.forEach(tId => { delete s.tableData[tId]; });
   s.tables = s.tables.filter(t => t.warehouseId !== id);
 
+  s.warehouses = s.warehouses.filter(w => w.id !== id);
   saveStore();
-  await syncWithBackend();
-  return { success: true };
+  addAuditLog('warehouse_delete', `Warehouse deleted (cascade)`, s.currentUserId);
 }
 
 // ---- USERS / WORKFORCE ----
@@ -558,33 +485,61 @@ function getItems(warehouseId) {
   return s.items.filter(i => i.warehouseId === u.warehouseId);
 }
 
-async function createItem(data) {
-  const res = await apiFetch('/items/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return normalize(res.data);
+function createItem(data) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || u.role === 'employee') return null; // Employees cannot create items
+  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+
+  // SKU Uniqueness check to prevent tracking errors
+  if (data.sku && s.items.find(i => i.sku === data.sku)) {
+    return { error: 'SKU already exists in the system' };
+  }
+
+  const id = 'item' + Date.now();
+  const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
+  s.items.push(item);
+
+  saveStore();
+  addAuditLog('item_create', `Item created: ${data.name} (SKU: ${data.sku})`, s.currentUserId);
+  addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
+  return item;
 }
 
-async function updateItem(id, data) {
-  const res = await apiFetch(`/items/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return normalize(res.data);
+function updateItem(id, data) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || u.role === 'employee') return null;
+
+  const idx = s.items.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+  const target = s.items[idx];
+
+  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return null;
+  if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+
+  // SKU Uniqueness check for updates
+  if (data.sku && s.items.find(i => i.sku === data.sku && i.id !== id)) {
+    return { error: 'SKU already exists' };
+  }
+
+  s.items[idx] = { ...s.items[idx], ...data, updatedAt: new Date().toISOString() };
+  saveStore();
+  addNotification('item_update', 'Inventory Updated', `${s.items[idx].name} stock or details updated`, '/items', s.items[idx].warehouseId);
+  return s.items[idx];
 }
 
-async function deleteItem(id) {
-  const res = await apiFetch(`/items/${id}`, {
-    method: 'DELETE'
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return true;
+function deleteItem(id) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || u.role === 'employee') return;
+
+  const target = s.items.find(i => i.id === id);
+  if (!target) return;
+  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return;
+
+  s.items = s.items.filter(i => i.id !== id);
+  saveStore();
 }
 
 // ---- TABLES ----
@@ -598,42 +553,55 @@ function getTables(warehouseId) {
     tables = tables.filter(t => !t.warehouseId || myWhs.includes(t.warehouseId));
   } else {
     tables = tables.filter(t => t.warehouseId === u.warehouseId);
-    // Dynamic roles restriction check: filter by allowed roles if not admin/super_admin
-    if (u.role !== 'admin') {
-      tables = tables.filter(t => !t.roles || t.roles.length === 0 || t.roles.includes(u.role));
-    }
   }
   if (warehouseId) tables = tables.filter(t => t.warehouseId === warehouseId);
   return tables;
 }
 
-async function createTable(data) {
-  const res = await apiFetch('/dynamic-tables/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return normalize(res.data);
+function createTable(data) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || !['super_admin','admin'].includes(u.role)) return null;
+  if (u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
+
+  const id = 'tbl' + Date.now();
+  const table = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId, status: 'active' };
+  s.tables.push(table);
+  s.tableData[id] = [];
+  saveStore();
+  addAuditLog('table_create', `Table created: ${data.name}`, s.currentUserId);
+  addNotification('table_create', 'New Operational Table', `${data.name} has been created`, '/tables', data.warehouseId);
+  return table;
 }
 
-async function updateTable(id, data) {
-  const res = await apiFetch(`/dynamic-tables/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return normalize(res.data);
+function updateTable(id, data) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || !['super_admin','admin'].includes(u.role)) return null;
+
+  const idx = s.tables.findIndex(t => t.id === id);
+  if (idx === -1) return null;
+  const target = s.tables[idx];
+
+  if (u.role === 'admin' && target.warehouseId !== u.warehouseId) return null;
+  if (data.warehouseId && u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
+
+  s.tables[idx] = { ...s.tables[idx], ...data, updatedAt: new Date().toISOString() };
+  saveStore();
+  return s.tables[idx];
 }
 
-async function deleteTable(id) {
-  const res = await apiFetch(`/dynamic-tables/${id}`, {
-    method: 'DELETE'
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return true;
+function deleteTable(id) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || !['super_admin','admin'].includes(u.role)) return;
+
+  const target = s.tables.find(t => t.id === id);
+  if (!target || (u.role === 'admin' && target.warehouseId !== u.warehouseId)) return;
+
+  s.tables = s.tables.filter(t => t.id !== id);
+  delete s.tableData[id];
+  saveStore();
 }
 
 function getTableData(tableId) {
@@ -641,33 +609,48 @@ function getTableData(tableId) {
   return s.tableData[tableId] || [];
 }
 
-async function addTableRow(tableId, row) {
-  const res = await apiFetch(`/dynamic-tables/${tableId}/rows`, {
-    method: 'POST',
-    body: JSON.stringify(row)
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return normalize(res.data);
+function addTableRow(tableId, row) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || u.role === 'employee') return null;
+
+  const table = s.tables.find(t => t.id === tableId);
+  if (!table) return null;
+  if (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId) return null;
+
+  if (!s.tableData[tableId]) s.tableData[tableId] = [];
+  const rowId = 'row' + Date.now();
+  s.tableData[tableId].push({ id: rowId, ...row, createdAt: new Date().toISOString() });
+  saveStore();
+  addNotification('table_update', 'Table Data Update', `New entry added to ${table.name}`, '/tables', table.warehouseId);
+  return rowId;
 }
 
-async function updateTableRow(tableId, rowId, data) {
-  const res = await apiFetch(`/dynamic-tables/${tableId}/rows/${rowId}`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return normalize(res.data);
+function updateTableRow(tableId, rowId, data) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || u.role === 'employee') return;
+
+  const table = s.tables.find(t => t.id === tableId);
+  if (!table || (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId)) return;
+
+  if (!s.tableData[tableId]) return;
+  const idx = s.tableData[tableId].findIndex(r => r.id === rowId);
+  if (idx > -1) { s.tableData[tableId][idx] = { ...s.tableData[tableId][idx], ...data }; }
+  saveStore();
 }
 
-async function deleteTableRow(tableId, rowId) {
-  const res = await apiFetch(`/dynamic-tables/${tableId}/rows/${rowId}`, {
-    method: 'DELETE'
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return true;
+function deleteTableRow(tableId, rowId) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || u.role === 'employee') return;
+
+  const table = s.tables.find(t => t.id === tableId);
+  if (!table || (u.role !== 'super_admin' && table.warehouseId && table.warehouseId !== u.warehouseId)) return;
+
+  if (!s.tableData[tableId]) return;
+  s.tableData[tableId] = s.tableData[tableId].filter(r => r.id !== rowId);
+  saveStore();
 }
 
 // ---- BILLS ----
@@ -697,14 +680,38 @@ function getBills(warehouseId) {
   );
 }
 
-async function createBill(data) {
-  const res = await apiFetch('/billing/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  });
-  if (res && res.error) return { error: res.error };
-  await syncWithBackend();
-  return normalize(res.data);
+function createBill(data) {
+  const s = getStore();
+  const u = getCurrentUser();
+  if (!u || u.role === 'employee') return null;
+  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+
+  // Manual Inventory Synchronization: Decrement stock for billed items
+  if (data.items && Array.isArray(data.items)) {
+    data.items.forEach(billItem => {
+      const itemIdx = s.items.findIndex(i => i.id === billItem.id);
+      if (itemIdx !== -1) {
+        s.items[itemIdx].stock = Math.max(0, (s.items[itemIdx].stock || 0) - billItem.qty);
+      }
+    });
+  }
+
+  const id = 'bill' + Date.now();
+  // Regional Tax Snapshot: Use warehouse-specific tax config if available
+  const taxConfig = getTaxConfig(data.warehouseId);
+  const bill = { 
+    id, ...data, 
+    taxConfigSnapshot: { ...taxConfig }, // Snapshot for record integrity
+    createdAt: new Date().toISOString(), 
+    createdBy: s.currentUserId, 
+    billNo: 'INV-' + String(s.bills.length + 1).padStart(4, '0') 
+  };
+  s.bills.push(bill);
+
+  saveStore();
+  addAuditLog('bill_create', `Bill generated: ${bill.billNo} — $${data.total}`, s.currentUserId);
+  addNotification('bill_create', 'New Invoice Generated', `${bill.billNo} for ${data.customer} — $${data.total}`, '/billing', data.warehouseId);
+  return bill;
 }
 
 // ---- AUDIT LOGS ----
@@ -862,26 +869,13 @@ async function saveTaxConfig(config) {
   s.taxConfig = { ...s.taxConfig, ...config };
   saveStore();
   
-  // Persist updated rules to all warehouses with custom tax preferences
+  // Also update warehouses with custom tax preference to copy the saved configuration in MongoDB
   const customWhs = s.warehouses.filter(w => w.taxPreference === 'custom');
   for (const wh of customWhs) {
-    wh.taxConfig = { ...config };
-    await apiFetch(`/warehouses/${wh.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ taxConfig: config })
-    });
+    await updateWarehouse(wh.id, { taxConfig: config });
   }
   
-  await apiFetch('/audit-logs/', {
-    method: 'POST',
-    body: JSON.stringify({
-      action: 'settings_update',
-      description: `Tax config updated: Normal ${config.normal}%, Luxury ${config.luxury}%`,
-      warehouseId: s.currentWarehouseId || null
-    })
-  });
-  
-  await syncWithBackend();
+  addAuditLog('settings_update', `Tax config updated: Normal ${config.normal}%, Luxury ${config.luxury}%`, s.currentUserId);
 }
 
 // ---- SUBSCRIPTION ----
@@ -913,11 +907,7 @@ function connectWebSocket() {
     return;
   }
 
-  let hostname = window.location.hostname || '127.0.0.1';
-  if (hostname === 'localhost' || hostname === '[::1]') {
-    hostname = '127.0.0.1';
-  }
-  const wsUrl = `ws://${hostname}:8000/api/v1/realtime/ws?token=${token}`;
+  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws?token=${token}`;
   console.log('[WebSocket] Connecting to:', wsUrl);
   ws = new WebSocket(wsUrl);
 
@@ -925,9 +915,18 @@ function connectWebSocket() {
     try {
       const payload = JSON.parse(event.data);
       console.log('[WebSocket] Event received:', payload);
-      
+
+      // Dispatch a cross-module event so any page (e.g. spreadsheet) can react
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('wareops_ws_event', { detail: payload }));
+      }
+
       // Auto-synchronize the client dataset when real-time updates are received
-      if (payload.type || payload.event_type) {
+      // Use payload.type (new) or payload.event_type (legacy)
+      const evType = payload.type || payload.event_type;
+      if (evType && !evType.startsWith('table_row_')) {
+        // Don't full-sync on every row save — too expensive.
+        // Only full-sync on schema-level or non-table events.
         syncWithBackend();
       }
     } catch (err) {
@@ -947,6 +946,37 @@ function connectWebSocket() {
     console.error('[WebSocket] Error:', err);
     ws.close();
   };
+}
+
+// ---- CURRENCY HELPERS ----
+function getCurrency() {
+  const s = getStore();
+  if (!s.currency) s.currency = 'USD';
+  return s.currency;
+}
+
+function getActiveCurrency() {
+  const s = getStore();
+  const activeWhId = s.currentWarehouseId || (getCurrentUser()?.warehouseId);
+  if (activeWhId) {
+    const wh = s.warehouses.find(w => w.id === activeWhId);
+    if (wh && wh.currency) return wh.currency;
+  }
+  if (!s.currency) s.currency = 'USD';
+  return s.currency;
+}
+
+function saveCurrency(currency) {
+  const s = getStore();
+  s.currency = currency;
+  saveStore();
+  
+  // Sync to global window variable for synchronous ui formatters
+  if (typeof window !== 'undefined') {
+    window.wareops_currency = getActiveCurrency();
+  }
+  
+  addAuditLog('settings_update', `Platform currency updated to: ${currency}`, s.currentUserId);
 }
 
 // ===== modules/router.js =====
@@ -1080,8 +1110,19 @@ function formatDateTime(iso) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function formatCurrency(val) {
-  return '$' + Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatCurrency(val, currencyCode) {
+  const code = currencyCode || window.wareops_currency || 'USD';
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(val || 0);
+  } catch (err) {
+    const symbol = { USD: '$', INR: '₹', EUR: '€', GBP: '£', AED: 'د.إ ', SGD: 'S$' }[code] || '$';
+    return symbol + Number(val || 0).toFixed(2);
+  }
 }
 
 function capitalize(str) {
@@ -1202,6 +1243,13 @@ function positionFixedElement(anchor, element, options = {}) {
     }
   }
 
+  // Hard boundaries viewport clamping (NEVER clip under any screen size)
+  if (top < 10) {
+    top = 10;
+  } else if (top + elH > winH - 10) {
+    top = winH - elH - 10;
+  }
+
   element.style.position = 'fixed';
   element.style.top = top + 'px';
   element.style.left = left + 'px';
@@ -1241,37 +1289,115 @@ function debounce(func, delay = 300) {
   };
 }
 
-// ---- SVG ICONS ----
-function getSvgIcon(name, size = 18) {
-  const icons = {
-    dashboard: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
-    warehouses: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M3 7v14M21 7v14M10 21V13h4v8M3 7l9-4 9 4M7 21h2v-3h-2v3zM15 21h2v-3h-2v3z"/></svg>`,
-    workforce: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
-    items: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
-    tables: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>`,
-    billing: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/><line x1="7" y1="15" x2="7.01" y2="15"/><line x1="11" y1="15" x2="13" y2="15"/></svg>`,
-    analytics: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><polyline points="18.7 8 13 14 9 10 4.7 14.3"/></svg>`,
-    settings: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
-    audit: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>`,
-    subscription: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
-    collapse: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
-    search: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
-    bell: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`,
-    dollar: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
-    revenue: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
-    warning: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-    bulb: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2v1M5.22 5.22l.71.71M2 12h1M22 12h-1M18.78 5.22l-.71.71M15 11.5A3.5 3.5 0 1 1 12.5 8M12 18V11.5"/></svg>`,
-    plus: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-    edit: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
-    trash: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`,
-    check: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
-    back: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`,
-    info: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
-    clock: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
-    user: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
-    upload: `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`
-  };
-  return icons[name] || '';
+// ---- JS GLOBAL TOOLTIP ENGINE ----
+function initTooltipEngine() {
+  const tooltipEl = document.createElement('div');
+  tooltipEl.id = 'global-tooltip';
+  tooltipEl.style.cssText = `
+    position: fixed;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    font-size: var(--text-xs);
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-md);
+    pointer-events: none;
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity 150ms ease, transform 150ms ease;
+    z-index: 10000;
+    white-space: nowrap;
+  `;
+  document.body.appendChild(tooltipEl);
+
+  let activeElement = null;
+
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest('[data-tooltip], [title]');
+    if (!el) {
+      hideTooltip();
+      return;
+    }
+
+    // Do not show tooltips for expanded sidebar items to keep UI premium
+    if (el.closest('.sidebar:not(.collapsed) .sidebar-item')) {
+      hideTooltip();
+      return;
+    }
+
+    // Convert standard title tags to data-tooltip tags on demand to prevent browser yellow double-tooltips
+    if (el.hasAttribute('title')) {
+      const titleText = el.getAttribute('title');
+      if (titleText) {
+        el.setAttribute('data-tooltip', titleText);
+        el.removeAttribute('title');
+      }
+    }
+
+    const text = el.getAttribute('data-tooltip');
+    if (!text || text.trim() === '') return;
+
+    activeElement = el;
+    tooltipEl.textContent = text;
+    tooltipEl.style.opacity = '1';
+    tooltipEl.style.transform = 'scale(1)';
+
+    positionTooltip(el, tooltipEl);
+  });
+
+  document.addEventListener('mouseout', (e) => {
+    if (activeElement && !activeElement.contains(e.target)) {
+      hideTooltip();
+    }
+  });
+
+  function hideTooltip() {
+    activeElement = null;
+    tooltipEl.style.opacity = '0';
+    tooltipEl.style.transform = 'scale(0.95)';
+  }
+
+  function positionTooltip(anchor, tooltip) {
+    const rect = anchor.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    const offset = 8;
+    let top, left;
+
+    // Collapsed sidebar items prefer alignment to the right of the sidebar
+    const position = anchor.getAttribute('data-tooltip-position') || 
+      (anchor.closest('.sidebar.collapsed') ? 'right' : 'auto');
+
+    if (position === 'right') {
+      top = rect.top + (rect.height - tooltipRect.height) / 2;
+      left = rect.right + offset;
+    } else if (position === 'left') {
+      top = rect.top + (rect.height - tooltipRect.height) / 2;
+      left = rect.left - tooltipRect.width - offset;
+    } else {
+      // Auto vertical placement with viewport check (Issue 4 placement direction rules)
+      const showBelow = rect.top < 80;
+      if (showBelow) {
+        top = rect.bottom + offset;
+      } else {
+        top = rect.top - tooltipRect.height - offset;
+      }
+      left = rect.left + (rect.width - tooltipRect.width) / 2;
+    }
+
+    // Clamp horizontal & vertical to prevent viewport boundary clipping
+    if (left < 10) left = 10;
+    if (left + tooltipRect.width > winW - 10) left = winW - tooltipRect.width - 10;
+    if (top < 10) top = 10;
+    if (top + tooltipRect.height > winH - 10) top = winH - tooltipRect.height - 10;
+
+    tooltip.style.top = top + 'px';
+    tooltip.style.left = left + 'px';
+  }
 }
 
 // ===== modules/exporter.js =====
@@ -1961,14 +2087,6 @@ function showNotificationDropdown(anchor) {
   });
 
   setTimeout(() => document.addEventListener('click', () => dropdown.remove(), { once: true }), 50);
-}
-
-function timeSince(iso) {
-  const secs = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (secs < 60) return 'just now';
-  if (secs < 3600) return Math.floor(secs/60) + 'm ago';
-  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
-  return Math.floor(secs/86400) + 'd ago';
 }
 
 function showProfileDropdown(anchor) {
@@ -3225,57 +3343,59 @@ function refreshShell() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 24)} Warehouse Management</h1>
+          <h1 class="page-title">🏭 Warehouse Management</h1>
           <p class="page-subtitle">Centralized control for all warehouse locations · <span style="color:var(--text-brand);font-weight:600">${planLabel}</span></p>
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" id="view-toggle">☰ Table</button>
           <button class="btn btn-primary" id="create-wh-btn" ${atLimit ? 'disabled title="Warehouse limit reached for your plan"' : ''}>
-            ${getSvgIcon('plus', 14)} New Warehouse
+            + New Warehouse ${atLimit ? '🔒' : ''}
           </button>
         </div>
       </div>
 
       ${atLimit ? `
       <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
-        <span style="display:flex;align-items:center;color:var(--accent-amber)">${getSvgIcon('warning', 20)}</span>
+        <span style="font-size:20px">⚠️</span>
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--text-primary)">Warehouse Limit Reached</div>
           <div style="font-size:12px;color:var(--text-muted)">Your <strong>Starter plan</strong> allows only 1 warehouse. <a href="#/subscription" style="color:var(--text-brand)">Upgrade to Enterprise</a> for unlimited warehouses.</div>
         </div>
       </div>` : ''}
 
-      <div class="summary-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px">
+      <!-- Summary Stat Cards -->
+      <div class="stat-grid">
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('warehouses', 20)}</div>
+          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
           <div class="stat-card-value" id="wh-count">${whs.length}</div>
           <div class="stat-card-label">Total Warehouses</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('check', 20)}</div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">✅</div>
           <div class="stat-card-value">${whs.filter(w=>w.status==='active').length}</div>
           <div class="stat-card-label">Active</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('workforce', 20)}</div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">👥</div>
           <div class="stat-card-value">${allUsers.length}</div>
           <div class="stat-card-label">Total Staff</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">💰</div>
           <div class="stat-card-value">${formatCurrency(whs.reduce((s,w)=>s+(w.revenue||0),0))}</div>
           <div class="stat-card-label">Combined Revenue</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('subscription', 20)}</div>
+          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15)">📊</div>
           <div class="stat-card-value">${limit < 0 ? '∞' : limit}</div>
           <div class="stat-card-label">Plan Limit</div>
         </div>
       </div>
 
+      <!-- Search + Filter -->
       <div class="table-toolbar" style="margin-bottom:20px">
         <div class="table-search" style="max-width:400px;flex:none">
-          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
+          <span>🔍</span>
           <input type="text" id="wh-search" placeholder="Search warehouses..." />
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
@@ -3457,7 +3577,7 @@ function attachWarehouseEvents() {
       const wh = getWarehouses().find(w => w.id === btn.dataset.id);
       const ok = await confirm(`Delete "${wh?.name || 'this warehouse'}"? All associated data will be removed.`, 'Delete Warehouse');
       if (ok) {
-        await deleteWarehouse(btn.dataset.id);
+        deleteWarehouse(btn.dataset.id);
         showToast('Warehouse deleted', `${wh?.name} has been removed`, 'success');
         refreshList();
       }
@@ -3517,7 +3637,6 @@ function showWarehouseModal(wh) {
           <label class="form-label">Tax Preference</label>
           <select id="m-wh-tax" class="form-control">
             <option value="standard" ${wh?.taxPreference==='standard'||!wh?'selected':''}>Standard</option>
-            <option value="custom" ${wh?.taxPreference==='custom'?'selected':''}>Custom Setup</option>
             <option value="luxury" ${wh?.taxPreference==='luxury'?'selected':''}>Luxury</option>
             <option value="none" ${wh?.taxPreference==='none'?'selected':''}>No Tax</option>
           </select>
@@ -3525,8 +3644,23 @@ function showWarehouseModal(wh) {
         <div class="form-group">
           <label class="form-label">Logo</label>
           <select id="m-wh-logo" class="form-control">
-            ${['🏭','🏗️','🚛','📦','🏢','⚙️','🌐','🏬'].map(l=>`<option value="${l}" ${wh?.logo===l?'selected':''}>${l} ${l}</option>`).join('')}
+            ${['🏭','🏗️','🏢','⚙️','🚛','📦','🏢','🏬'].map(l=>`<option value="${l}" ${wh?.logo===l?'selected':''}>${l} ${l}</option>`).join('')}
           </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Warehouse Currency</label>
+          <select id="m-wh-currency" class="form-control">
+            <option value="" ${!wh?.currency?'selected':''}>Default (Global settings)</option>
+            <option value="USD" ${wh?.currency==='USD'?'selected':''}>USD ($)</option>
+            <option value="INR" ${wh?.currency==='INR'?'selected':''}>INR (₹)</option>
+            <option value="EUR" ${wh?.currency==='EUR'?'selected':''}>EUR (€)</option>
+            <option value="GBP" ${wh?.currency==='GBP'?'selected':''}>GBP (£)</option>
+            <option value="AED" ${wh?.currency==='AED'?'selected':''}>AED (د.إ)</option>
+            <option value="SGD" ${wh?.currency==='SGD'?'selected':''}>SGD (S$)</option>
+          </select>
+          <div class="form-hint">Enables local currency preference override for this location hub.</div>
         </div>
       </div>
       ${isEdit ? `
@@ -3548,7 +3682,7 @@ function showWarehouseModal(wh) {
   const modal = createModal({ title: isEdit ? '✏️ Edit Warehouse' : '🏭 New Warehouse', body, footer });
 
   modal.el.querySelector('#m-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-save')?.addEventListener('click', async () => {
+  modal.el.querySelector('#m-save')?.addEventListener('click', () => {
     const name         = document.getElementById('m-wh-name')?.value.trim();
     const businessName = document.getElementById('m-wh-biz')?.value.trim();
     const address      = document.getElementById('m-wh-address')?.value.trim();
@@ -3573,20 +3707,24 @@ function showWarehouseModal(wh) {
       name, businessName, address, contact, email,
       taxPreference: document.getElementById('m-wh-tax')?.value || 'standard',
       logo: document.getElementById('m-wh-logo')?.value || '🏭',
+      currency: document.getElementById('m-wh-currency')?.value || '',
       ...(isEdit ? { status: document.getElementById('m-wh-status')?.value } : {})
     };
 
     if (isEdit) {
-      await updateWarehouse(wh.id, data);
-      showToast('Warehouse updated', `${name} has been updated`, 'success');
+      updateWarehouse(wh.id, data).then(() => {
+        showToast('Warehouse updated', `${name} has been updated`, 'success');
+        refreshList();
+      });
     } else {
-      await createWarehouse(data);
-      addNotification('warehouse_create', 'Warehouse Created', `${name} is now active and ready`, '/warehouses');
-      showToast('Warehouse created', `${name} is ready`, 'success');
+      createWarehouse(data).then(() => {
+        addNotification('warehouse_create', 'Warehouse Created', `${name} is now active and ready`, '/warehouses');
+        showToast('Warehouse created', `${name} is ready`, 'success');
+        refreshList();
+      });
     }
 
     modal.close();
-    refreshList();
   });
 }
 
@@ -3865,12 +4003,12 @@ function renderWorkforce() {
     <div class="animate-slideUp">
       <div class="wf_page-header">
         <div class="wf_page-header-left">
-          <h1 class="wf_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 24)} Workforce Management</h1>
+          <h1 class="wf_page-title">👥 Workforce Management</h1>
           <p class="wf_page-subtitle">Centralized user and role management across all warehouses</p>
         </div>
         <div class="wf_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
-          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">${getSvgIcon('plus', 14)} Add User</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
       </div>
 
@@ -3880,7 +4018,7 @@ function renderWorkforce() {
       <!-- Table Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
+          <span>🔍</span>
           <input type="text" id="wf-search" placeholder="Search by name, email..." />
         </div>
         <div class="table-filter">
@@ -3928,15 +4066,15 @@ function renderWorkforceStats() {
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('user', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">👤</div>
         <div class="stat-card-value">${users.length}</div>
         <div class="stat-card-label">Total Users</div>
       </div>
       ${roles.map(r => {
         const count = users.filter(u=>u.role===r).length;
         const colors = {admin:'rgba(6,182,212,0.15)',manager:'rgba(16,185,129,0.15)',staff:'rgba(245,158,11,0.15)',employee:'rgba(100,116,139,0.15)'};
-        const icons = {admin:getSvgIcon('warehouses', 20),manager:getSvgIcon('user', 20),staff:getSvgIcon('billing', 20),employee:getSvgIcon('workforce', 20)};
-        return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]};display:flex;align-items:center;justify-content:center">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
+        const icons = {admin:'🏭',manager:'👔',staff:'🧾',employee:'👨‍💼'};
+        return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]}">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
       }).join('')}
     </div>
   `;
@@ -3997,8 +4135,8 @@ function renderWorkforceTable() {
               <td data-label="Actions">
                 ${['super_admin', 'admin'].includes(currentUser.role) ? `
                 <div class="table-actions">
-                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">✏️</button>
+                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">🗑️</button>
                 </div>` : '—'}
               </td>
             </tr>`;
@@ -4104,7 +4242,7 @@ function showUserModal(u) {
     <button class="btn btn-primary" id="m-u-save">${isEdit ? '✓ Update' : '+ Add'} User</button>
   `;
 
-  const modal = createModal({ title: isEdit ? 'Edit User' : 'Add New User', body, footer });
+  const modal = createModal({ title: isEdit ? '✏️ Edit User' : '👤 Add New User', body, footer });
   modal.el.querySelector('#m-u-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#m-u-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-u-name').value.trim();
@@ -4163,14 +4301,14 @@ function renderItems() {
     <div class="animate-slideUp">
       <div class="it_page-header">
         <div class="it_page-header-left">
-          <h1 class="it_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('items', 24)} Inventory Management</h1>
+          <h1 class="it_page-title">📦 Inventory Management</h1>
           <p class="it_page-subtitle">Track items, stock levels, and pricing</p>
         </div>
         <div class="it_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="import-csv-btn">${getSvgIcon('upload', 14)} Import CSV</button>
-            <button class="btn btn-primary" id="create-item-btn">${getSvgIcon('plus', 14)} Add Item</button>
+            <button class="btn btn-secondary btn-sm" id="import-csv-btn">📥 Import CSV</button>
+            <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
         </div>
       </div>
@@ -4181,7 +4319,7 @@ function renderItems() {
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span>
+          <span>🔍</span>
           <input type="text" id="item-search" placeholder="Search items..." />
         </div>
         <div class="table-filter">
@@ -4229,10 +4367,10 @@ function renderItemStats() {
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('items', 20)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('analytics', 20)}</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('warning', 20)}</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">⚠️</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
     </div>
   `;
 }
@@ -4284,8 +4422,8 @@ function renderItemsTable() {
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">✏️</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">🗑️</button>
                 </div>
               </td>` : ''}
             </tr>`;
@@ -4310,16 +4448,7 @@ function renderItemsTable() {
     container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
-        if (ok) {
-          const res = await deleteItem(btn.dataset.iid);
-          if (res && res.error) {
-            showToast('Error Deleting Item', res.error, 'error');
-            return;
-          }
-          showToast('Item deleted','','success');
-          renderItemStats();
-          renderItemsTable();
-        }
+        if (ok) { deleteItem(btn.dataset.iid); showToast('Item deleted','','success'); renderItemStats(); renderItemsTable(); }
       });
     });
   }
@@ -4391,7 +4520,7 @@ function showItemModal(item) {
 
   const modal = createModal({ title: isEdit ? '✏️ Edit Item' : '📦 Add New Item', body, footer });
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', () => {
     const name = document.getElementById('m-i-name').value.trim();
     const category = document.getElementById('m-i-cat').value;
     const price = parseFloat(document.getElementById('m-i-price').value);
@@ -4399,23 +4528,8 @@ function showItemModal(item) {
     const warehouseId = document.getElementById('m-i-wh').value;
     if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
     const data = { name, category, price, stock, warehouseId, sku: document.getElementById('m-i-sku').value||`SKU-${Date.now()}`, unit: document.getElementById('m-i-unit').value, taxCategory: document.getElementById('m-i-tax').value };
-    
-    let res;
-    if (isEdit) {
-      res = await updateItem(item.id, data);
-      if (res && res.error) {
-        showToast('Error Updating Item', res.error, 'error');
-        return;
-      }
-      showToast('Item updated',`${name} updated`,'success');
-    } else {
-      res = await createItem(data);
-      if (res && res.error) {
-        showToast('Error Creating Item', res.error, 'error');
-        return;
-      }
-      showToast('Item added',`${name} added to inventory`,'success');
-    }
+    if (isEdit) { updateItem(item.id, data); showToast('Item updated',`${name} updated`,'success'); }
+    else { createItem(data); showToast('Item added',`${name} added to inventory`,'success'); }
     modal.close();
     renderItemStats();
     renderItemsTable();
@@ -4529,8 +4643,7 @@ function showImportModal() {
     formData.append('file', selectedFile);
 
     const token = localStorage.getItem('access_token');
-    const hostname = window.location.hostname || '127.0.0.1';
-    const url = `http://${hostname}:8000/api/v1/items/import`;
+    const url = 'http://localhost:8000/api/v1/items/import';
 
     try {
       const res = await fetch(url, {
@@ -4538,8 +4651,7 @@ function showImportModal() {
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: formData,
-        credentials: 'include'
+        body: formData
       });
       
       clearInterval(interval);
@@ -4549,8 +4661,7 @@ function showImportModal() {
       const data = await res.json();
       
       if (!res.ok) {
-        const errMsg = (data.error && data.error.message) || data.message || 'An error occurred during CSV parsing.';
-        showToast('Import Failed', errMsg, 'error');
+        showToast('Import Failed', data.message || 'An error occurred during CSV parsing.', 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
         return;
@@ -4587,8 +4698,7 @@ function showImportModal() {
           });
         }
       } else {
-        const errMsg = (data.error && data.error.message) || data.message || 'Malformed CSV format.';
-        showToast('Import Failed', errMsg, 'error');
+        showToast('Import Failed', data.message || 'Malformed CSV format.', 'error');
         startBtn.removeAttribute('disabled');
         cancelBtn.removeAttribute('disabled');
       }
@@ -4604,252 +4714,822 @@ function showImportModal() {
 
 // ===== pages/tables.js =====
 /**
- * Dynamic Table Builder — Create, manage, and populate custom tables
+ * WareOps ERP — Dynamic Tables Spreadsheet Workspace
+ * Airtable / Notion style inline-editable grid with realtime collaboration
  */
 
 
 
 
 
-const COLUMN_TYPES = ['text','number','date','dropdown','checkbox','price','tags','status'];
-const CATEGORY_OPTIONS = ['Operations','HR','Finance','Inventory','Sales','Logistics','Custom'];
-const HEADER_COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#f43f5e','#8b5cf6','#ec4899','#64748b'];
+// ─── Constants ────────────────────────────────────────────────────────────────
+const COLUMN_TYPES   = ['text','number','date','dropdown','checkbox','price','tags','status'];
+const CATEGORY_OPTS  = ['Operations','HR','Finance','Inventory','Sales','Logistics','Custom'];
+const HEADER_COLORS  = ['#6366f1','#06b6d4','#10b981','#f59e0b','#f43f5e','#8b5cf6','#ec4899','#64748b'];
+const VIRTUAL_ROWS   = 80;   // empty ghost rows below real data
+const SAVE_DEBOUNCE  = 800;  // ms before auto-save fires
 
-let activeTblId = null;
+// ─── Module-level state ────────────────────────────────────────────────────────
+let _activeTableId   = null;   // which table is open
+let _schema          = null;   // loaded schema object
+let _rows            = [];     // loaded row array
+let _wsRef           = null;   // WebSocket reference (shared with store.js ws)
+let _savingRows      = new Set();       // rowIds currently being saved
+let _lockedRows      = new Map();       // rowId → { userId, userName } — locked by another user
+let _pendingCells    = new Map();       // `${rowIndex}:${colId}` → cellEl — dirty cells
+let _debounceSavers  = new Map();       // rowIndex → debounced save fn
 
-function renderTables() {
-  const user = getCurrentUser();
-  const canCreate = ['super_admin','admin'].includes(user.role);
-  const tables = getTables();
-  const whs = getWarehouses();
+// ─── Entry point ──────────────────────────────────────────────────────────────
+async function renderTables() {
+  const user     = getCurrentUser();
+  const whs      = getWarehouses();
+  const canManage = ['super_admin','admin'].includes(user.role);
 
-  renderShell('Tables', 'Dynamic table builder and data management', `
+  if (_activeTableId) {
+    // ── Spreadsheet workspace ──
+    await _openSpreadsheet(user, canManage);
+  } else {
+    // ── Table list view ──
+    await _renderTableList(user, whs, canManage);
+  }
+}
+
+// ─── TABLE LIST ───────────────────────────────────────────────────────────────
+async function _renderTableList(user, whs, canManage) {
+  // Fetch schemas from backend
+  const res = await apiFetch('/dynamic-tables/');
+  const schemas = (res?.success && Array.isArray(res.data)) ? res.data : [];
+
+  renderShell('Tables', 'Dynamic table builder and spreadsheet workspace', `
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('tables', 24)} Table Builder</h1>
-          <p class="page-subtitle">Airtable-style dynamic table management system</p>
+          <h1 class="page-title">📋 Table Builder</h1>
+          <p class="page-subtitle">Airtable-style inline spreadsheet workspaces</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
-          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn">${getSvgIcon('plus', 14)} New Table</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
         </div>
       </div>
 
-      ${activeTblId ? renderTableView(activeTblId) : renderTableList(tables, whs, canCreate)}
+      ${schemas.length === 0 ? `
+        <div class="card" style="text-align:center;padding:80px 40px">
+          <div style="font-size:56px;margin-bottom:20px;opacity:0.4">📋</div>
+          <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
+          <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Create your first table and start tracking data like a spreadsheet</p>
+          ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create First Table</button>` : ''}
+        </div>
+      ` : `
+        <div class="table-toolbar" style="margin-bottom:16px">
+          <div class="table-search"><span>🔍</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Table Name</th><th>Category</th><th>Warehouse</th>
+              <th>Columns</th><th>Access Roles</th><th>Created</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="tbl-list-body">
+              ${schemas.map(t => {
+                const wh = whs.find(w => w.id === t.warehouseId);
+                return `<tr>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <div style="width:32px;height:32px;border-radius:8px;background:${t.headerColor||'#6366f1'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">📋</div>
+                      <div>
+                        <div class="primary-cell">${t.name}</div>
+                        <div class="sub-cell">${t.description||'No description'}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="badge badge-brand">${t.category||'—'}</span></td>
+                  <td><span class="badge badge-info">${wh?.name||'All Warehouses'}</span></td>
+                  <td>${(t.columns||[]).length} cols</td>
+                  <td>${(t.roles||[]).length > 0 ? t.roles.map(r => `<span class="badge badge-muted" style="margin-right:2px">${capitalize(r)}</span>`).join('') : '<span class="badge badge-muted">All</span>'}</td>
+                  <td>${formatDate(t.createdAt)}</td>
+                  <td>
+                    <div class="table-actions">
+                      <button class="action-btn view" data-tid="${t.id}" title="Open Spreadsheet">📊</button>
+                      ${canManage ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">✏️</button>` : ''}
+                      ${canManage ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">🗑️</button>` : ''}
+                    </div>
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
     </div>
   `);
 
-  if (canCreate) {
-    document.getElementById('create-tbl-btn')?.addEventListener('click', () => showTableBuilderModal(null));
-  }
-
-  attachTableListEvents();
-}
-
-function renderTableList(tables, whs, canCreate) {
-  if (tables.length === 0) return `
-    <div class="card" style="text-align:center;padding:80px 40px">
-      <div style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);opacity:0.4;margin-bottom:20px">${getSvgIcon('tables', 56)}</div>
-      <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
-      <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Build custom tables to manage any kind of data</p>
-      ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn-empty">${getSvgIcon('plus', 14)} Create Your First Table</button>` : ''}
-    </div>
-  `;
-
-  return `
-    <!-- Table List Header -->
-    <div class="table-toolbar">
-      <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
-      <div class="table-filter">
-        <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="tbl-cat-filter">
-          <option value="">All Categories</option>
-          ${CATEGORY_OPTIONS.map(c=>`<option value="${c}">${c}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Table Name</th><th>Category</th><th>Warehouse</th>
-          <th>Columns</th><th>Rows</th><th>Created By</th>
-          <th>Created Date</th><th>Status</th><th>Actions</th>
-        </tr></thead>
-        <tbody id="table-list-body">
-          ${tables.map(t => {
-            const wh = whs.find(w=>w.id===t.warehouseId);
-            const data = getTableData(t.id);
-            return `<tr>
-              <td data-label="Table">
-                <div style="display:flex;align-items:center;gap:10px">
-                  <div style="width:32px;height:32px;border-radius:8px;background:${t.headerColor||'#6366f1'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">📋</div>
-                  <div>
-                    <div class="primary-cell">${t.name}</div>
-                    <div class="sub-cell">${t.description||'No description'}</div>
-                  </div>
-                </div>
-              </td>
-              <td data-label="Category"><span class="badge badge-brand">${t.category||'—'}</span></td>
-              <td data-label="Warehouse"><span class="badge badge-info">${wh?.name||'All'}</span></td>
-              <td data-label="Columns">${(t.columns||[]).length}</td>
-              <td data-label="Rows">${data.length}</td>
-              <td data-label="Created By" style="font-size:12px;color:var(--text-muted)">${t.createdBy||'—'}</td>
-              <td data-label="Created">${formatDate(t.createdAt)}</td>
-              <td data-label="Status"><span class="badge badge-success">Active</span></td>
-              <td data-label="Actions">
-                <div class="table-actions">
-                  <button class="action-btn view" data-tid="${t.id}" title="Open Table">👁️</button>
-                  ${canCreate ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Table">${getSvgIcon('edit', 14)}</button>` : ''}
-                  ${canCreate ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
-                </div>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderTableView(tableId) {
-  const tables = getTables();
-  const table = tables.find(t => t.id === tableId);
-  if (!table) { activeTblId = null; return renderTableList(tables, getWarehouses(), true); }
-
-  const data = getTableData(tableId);
-  const cols = table.columns || [];
-  const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
-
-  return `
-    <div style="margin-bottom:20px;display:flex;align-items:center;gap:12px">
-      <button class="btn btn-secondary btn-sm" id="back-to-tables">← All Tables</button>
-      <div style="width:32px;height:32px;border-radius:8px;background:${table.headerColor||'#6366f1'};display:flex;align-items:center;justify-content:center;font-size:14px">📋</div>
-      <div>
-        <h2 style="font-size:18px;font-weight:700">${table.name}</h2>
-        <p style="font-size:12px;color:var(--text-muted)">${table.category} · ${data.length} rows · ${cols.length} columns</p>
-      </div>
-      ${canEdit ? `<button class="btn btn-primary btn-sm" style="margin-left:auto" id="add-row-btn">+ Add Row</button>` : ''}
-    </div>
-
-    <div class="table-wrap" style="overflow-x:auto">
-      <table id="dynamic-table">
-        <thead style="background:${table.headerColor||'#6366f1'}22">
-          <tr>
-            <th>#</th>
-            ${cols.map(c=>`<th style="color:${table.headerColor||'#818cf8'}">${c.name}</th>`).join('')}
-            ${canEdit ? '<th>Actions</th>' : ''}
-          </tr>
-        </thead>
-        <tbody id="dynamic-tbody">
-          ${data.length === 0 ? `
-            <tr><td colspan="${cols.length+2}" class="table-empty">
-              <div class="table-empty-icon">📭</div>
-              <div class="table-empty-title">No data yet</div>
-              <div class="table-empty-desc">Click "Add Row" to start filling this table</div>
-            </td></tr>
-          ` : data.map((row, i) => `
-            <tr data-row-id="${row.id}">
-              <td data-label="#" style="color:var(--text-muted);font-size:12px;width:40px">${i+1}</td>
-              ${cols.map(c => `<td data-label="${c.name}">${renderCellValue(row[c.id], c)}</td>`).join('')}
-              ${canEdit ? `<td data-label="Actions">
-                <div class="table-actions">
-                  <button class="action-btn edit" data-row="${row.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                  <button class="action-btn delete" data-row="${row.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
-                </div>
-              </td>` : ''}
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderCellValue(val, col) {
-  if (val === undefined || val === null || val === '') return '<span style="color:var(--text-disabled)">—</span>';
-  switch (col.type) {
-    case 'checkbox': return val ? '✅' : '⬜';
-    case 'price': return `<strong>$${Number(val).toFixed(2)}</strong>`;
-    case 'date': return `<span style="font-family:var(--font-mono);font-size:12px">${val}</span>`;
-    case 'status': {
-      const cls = val === 'Done' ? 'badge-success' : val === 'In Progress' ? 'badge-warning' : 'badge-muted';
-      return `<span class="badge ${cls}">${val}</span>`;
-    }
-    case 'dropdown': return `<span class="badge badge-info">${val}</span>`;
-    case 'tags': return val.split(',').map(t=>`<span class="badge badge-purple" style="margin-right:4px">${t.trim()}</span>`).join('');
-    default: return `<span>${val}</span>`;
-  }
-}
-
-function attachTableListEvents() {
-  const user = getCurrentUser();
-  const canCreate = ['super_admin','admin'].includes(user.role);
-
-  document.getElementById('create-tbl-btn-empty')?.addEventListener('click', () => showTableBuilderModal(null));
-  document.getElementById('back-to-tables')?.addEventListener('click', () => { activeTblId = null; renderTables(); });
-  document.getElementById('add-row-btn')?.addEventListener('click', () => showRowModal(activeTblId, null));
+  // Events
+  document.getElementById('create-tbl-btn')?.addEventListener('click', () => _showSchemaModal(null, whs));
+  document.getElementById('create-tbl-btn-empty')?.addEventListener('click', () => _showSchemaModal(null, whs));
   document.getElementById('tbl-search')?.addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
-    document.querySelectorAll('#table-list-body tr').forEach(tr => {
-      const text = tr.textContent.toLowerCase();
-      tr.style.display = text.includes(q) ? '' : 'none';
+    document.querySelectorAll('#tbl-list-body tr').forEach(tr => {
+      tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
   });
-
   document.querySelectorAll('.action-btn.view[data-tid]').forEach(btn => {
-    btn.addEventListener('click', () => { activeTblId = btn.dataset.tid; renderTables(); });
-  });
-  if (canCreate) {
-    document.querySelectorAll('.action-btn.edit[data-tid]').forEach(btn => {
-      btn.addEventListener('click', () => { const t = getTables().find(t=>t.id===btn.dataset.tid); showTableBuilderModal(t); });
-    });
-    document.querySelectorAll('.action-btn.delete[data-tid]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const ok = await confirm('Delete this table and all its data?', 'Delete Table');
-        if (ok) {
-          const res = await deleteTable(btn.dataset.tid);
-          if (res && res.error) {
-            showToast('Error Deleting Table', res.error, 'error');
-            return;
-          }
-          showToast('Table deleted','','success');
-          renderTables();
-        }
-      });
-    });
-  }
-
-  // Row events (when in table view)
-  document.querySelectorAll('.action-btn.edit[data-row]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const data = getTableData(activeTblId);
-      const row = data.find(r => r.id === btn.dataset.row);
-      showRowModal(activeTblId, row);
-    });
-  });
-  document.querySelectorAll('.action-btn.delete[data-row]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const ok = await confirm('Delete this row?', 'Delete Row');
-      if (ok) {
-        const res = await deleteTableRow(activeTblId, btn.dataset.row);
-        if (res && res.error) {
-          showToast('Error Deleting Row', res.error, 'error');
-          return;
-        }
-        showToast('Row deleted','','success');
-        renderTables();
-      }
+      _activeTableId = btn.dataset.tid;
+      await renderTables();
+    });
+  });
+  document.querySelectorAll('.action-btn.edit[data-tid]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const r = await apiFetch(`/dynamic-tables/`);
+      const s = r?.data?.find(t => t.id === btn.dataset.tid);
+      if (s) _showSchemaModal(s, whs);
+    });
+  });
+  document.querySelectorAll('.action-btn.delete[data-tid]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await confirm('Delete this table and all its data permanently?', 'Delete Table');
+      if (!ok) return;
+      const r = await apiFetch(`/dynamic-tables/${btn.dataset.tid}`, { method: 'DELETE' });
+      if (r?.success) { showToast('Table deleted', '', 'success'); await renderTables(); }
+      else showToast('Error', r?.error || 'Delete failed', 'error');
     });
   });
 }
 
-function showTableBuilderModal(table) {
-  const isEdit = !!table;
-  const whs = getWarehouses();
-  let columns = isEdit ? [...(table.columns||[])] : [];
-  let selectedColor = table?.headerColor || '#6366f1';
+// ─── SPREADSHEET WORKSPACE ────────────────────────────────────────────────────
+async function _openSpreadsheet(user, canManage) {
+  // Fetch schema + rows
+  const schemaRes = await apiFetch(`/dynamic-tables/`);
+  _schema = schemaRes?.data?.find(t => t.id === _activeTableId) || null;
+
+  if (!_schema) {
+    showToast('Error', 'Table not found', 'error');
+    _activeTableId = null;
+    await renderTables();
+    return;
+  }
+
+  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
+  _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
+
+  const canEdit   = ['super_admin','admin','manager','staff'].includes(user.role);
+  const canImport = ['super_admin','admin','manager'].includes(user.role);
+  const cols      = _schema.columns || [];
+  const headerColor = _schema.headerColor || '#6366f1';
+
+  renderShell(_schema.name, `Spreadsheet Workspace · ${_rows.length} rows · ${cols.length} columns`, `
+    <div class="animate-slideUp" id="spreadsheet-workspace">
+      <!-- Toolbar -->
+      <div class="ss-toolbar">
+        <div class="ss-toolbar-left">
+          <button class="btn btn-secondary btn-sm" id="ss-back">← All Tables</button>
+          <div class="ss-table-badge" style="background:${headerColor}22;border-color:${headerColor}44">
+            <span style="color:${headerColor}">📊</span>
+            <span style="font-weight:700;color:var(--text-primary)">${_schema.name}</span>
+            <span class="badge badge-muted" style="font-size:11px">${_schema.category}</span>
+          </div>
+          <div id="ss-collab-badges" class="ss-collab-area"></div>
+        </div>
+        <div class="ss-toolbar-right">
+          <div id="ss-save-indicator" class="ss-save-indicator" style="display:none">
+            <span class="ss-save-spinner">⟳</span> Saving…
+          </div>
+          ${canImport ? `
+            <button class="btn btn-secondary btn-sm" id="ss-import-btn">📥 Import CSV</button>
+            <button class="btn btn-secondary btn-sm" id="ss-export-btn">📤 Export CSV</button>
+          ` : ''}
+          ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn">⚙️ Edit Schema</button>` : ''}
+          ${canEdit ? `<button class="btn btn-primary btn-sm" id="ss-add-row-btn">+ Add Row</button>` : ''}
+        </div>
+      </div>
+
+      <!-- Spreadsheet Grid -->
+      <div class="ss-container" id="ss-container">
+        <div class="ss-grid-wrap" id="ss-grid-wrap">
+          <table class="ss-grid" id="ss-grid" style="--header-color:${headerColor}">
+            <thead>
+              <tr>
+                <th class="ss-th ss-th-row-num">#</th>
+                ${cols.map(c => `
+                  <th class="ss-th" data-col="${c.id}" title="${c.type}${c.required ? ' · Required' : ''}">
+                    <div class="ss-th-inner">
+                      <span class="ss-col-type-icon">${_colTypeIcon(c.type)}</span>
+                      <span class="ss-col-name">${c.name}</span>
+                      ${c.required ? '<span class="ss-req-dot" title="Required">*</span>' : ''}
+                    </div>
+                  </th>
+                `).join('')}
+                ${canEdit ? '<th class="ss-th ss-th-actions">Actions</th>' : ''}
+              </tr>
+            </thead>
+            <tbody id="ss-tbody">
+              ${_buildAllRows(cols, canEdit, user)}
+            </tbody>
+          </table>
+        </div>
+        <div class="ss-status-bar">
+          <span id="ss-row-count">${_rows.length} rows</span>
+          <span id="ss-selected-info" style="color:var(--text-muted)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden CSV input -->
+    <input type="file" id="ss-csv-file" accept=".csv" style="display:none" />
+  `);
+
+  // Wire toolbar events
+  document.getElementById('ss-back')?.addEventListener('click', () => {
+    _activeTableId = null; _schema = null; _rows = [];
+    _lockedRows.clear(); _pendingCells.clear(); _debounceSavers.clear();
+    renderTables();
+  });
+  document.getElementById('ss-add-row-btn')?.addEventListener('click', () => _appendVirtualRow(cols, canEdit, user));
+  document.getElementById('ss-schema-btn')?.addEventListener('click', () => _showSchemaModal(_schema, getWarehouses()));
+  document.getElementById('ss-import-btn')?.addEventListener('click', () => document.getElementById('ss-csv-file').click());
+  document.getElementById('ss-export-btn')?.addEventListener('click', () => _exportCSV());
+  document.getElementById('ss-csv-file')?.addEventListener('change', e => _handleCSVImport(e, cols));
+
+  // Attach cell + row events
+  _attachGridEvents(cols, canEdit, user);
+
+  // Connect WebSocket for realtime collaboration
+  _subscribeToTableEvents();
+}
+
+// ─── ROW RENDERING ────────────────────────────────────────────────────────────
+function _buildAllRows(cols, canEdit, user) {
+  let html = '';
+  // Real rows
+  for (let i = 0; i < _rows.length; i++) {
+    html += _buildRow(_rows[i], i, cols, canEdit, user, false);
+  }
+  // Virtual empty rows
+  const virtualCount = Math.max(VIRTUAL_ROWS, 20);
+  for (let v = 0; v < virtualCount; v++) {
+    html += _buildVirtualRow(_rows.length + v, cols, canEdit);
+  }
+  return html;
+}
+
+function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
+  const locked = _lockedRows.has(row.id);
+  const lockInfo = locked ? _lockedRows.get(row.id) : null;
+  const isLockedByOther = locked && lockInfo?.userId !== String(user.id || user._id);
+
+  return `<tr class="ss-row ${isNew ? 'ss-row-new' : ''} ${locked ? 'ss-row-locked' : ''}"
+      data-row-id="${row.id}" data-row-idx="${idx}">
+    <td class="ss-td ss-td-row-num">
+      ${isLockedByOther
+        ? `<span class="ss-lock-indicator" title="${lockInfo.userName} is editing">✏️</span>`
+        : `<span class="ss-row-num">${idx + 1}</span>`
+      }
+    </td>
+    ${cols.map(col => `
+      <td class="ss-td ss-cell" data-col="${col.id}" data-row="${row.id}" data-row-idx="${idx}"
+          data-type="${col.type}" ${!canEdit || isLockedByOther ? 'data-readonly="true"' : ''}>
+        ${canEdit && !isLockedByOther
+          ? _buildEditableCell(row[col.id], col, row.id, idx)
+          : _buildReadonlyCell(row[col.id], col)
+        }
+      </td>
+    `).join('')}
+    ${canEdit ? `
+      <td class="ss-td ss-td-actions">
+        <button class="ss-action-btn ss-del-row" data-row-id="${row.id}" data-row-idx="${idx}" title="Delete row">🗑️</button>
+      </td>
+    ` : ''}
+  </tr>`;
+}
+
+function _buildVirtualRow(idx, cols, canEdit) {
+  return `<tr class="ss-row ss-row-virtual" data-row-idx="${idx}" data-virtual="true">
+    <td class="ss-td ss-td-row-num"><span class="ss-row-num" style="opacity:0.3">${idx + 1}</span></td>
+    ${cols.map(col => `
+      <td class="ss-td ss-cell ss-cell-virtual" data-col="${col.id}" data-row-idx="${idx}"
+          data-type="${col.type}" data-virtual="true">
+        <span class="ss-cell-placeholder"></span>
+      </td>
+    `).join('')}
+    ${canEdit ? `<td class="ss-td ss-td-actions"></td>` : ''}
+  </tr>`;
+}
+
+function _buildEditableCell(value, col, rowId, rowIdx) {
+  const v = value ?? '';
+  const id = `cell-${rowId}-${col.id}`;
+
+  switch (col.type) {
+    case 'checkbox':
+      return `<label class="ss-checkbox">
+        <input type="checkbox" id="${id}" class="ss-input" ${v ? 'checked' : ''}
+          data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}" />
+      </label>`;
+
+    case 'dropdown': {
+      const opts = _parseOptions(col.options);
+      const normalized = String(v).trim();
+      return `<select id="${id}" class="ss-input ss-select" data-row-id="${rowId}"
+          data-col-id="${col.id}" data-row-idx="${rowIdx}">
+        <option value="">—</option>
+        ${opts.map(o => `<option value="${o}" ${normalized === o ? 'selected' : ''}>${o}</option>`).join('')}
+      </select>`;
+    }
+
+    case 'status':
+      return `<select id="${id}" class="ss-input ss-select ss-status-select" data-row-id="${rowId}"
+          data-col-id="${col.id}" data-row-idx="${rowIdx}">
+        <option value="">—</option>
+        ${['Todo','In Progress','Done'].map(s => `<option value="${s}" ${v === s ? 'selected' : ''}>${s}</option>`).join('')}
+      </select>`;
+
+    case 'number':
+    case 'price':
+      return `<input type="number" id="${id}" class="ss-input" value="${v}"
+        data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}"
+        step="${col.type === 'price' ? '0.01' : '1'}" min="0" />`;
+
+    case 'date':
+      return `<input type="date" id="${id}" class="ss-input" value="${v}"
+        data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}" />`;
+
+    default:
+      return `<input type="text" id="${id}" class="ss-input" value="${v}"
+        data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}"
+        placeholder="…" />`;
+  }
+}
+
+function _buildReadonlyCell(value, col) {
+  const v = value ?? '';
+  if (v === '' || v === null || v === undefined) return '<span style="color:var(--text-disabled)">—</span>';
+  switch (col.type) {
+    case 'checkbox': return v ? '✅' : '☐';
+    case 'price':    return `<strong>$${Number(v).toFixed(2)}</strong>`;
+    case 'date':     return `<span style="font-size:12px;font-family:var(--font-mono)">${v}</span>`;
+    case 'tags':     return String(v).split(',').map(t => `<span class="badge badge-purple" style="margin-right:2px">${t.trim()}</span>`).join('');
+    case 'status': {
+      const cls = v === 'Done' ? 'badge-success' : v === 'In Progress' ? 'badge-warning' : 'badge-muted';
+      return `<span class="badge ${cls}">${v}</span>`;
+    }
+    case 'dropdown': return `<span class="badge badge-info">${v}</span>`;
+    default:         return `<span>${v}</span>`;
+  }
+}
+
+// ─── GRID EVENT ATTACHMENT ─────────────────────────────────────────────────────
+function _attachGridEvents(cols, canEdit, user) {
+  const tbody = document.getElementById('ss-tbody');
+  if (!tbody) return;
+
+  // Event delegation for all ss-input changes
+  tbody.addEventListener('change', e => {
+    const inp = e.target.closest('.ss-input');
+    if (!inp) return;
+    const rowId   = inp.dataset.rowId;
+    const colId   = inp.dataset.colId;
+    const rowIdx  = parseInt(inp.dataset.rowIdx);
+
+    if (inp.dataset.virtual === 'true' || !rowId) {
+      // Click on virtual row → promote to real row
+      _handleVirtualCellChange(inp, cols, canEdit, user);
+      return;
+    }
+    _scheduleSave(rowId, rowIdx, cols, inp);
+  });
+
+  tbody.addEventListener('input', e => {
+    const inp = e.target.closest('.ss-input[type="text"], .ss-input[type="number"], .ss-input[type="date"]');
+    if (!inp || !inp.dataset.rowId) return;
+    const rowIdx = parseInt(inp.dataset.rowIdx);
+    _scheduleSave(inp.dataset.rowId, rowIdx, cols, inp);
+  });
+
+  // Virtual row — click activates it
+  tbody.addEventListener('click', e => {
+    const cell = e.target.closest('.ss-cell-virtual');
+    if (!cell) return;
+    const tr = cell.closest('tr');
+    if (tr && tr.dataset.virtual) {
+      _activateVirtualRow(tr, cols, canEdit, user);
+    }
+  });
+
+  // Delete row
+  tbody.addEventListener('click', e => {
+    const btn = e.target.closest('.ss-del-row');
+    if (!btn) return;
+    const rowId  = btn.dataset.rowId;
+    const rowIdx = parseInt(btn.dataset.rowIdx);
+    _deleteRow(rowId, rowIdx, cols, canEdit, user);
+  });
+}
+
+// ─── VIRTUAL ROW ACTIVATION ───────────────────────────────────────────────────
+function _activateVirtualRow(tr, cols, canEdit, user) {
+  tr.dataset.virtual = '';
+  tr.classList.remove('ss-row-virtual');
+
+  // Replace placeholders with actual inputs (but no row id yet)
+  const idx = parseInt(tr.dataset.rowIdx);
+  cols.forEach(col => {
+    const td = tr.querySelector(`td[data-col="${col.id}"]`);
+    if (!td) return;
+    td.innerHTML = _buildEditableCell('', col, '__new__', idx).replace(
+      /data-row-id="__new__"/g, `data-row-id="" data-virtual="true"`
+    );
+    td.dataset.virtual = 'true';
+  });
+
+  // Replace actions cell
+  const actionsTd = tr.querySelector('.ss-td-actions');
+  if (actionsTd && canEdit) {
+    actionsTd.innerHTML = `<button class="ss-action-btn ss-save-new-row" title="Save new row">💾</button>`;
+    actionsTd.querySelector('.ss-save-new-row')?.addEventListener('click', () => _saveNewVirtualRow(tr, cols, canEdit, user));
+  }
+
+  // Auto-focus first input
+  const firstInput = tr.querySelector('.ss-input');
+  firstInput?.focus();
+}
+
+async function _saveNewVirtualRow(tr, cols, canEdit, user) {
+  const rowData = _collectRowData(tr, cols);
+  const isBlank = Object.values(rowData).every(v => v === '' || v === null || v === undefined);
+  if (isBlank) return;
+
+  _showSavingIndicator(true);
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`, {
+    method: 'POST',
+    body: JSON.stringify(rowData)
+  });
+  _showSavingIndicator(false);
+
+  if (res?.success && res.data) {
+    _rows.push(res.data);
+    const idx = _rows.length - 1;
+    // Replace virtual row with real row
+    tr.outerHTML = _buildRow(res.data, idx, cols, canEdit, user, true);
+    _updateRowCount();
+    // Refresh grid event bindings
+    _attachGridEvents(cols, canEdit, user);
+    showToast('Row saved', '', 'success');
+  } else {
+    showToast('Save failed', res?.error || 'Check field values', 'error');
+  }
+}
+
+// ─── AUTO-SAVE ─────────────────────────────────────────────────────────────────
+function _scheduleSave(rowId, rowIdx, cols, triggerInput) {
+  const key = `${rowId}`;
+  if (!_debounceSavers.has(key)) {
+    _debounceSavers.set(key, debounce(async () => {
+      await _saveRow(rowId, rowIdx, cols);
+    }, SAVE_DEBOUNCE));
+  }
+  _debounceSavers.get(key)();
+  _showSavingIndicator(true);
+}
+
+async function _saveRow(rowId, rowIdx, cols) {
+  if (_savingRows.has(rowId)) return;
+  _savingRows.add(rowId);
+
+  // Find the row's <tr> in DOM
+  const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
+  if (!tr) { _savingRows.delete(rowId); return; }
+
+  const rowData = _collectRowData(tr, cols);
+
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/${rowId}`, {
+    method: 'PUT',
+    body: JSON.stringify(rowData)
+  });
+
+  _savingRows.delete(rowId);
+  _showSavingIndicator(false);
+
+  if (res?.success && res.data) {
+    // Optimistic update — update local array
+    const localIdx = _rows.findIndex(r => r.id === rowId);
+    if (localIdx !== -1) _rows[localIdx] = res.data;
+  } else {
+    showToast('Save error', res?.error || 'Row could not be saved', 'error');
+  }
+}
+
+function _collectRowData(tr, cols) {
+  const data = {};
+  cols.forEach(col => {
+    const inp = tr.querySelector(`[data-col-id="${col.id}"]`);
+    if (!inp) { data[col.id] = null; return; }
+
+    if (col.type === 'checkbox') {
+      data[col.id] = inp.checked;
+    } else if (col.type === 'number' || col.type === 'price') {
+      const num = parseFloat(inp.value);
+      data[col.id] = isNaN(num) ? null : num;
+    } else {
+      data[col.id] = inp.value === '' ? null : inp.value;
+    }
+  });
+  return data;
+}
+
+function _appendVirtualRow(cols, canEdit, user) {
+  const tbody = document.getElementById('ss-tbody');
+  if (!tbody) return;
+  const idx = _rows.length + tbody.querySelectorAll('tr.ss-row:not(.ss-row-virtual)').length;
+  const tr = document.createElement('tr');
+  tr.className = 'ss-row';
+  tr.dataset.rowIdx = idx;
+  tr.innerHTML = `
+    <td class="ss-td ss-td-row-num"><span class="ss-row-num">${idx + 1}</span></td>
+    ${cols.map(col => `<td class="ss-td ss-cell" data-col="${col.id}" data-type="${col.type}">
+      ${_buildEditableCell('', col, `__new_${Date.now()}__`, idx)}
+    </td>`).join('')}
+    <td class="ss-td ss-td-actions">
+      <button class="ss-action-btn ss-save-new-row" title="Save new row">💾</button>
+    </td>
+  `;
+  // Insert before first virtual row
+  const firstVirtual = tbody.querySelector('tr.ss-row-virtual');
+  if (firstVirtual) tbody.insertBefore(tr, firstVirtual);
+  else tbody.appendChild(tr);
+
+  tr.querySelector('.ss-save-new-row')?.addEventListener('click', () => _saveNewVirtualRow(tr, cols, canEdit, user));
+  tr.querySelector('.ss-input')?.focus();
+}
+
+// ─── DELETE ROW ───────────────────────────────────────────────────────────────
+async function _deleteRow(rowId, rowIdx, cols, canEdit, user) {
+  const ok = await confirm('Delete this row permanently?', 'Delete Row');
+  if (!ok) return;
+
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/${rowId}`, { method: 'DELETE' });
+  if (res?.success) {
+    _rows = _rows.filter(r => r.id !== rowId);
+    const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
+    tr?.remove();
+    _updateRowCount();
+    showToast('Row deleted', '', 'success');
+  } else {
+    showToast('Delete failed', res?.error || 'Could not delete row', 'error');
+  }
+}
+
+function _updateRowCount() {
+  const el = document.getElementById('ss-row-count');
+  if (el) el.textContent = `${_rows.length} rows`;
+}
+
+// ─── SAVE INDICATOR ───────────────────────────────────────────────────────────
+let _saveIndicatorTimer = null;
+function _showSavingIndicator(on) {
+  const el = document.getElementById('ss-save-indicator');
+  if (!el) return;
+  clearTimeout(_saveIndicatorTimer);
+  el.style.display = on ? 'flex' : 'none';
+  if (!on) return;
+  // Auto-hide after 3s if nothing else triggers
+  _saveIndicatorTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+// ─── REALTIME COLLABORATION ────────────────────────────────────────────────────
+function _subscribeToTableEvents() {
+  // Listen on the global ws created in store.js via a CustomEvent bridge
+  // We add a handler on the window for the custom event dispatched from store.js WS onmessage
+  window.removeEventListener('wareops_ws_event', _handleWsEvent);
+  window.addEventListener('wareops_ws_event', _handleWsEvent);
+}
+
+function _handleWsEvent(e) {
+  const payload = e.detail;
+  if (!payload || !payload.type || !_activeTableId) return;
+
+  const { type, data } = payload;
+  if (!data?.tableId || data.tableId !== _activeTableId) return;
+
+  const user = getCurrentUser();
+  const userId = String(user?.id || user?._id || '');
+
+  switch (type) {
+    case 'table_row_created': {
+      // Another user added a row — refresh rows from server
+      if (data.actorId !== userId) {
+        _refreshRowsFromServer();
+        _showCollabToast(`${data.actorName} added a new row`);
+      }
+      break;
+    }
+    case 'table_row_updated': {
+      if (data.actorId !== userId && data.row) {
+        _applyRemoteRowUpdate(data.row);
+        _showCollabToast(`${data.actorName} updated row`);
+      }
+      break;
+    }
+    case 'table_row_deleted': {
+      if (data.actorId !== userId && data.rowId) {
+        _applyRemoteRowDelete(data.rowId);
+        _showCollabToast(`${data.actorName} deleted a row`);
+      }
+      break;
+    }
+    case 'table_rows_imported': {
+      if (data.actorId !== userId) {
+        _refreshRowsFromServer();
+        _showCollabToast(`${data.actorName} imported ${data.inserted} rows`);
+      }
+      break;
+    }
+    case 'table_schema_updated':
+    case 'table_schema_deleted': {
+      if (data.tableId === _activeTableId) {
+        showToast('Schema changed', 'The table structure was updated. Refreshing…', 'warning');
+        setTimeout(() => renderTables(), 1500);
+      }
+      break;
+    }
+  }
+}
+
+function _showCollabToast(msg) {
+  showToast('👥 Collaboration', msg, 'info', 3000);
+}
+
+async function _refreshRowsFromServer() {
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
+  if (!res?.success) return;
+  _rows = res.data || [];
+  _updateRowCount();
+
+  const cols   = _schema?.columns || [];
+  const user   = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const tbody  = document.getElementById('ss-tbody');
+  if (tbody) {
+    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
+    _attachGridEvents(cols, canEdit, user);
+  }
+}
+
+function _applyRemoteRowUpdate(updatedRow) {
+  const idx = _rows.findIndex(r => r.id === updatedRow.id);
+  if (idx === -1) return;
+  _rows[idx] = updatedRow;
+
+  const tr = document.querySelector(`tr[data-row-id="${updatedRow.id}"]`);
+  if (!tr) return;
+
+  const cols = _schema?.columns || [];
+  cols.forEach(col => {
+    const td   = tr.querySelector(`td[data-col="${col.id}"]`);
+    const inp  = td?.querySelector('.ss-input');
+    if (!inp) return;
+    const val  = updatedRow[col.id] ?? '';
+    if (col.type === 'checkbox') {
+      inp.checked = Boolean(val);
+    } else {
+      inp.value = val;
+    }
+    // Flash highlight
+    td?.classList.add('ss-cell-updated');
+    setTimeout(() => td?.classList.remove('ss-cell-updated'), 1000);
+  });
+}
+
+function _applyRemoteRowDelete(rowId) {
+  _rows = _rows.filter(r => r.id !== rowId);
+  const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
+  tr?.remove();
+  _updateRowCount();
+}
+
+function _handleVirtualCellChange(inp, cols, canEdit, user) {
+  // No-op: handled via virtual row click activation
+}
+
+// ─── CSV EXPORT ────────────────────────────────────────────────────────────────
+function _exportCSV() {
+  const cols = _schema?.columns || [];
+  if (!cols.length || !_rows.length) {
+    showToast('Nothing to export', 'No data rows in this table', 'warning');
+    return;
+  }
+
+  const header = cols.map(c => `"${c.name}"`).join(',');
+  const body   = _rows.map(row =>
+    cols.map(col => {
+      const v = row[col.id] ?? '';
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    }).join(',')
+  ).join('\n');
+
+  const csv  = header + '\n' + body;
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `${_schema.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+
+  showToast('Export complete', `${_rows.length} rows exported as CSV`, 'success');
+}
+
+// ─── CSV IMPORT ────────────────────────────────────────────────────────────────
+async function _handleCSVImport(e, cols) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  e.target.value = '';
+
+  const text   = await file.text();
+  const lines  = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) {
+    showToast('Import error', 'CSV must have a header row and at least one data row', 'error');
+    return;
+  }
+
+  // Parse header → match to columns by name (case-insensitive)
+  const headerNames = _parseCSVLine(lines[0]);
+  const colMap = {};    // csvColIdx → colId
+  headerNames.forEach((name, idx) => {
+    const col = cols.find(c => c.name.toLowerCase() === name.toLowerCase().trim());
+    if (col) colMap[idx] = col;
+  });
+
+  const rowsData = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = _parseCSVLine(lines[i]);
+    const rowObj = {};
+    Object.entries(colMap).forEach(([idx, col]) => {
+      let val = (values[idx] || '').trim();
+      if (col.type === 'number' || col.type === 'price') {
+        val = parseFloat(val);
+        if (isNaN(val)) val = null;
+      } else if (col.type === 'checkbox') {
+        val = val.toLowerCase() === 'true' || val === '1';
+      } else if (col.type === 'dropdown') {
+        // Normalize dropdown value
+        const opts = _parseOptions(col.options);
+        const matched = opts.find(o => o.toLowerCase() === val.toLowerCase());
+        val = matched || null;
+      }
+      rowObj[col.id] = val;
+    });
+    rowsData.push(rowObj);
+  }
+
+  if (!rowsData.length) {
+    showToast('No valid rows', 'CSV contained no parseable data rows', 'warning');
+    return;
+  }
+
+  _showSavingIndicator(true);
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/import`, {
+    method: 'POST',
+    body: JSON.stringify(rowsData)
+  });
+  _showSavingIndicator(false);
+
+  if (res?.success) {
+    showToast('Import complete', `${res.data?.inserted} rows imported. ${res.data?.errors?.length || 0} errors.`, 'success');
+    await _refreshRowsFromServer();
+  } else {
+    showToast('Import failed', res?.error || 'Server error during import', 'error');
+  }
+}
+
+function _parseCSVLine(line) {
+  const result = [];
+  let current  = '';
+  let inQuote  = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuote && line[i + 1] === '"') { current += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (c === ',' && !inQuote) {
+      result.push(current); current = '';
+    } else {
+      current += c;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+// ─── SCHEMA MODAL (Create / Edit Table) ──────────────────────────────────────
+function _showSchemaModal(schema, whs) {
+  const isEdit = !!schema;
+  let columns  = isEdit ? [...(schema.columns || [])] : [];
+  let selectedColor = schema?.headerColor || '#6366f1';
 
   const body = document.createElement('div');
   body.innerHTML = `
@@ -4857,41 +5537,35 @@ function showTableBuilderModal(table) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Table Name <span class="req">*</span></label>
-          <input type="text" id="t-name" class="form-control" value="${table?.name||''}" required placeholder="e.g. Operations Tracker" />
+          <input type="text" id="t-name" class="form-control" value="${schema?.name||''}" required placeholder="e.g. Operations Tracker" />
         </div>
         <div class="form-group">
           <label class="form-label">Category</label>
           <select id="t-cat" class="form-control">
-            ${CATEGORY_OPTIONS.map(c=>`<option value="${c}" ${table?.category===c?'selected':''}>${c}</option>`).join('')}
+            ${CATEGORY_OPTS.map(c=>`<option value="${c}" ${schema?.category===c?'selected':''}>${c}</option>`).join('')}
           </select>
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Description</label>
-        <input type="text" id="t-desc" class="form-control" value="${table?.description||''}" placeholder="Brief description of this table" />
+        <input type="text" id="t-desc" class="form-control" value="${schema?.description||''}" placeholder="Brief description" />
       </div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Assign to Warehouse</label>
           <select id="t-wh" class="form-control">
             <option value="">All warehouses</option>
-            ${whs.map(w=>`<option value="${w.id}" ${table?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+            ${whs.map(w=>`<option value="${w.id}" ${schema?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Access Roles <span style="font-size:11px;color:var(--text-muted)">(All roles can access if none selected)</span></label>
-          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:var(--bg-input);padding:10px 14px;border-radius:8px;border:1px solid var(--border-default)">
-            ${['admin','manager','staff','employee'].map(r => `
-              <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--text-secondary);cursor:pointer;margin:0">
-                <input type="checkbox" name="t-roles-chk" value="${r}" ${(table?.roles||[]).includes(r)?'checked':''} style="width:16px;height:16px;accent-color:var(--brand-500);cursor:pointer;margin:0" />
-                <span>${capitalize(r)}</span>
-              </label>
-            `).join('')}
-          </div>
+          <label class="form-label">Access Roles <span style="font-size:11px;color:var(--text-muted)">(hold Ctrl/Cmd for multi)</span></label>
+          <select id="t-roles" class="form-control" multiple style="height:80px">
+            ${['admin','manager','staff','employee'].map(r=>`<option value="${r}" ${(schema?.roles||[]).includes(r)?'selected':''}>${capitalize(r)}</option>`).join('')}
+          </select>
         </div>
       </div>
 
-      <!-- Header Color -->
       <div class="form-group">
         <label class="form-label">Header Color</label>
         <div class="color-picker-row" id="color-picker">
@@ -4899,18 +5573,16 @@ function showTableBuilderModal(table) {
         </div>
       </div>
 
-      <!-- Columns Builder -->
       <div class="form-group">
         <label class="form-label">Columns <span class="req">*</span></label>
         <div id="columns-list" style="display:flex;flex-direction:column;gap:8px">
-          ${columns.map((c,i)=>renderColumnRow(c,i)).join('')}
+          ${columns.map((c,i)=>_renderColumnRow(c,i)).join('')}
         </div>
         <button type="button" class="btn btn-secondary btn-sm" id="add-col-btn" style="margin-top:10px">+ Add Column</button>
       </div>
     </form>
   `;
 
-  // Color picker
   body.querySelectorAll('.color-swatch').forEach(sw => {
     sw.addEventListener('click', () => {
       body.querySelectorAll('.color-swatch').forEach(s=>s.classList.remove('selected'));
@@ -4919,162 +5591,123 @@ function showTableBuilderModal(table) {
     });
   });
 
-  // Add column button
   body.querySelector('#add-col-btn')?.addEventListener('click', () => {
     const id = 'c' + Date.now();
-    columns.push({ id, name: '', type: 'text', required: false });
+    columns.push({ id, name: '', type: 'text', required: false, options: '' });
     const colList = body.querySelector('#columns-list');
     const div = document.createElement('div');
-    div.innerHTML = renderColumnRow(columns[columns.length-1], columns.length-1);
-    div.firstElementChild && colList.appendChild(div.firstElementChild);
+    div.innerHTML = _renderColumnRow(columns[columns.length-1], columns.length-1);
+    while (div.firstChild) colList.appendChild(div.firstChild);
+    // Attach dropdown toggle for new col
+    _attachColumnTypeToggle(colList.lastElementChild);
   });
+
+  // Attach type toggles to existing cols
+  body.querySelectorAll('.col-row').forEach(row => _attachColumnTypeToggle(row));
 
   const footer = `
     <button class="btn btn-secondary" id="t-cancel">Cancel</button>
     <button class="btn btn-primary" id="t-save">${isEdit?'✓ Update':'+ Create'} Table</button>
   `;
 
-  const modal = createModal({ title: isEdit?'Edit Table':'Build New Table', body, footer, size: 'lg' });
+  const modal = createModal({ title: isEdit?'✏️ Edit Table':'📋 Build New Table', body, footer, size: 'lg' });
   modal.el.querySelector('#t-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#t-save')?.addEventListener('click', async () => {
     const name = document.getElementById('t-name').value.trim();
-    if (!name) { showToast('Validation','Table name is required','warning'); return; }
-    // Collect columns
-    const colEls = body.querySelectorAll('.col-row');
-    const cols = Array.from(colEls).map((row, i) => ({
-      id: columns[i]?.id || 'c'+Date.now()+i,
-      name: row.querySelector('.col-name').value.trim() || `Column ${i+1}`,
-      type: row.querySelector('.col-type').value,
-      required: row.querySelector('.col-req').checked,
-      options: row.querySelector('.col-options')?.value || ''
-    })).filter(c=>c.name);
+    if (!name) { showToast('Validation', 'Table name is required', 'warning'); return; }
 
-    const roles = Array.from(body.querySelectorAll('input[name="t-roles-chk"]:checked')).map(chk => chk.value);
-    const data = { name, category: document.getElementById('t-cat').value, description: document.getElementById('t-desc').value, warehouseId: document.getElementById('t-wh').value, columns: cols, roles, headerColor: selectedColor };
+    const colEls = body.querySelectorAll('.col-row');
+    const cols   = Array.from(colEls).map((row, i) => {
+      const typeEl    = row.querySelector('.col-type');
+      const optEl     = row.querySelector('.col-options');
+      const rawOpts   = optEl?.value || '';
+      // Normalize options: trim each, remove empties
+      const normOpts  = rawOpts.split(',').map(o => o.trim()).filter(Boolean).join(',');
+      return {
+        id:       columns[i]?.id || 'c' + Date.now() + i,
+        name:     row.querySelector('.col-name').value.trim() || `Column ${i+1}`,
+        type:     typeEl?.value || 'text',
+        required: row.querySelector('.col-req').checked,
+        options:  normOpts
+      };
+    }).filter(c => c.name);
+
+    const roles = Array.from(document.getElementById('t-roles').selectedOptions).map(o => o.value);
+    const data  = {
+      name,
+      category:    document.getElementById('t-cat').value,
+      description: document.getElementById('t-desc').value,
+      warehouseId: document.getElementById('t-wh').value || null,
+      columns:     cols,
+      roles,
+      headerColor: selectedColor
+    };
 
     let res;
     if (isEdit) {
-      res = await updateTable(table.id, data);
-      if (res && res.error) {
-        showToast('Error Updating Table', res.error, 'error');
-        return;
-      }
-      showToast('Table updated',`${name} updated`,'success');
+      res = await apiFetch(`/dynamic-tables/${schema.id}`, { method: 'PUT', body: JSON.stringify(data) });
     } else {
-      res = await createTable(data);
-      if (res && res.error) {
-        showToast('Error Creating Table', res.error, 'error');
-        return;
-      }
-      showToast('Table created',`${name} is ready`,'success');
+      res = await apiFetch('/dynamic-tables/', { method: 'POST', body: JSON.stringify(data) });
     }
-    modal.close();
-    activeTblId = null;
-    renderTables();
+
+    if (res?.success) {
+      showToast(isEdit ? 'Table updated' : 'Table created', name, 'success');
+      modal.close();
+      if (_activeTableId) {
+        // Re-open the updated schema
+        await renderTables();
+      } else {
+        await renderTables();
+      }
+    } else {
+      showToast('Error', res?.error || 'Could not save table', 'error');
+    }
   });
 }
 
-function renderColumnRow(col, i) {
+function _renderColumnRow(col, i) {
   const isDropdown = col.type === 'dropdown';
   return `
-    <div class="col-row" style="display:flex;flex-direction:column;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:12px;gap:8px">
-      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center">
-        <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
-        <select class="col-type form-control" style="margin:0;width:130px" onchange="const p=this.closest('.col-row'); const opt=p.querySelector('.col-opts-wrapper'); if (this.value==='dropdown') { opt.style.display='block'; } else { opt.style.display='none'; }">
-          ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
-        </select>
-        <label class="checkbox-group" style="white-space:nowrap;display:flex;align-items:center;gap:4px;margin:0;cursor:pointer">
-          <input type="checkbox" class="col-req" ${col.required?'checked':''} style="margin:0;cursor:pointer" />
-          <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Req.</span>
-        </label>
-        <button type="button" class="action-btn delete" title="Remove" style="flex-shrink:0;display:inline-flex;align-items:center;justify-content:center" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 14)}</button>
-      </div>
-      <div class="col-opts-wrapper" style="display:${isDropdown?'block':'none'};margin-top:2px">
-        <label class="form-label" style="font-size:11px;margin-bottom:4px;display:flex;align-items:center;gap:4px;color:var(--text-secondary)">
-          ${getSvgIcon('info', 12)} <span>Dropdown Options (comma-separated list, e.g. High, Medium, Low)</span>
-        </label>
-        <input type="text" class="col-options form-control" value="${col.options||''}" placeholder="e.g. Ok, Maintenance Required, Out of Service" style="margin:0;font-size:12px;padding:6px 10px" />
+    <div class="col-row" style="display:grid;grid-template-columns:1fr 140px auto auto auto;gap:8px;align-items:start;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px">
+      <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
+      <select class="col-type form-control" style="margin:0">
+        ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
+      </select>
+      <label class="checkbox-group" style="white-space:nowrap;margin-top:8px">
+        <input type="checkbox" class="col-req" ${col.required?'checked':''} />
+        <label style="font-size:12px">Req.</label>
+      </label>
+      <button type="button" class="action-btn delete" title="Remove" onclick="this.closest('.col-row').remove()">🗑️</button>
+      <div class="col-options-wrap" style="grid-column:1/-1;display:${isDropdown?'block':'none'}">
+        <input type="text" class="col-options form-control" value="${col.options||''}"
+          placeholder="Dropdown options (comma separated: Yes, No, Pending)" style="margin-top:6px" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Enter values separated by commas. Spaces around commas are automatically trimmed.</div>
       </div>
     </div>
   `;
 }
 
-function showRowModal(tableId, row) {
-  const tables = getTables();
-  const table = tables.find(t=>t.id===tableId);
-  if (!table) return;
-  const isEdit = !!row;
-  const cols = table.columns || [];
-
-  const body = `
-    <form id="row-form">
-      ${cols.map(col => `
-        <div class="form-group">
-          <label class="form-label">${col.name}${col.required?'<span class="req"> *</span>':''}</label>
-          ${renderFieldInput(col, row?row[col.id]:'')}
-        </div>
-      `).join('')}
-    </form>
-  `;
-
-  const footer = `
-    <button class="btn btn-secondary" id="r-cancel">Cancel</button>
-    <button class="btn btn-primary" id="r-save">${isEdit?'✓ Update':'+ Add'} Row</button>
-  `;
-
-  const modal = createModal({ title: isEdit?'Edit Row':'Add New Row', body, footer });
-  modal.el.querySelector('#r-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#r-save')?.addEventListener('click', async () => {
-    const rowData = {};
-    let hasValidationError = false;
-    cols.forEach(col => {
-      const inp = document.getElementById(`rf-${col.id}`);
-      if (!inp) return;
-      rowData[col.id] = col.type === 'checkbox' ? inp.checked : inp.value;
-      if (col.required && !rowData[col.id] && col.type !== 'checkbox') {
-        showToast('Validation',`${col.name} is required`,'warning');
-        hasValidationError = true;
-      }
-    });
-    if (hasValidationError) return;
-
-    let res;
-    if (isEdit) {
-      res = await updateTableRow(tableId, row.id, rowData);
-      if (res && res.error) {
-        showToast('Error Updating Row', res.error, 'error');
-        return;
-      }
-      showToast('Row updated','','success');
-    } else {
-      res = await addTableRow(tableId, rowData);
-      if (res && res.error) {
-        showToast('Error Adding Row', res.error, 'error');
-        return;
-      }
-      showToast('Row added','','success');
-    }
-    modal.close();
-    renderTables();
+function _attachColumnTypeToggle(colRow) {
+  const typeEl = colRow?.querySelector('.col-type');
+  const optWrap = colRow?.querySelector('.col-options-wrap');
+  if (!typeEl || !optWrap) return;
+  typeEl.addEventListener('change', () => {
+    optWrap.style.display = typeEl.value === 'dropdown' ? 'block' : 'none';
   });
 }
 
-function renderFieldInput(col, value) {
-  const id = `rf-${col.id}`;
-  switch (col.type) {
-    case 'text': return `<input type="text" id="${id}" class="form-control" value="${value||''}" />`;
-    case 'number': return `<input type="number" id="${id}" class="form-control" value="${value||''}" />`;
-    case 'price': return `<input type="number" id="${id}" class="form-control" value="${value||''}" step="0.01" min="0" />`;
-    case 'date': return `<input type="date" id="${id}" class="form-control" value="${value||''}" />`;
-    case 'checkbox': return `<label class="checkbox-group"><input type="checkbox" id="${id}" ${value?'checked':''} /><label>Check if applicable</label></label>`;
-    case 'dropdown': {
-      const opts = (col.options||'').split(',').filter(Boolean);
-      return `<select id="${id}" class="form-control">${opts.map(o=>`<option value="${o}" ${value===o?'selected':''}>${o}</option>`).join('')}</select>`;
-    }
-    case 'status': return `<select id="${id}" class="form-control"><option value="Todo" ${value==='Todo'?'selected':''}>Todo</option><option value="In Progress" ${value==='In Progress'?'selected':''}>In Progress</option><option value="Done" ${value==='Done'?'selected':''}>Done</option></select>`;
-    case 'tags': return `<input type="text" id="${id}" class="form-control" value="${value||''}" placeholder="Separate tags with commas" />`;
-    default: return `<input type="text" id="${id}" class="form-control" value="${value||''}" />`;
-  }
+// ─── UTILITIES ─────────────────────────────────────────────────────────────────
+function _parseOptions(rawOpts) {
+  if (!rawOpts) return [];
+  return rawOpts.split(',').map(o => o.trim()).filter(Boolean);
+}
+
+function _colTypeIcon(type) {
+  const icons = {
+    text: '𝐓', number: '#', price: '$', date: '📅',
+    checkbox: '☑', dropdown: '▾', status: '●', tags: '🏷'
+  };
+  return icons[type] || '𝐓';
 }
 
 // ===== pages/billing.js =====
@@ -5104,17 +5737,17 @@ function renderBilling() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 24)} Billing & Taxation</h1>
+          <h1 class="page-title">💰 Billing & Taxation</h1>
           <p class="page-subtitle">Automated bill generation with tax computation</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
-          <button class="btn btn-primary" id="new-bill-btn">${getSvgIcon('plus', 14)} New Bill</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-primary" id="new-bill-btn">+ New Bill</button>
         </div>
       </div>
 
       <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <span style="display:flex;align-items:center;color:var(--accent-amber)">${getSvgIcon('settings', 20)}</span>
+        <span style="font-size:20px">⚙️</span>
         <div>
           <div style="font-size:13px;font-weight:700;color:var(--text-primary)">Active Tax Rules</div>
           <div style="font-size:12px;color:var(--text-muted)">Normal items: ${getTaxConfig().normal}% GST &nbsp;|&nbsp; Luxury items: ${getTaxConfig().luxury}% GST</div>
@@ -5127,7 +5760,7 @@ function renderBilling() {
       </div>
 
       <div class="table-toolbar">
-        <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
+        <div class="table-search"><span>🔍</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
         <div class="table-filter">
           ${user.role === 'super_admin' ? `
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="bill-wh-filter">
@@ -5349,12 +5982,12 @@ function showBillModal() {
 
   const footer = `
     <button class="btn btn-secondary" id="bill-cancel">Cancel</button>
-    <button class="btn btn-primary" id="bill-save" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('check', 14)} Generate Bill</button>
+    <button class="btn btn-primary" id="bill-save">🧾 Generate Bill</button>
   `;
 
-  const modal = createModal({ title: 'New Invoice', body, footer, size: 'lg' });
+  const modal = createModal({ title: '🧾 New Invoice', body, footer, size: 'lg' });
   modal.el.querySelector('#bill-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#bill-save')?.addEventListener('click', async () => {
+  modal.el.querySelector('#bill-save')?.addEventListener('click', () => {
     const customer = document.getElementById('bill-customer')?.value.trim();
     if (!customer) { showToast('Validation','Customer name required','warning'); return; }
     if (billItems.length === 0) { showToast('Validation','Add at least one item','warning'); return; }
@@ -5371,15 +6004,11 @@ function showBillModal() {
     const subtotal = billItems.reduce((s,i)=>s+(i.qty*i.price),0);
     const tax = billItems.reduce((s,i)=>s+(i.qty*i.price*(TAX_RATES[i.taxCategory]||TAX_RATES.normal)),0);
     const total = subtotal + tax;
-    const res = await createBill({ customer, warehouseId, items: billItems.map(i=>({...i})), subtotal, tax, total });
-    if (res && res.error) {
-      showToast('Error Generating Bill', res.error, 'error');
-      return;
-    }
-    showToast('Bill generated!', `${res.billNo} — ${formatCurrency(total)}`, 'success');
+    const bill = createBill({ customer, warehouseId, items: billItems.map(i=>({...i})), subtotal, tax, total });
+    showToast('Bill generated!', `${bill.billNo} — ${formatCurrency(total)}`, 'success');
     billItems = [];
     modal.close();
-    renderBilling();
+    navigate(getCurrentPath());
   });
 }
 
@@ -5563,17 +6192,17 @@ function renderAnalytics() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 24)} Analytics & Reports</h1>
+          <h1 class="page-title">📈 Analytics & Reports</h1>
           <p class="page-subtitle">${isSA ? 'Global cross-warehouse analytics' : 'Warehouse performance analytics'}</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'" style="display:flex;align-items:center;gap:6px">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
 
       <!-- Filter Bar -->
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px 18px;margin-bottom:24px">
-        <span style="font-size:13px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:6px">${getSvgIcon('search', 16)} Filters:</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">🔽 Filters:</span>
 
         <select class="form-control" style="width:auto;padding:7px 12px;font-size:13px" id="an-year">
           ${(billYears.length ? billYears : [new Date().getFullYear()]).map(y=>
@@ -5736,28 +6365,28 @@ function updateKPIs(totalRev, totalTax, avgBill, netRev, count) {
     <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#6366f1"></div>
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">💰</div>
         <div class="stat-card-value">${formatCurrency(totalRev)}</div>
         <div class="stat-card-label">Total Revenue</div>
         <div class="stat-card-trend trend-up">${count} invoices</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#10b981"></div>
-        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('dollar', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">💵</div>
         <div class="stat-card-value">${formatCurrency(netRev)}</div>
         <div class="stat-card-label">Net Revenue</div>
         <div class="stat-card-trend trend-up">After tax</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#f59e0b"></div>
-        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('billing', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">🏛️</div>
         <div class="stat-card-value">${formatCurrency(totalTax)}</div>
         <div class="stat-card-label">Tax Collected</div>
         <div class="stat-card-trend">Automated</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#8b5cf6"></div>
-        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15);display:flex;align-items:center;justify-content:center">${getSvgIcon('audit', 20)}</div>
+        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">🎯</div>
         <div class="stat-card-value">${formatCurrency(avgBill)}</div>
         <div class="stat-card-label">Avg. Invoice</div>
         <div class="stat-card-trend trend-up">${count} total</div>
@@ -5921,11 +6550,9 @@ function updateWhBreakdown(bills, whs, totalRev) {
     const tax = bills.filter(b=>b.warehouseId===wh.id).reduce((s,b)=>s+(b.tax||0),0);
     const cnt = bills.filter(b=>b.warehouseId===wh.id).length;
     const pct = totalRev>0 ? Math.round(rev/totalRev*100) : 0;
-    const logoHtml = wh.logo ? `<span style="font-size:16px">${wh.logo}</span>` : getSvgIcon('warehouses', 16);
     return `
       <div class="revenue-bar" style="margin-bottom:12px">
-        <div class="revenue-bar-label" style="display:flex;align-items:center;gap:6px">
-          ${logoHtml} <span>${wh.name}</span>
+        <div class="revenue-bar-label">${wh.logo||'🏭'} ${wh.name}
           <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
         </div>
         <div class="revenue-bar-track"><div class="revenue-bar-fill" style="width:${pct}%"></div></div>
@@ -5984,15 +6611,15 @@ function renderAudit() {
     <div class="animate-slideUp">
       <div class="au_page-header">
         <div class="au_page-header-left">
-          <h1 class="au_page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('audit', 24)} Audit Logs</h1>
+          <h1 class="au_page-title">🔍 Audit Logs</h1>
           <p class="au_page-subtitle">Complete activity trail for compliance and monitoring</p>
         </div>
         <div class="au_page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
       <div class="table-toolbar">
-        <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted);margin-right:6px">${getSvgIcon('search', 16)}</span><input type="text" id="audit-search" placeholder="Search logs..." /></div>
+        <div class="table-search"><span>🔍</span><input type="text" id="audit-search" placeholder="Search logs..." /></div>
         <div class="table-filter">
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="audit-action-filter">
             <option value="">All Actions</option>
@@ -6014,20 +6641,7 @@ function renderAudit() {
   document.getElementById('audit-action-filter')?.addEventListener('change',()=>{au_page=1;renderAuditTable();});
 }
 
-const ACTION_ICONS = {
-  login: getSvgIcon('user', 14),
-  logout: getSvgIcon('user', 14),
-  user_create: getSvgIcon('user', 14),
-  user_update: getSvgIcon('user', 14),
-  user_delete: getSvgIcon('user', 14),
-  warehouse_create: getSvgIcon('warehouses', 14),
-  warehouse_update: getSvgIcon('warehouses', 14),
-  warehouse_delete: getSvgIcon('warehouses', 14),
-  bill_create: getSvgIcon('billing', 14),
-  table_create: getSvgIcon('tables', 14),
-  item_create: getSvgIcon('items', 14),
-  settings_update: getSvgIcon('settings', 14)
-};
+const ACTION_ICONS = { login:'🔐', logout:'🚪', user_create:'👤➕', user_update:'👤✏️', user_delete:'👤🗑️', warehouse_create:'🏭➕', warehouse_update:'🏭✏️', warehouse_delete:'🏭🗑️', bill_create:'🧾', table_create:'📋➕', item_create:'📦➕' };
 const ACTION_CLASSES = { login:'badge-info', user_create:'badge-success', user_delete:'badge-danger', warehouse_create:'badge-success', warehouse_delete:'badge-danger', bill_create:'badge-brand', table_create:'badge-success', item_create:'badge-success' };
 
 function renderAuditTable() {
@@ -6045,7 +6659,7 @@ function renderAuditTable() {
   if (!container) return;
 
   if (logs.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);opacity:0.4;margin-bottom:16px">${getSvgIcon('audit', 40)}</div><h3 style="color:var(--text-secondary)">No logs found</h3></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">🔍</div><h3 style="color:var(--text-secondary)">No logs found</h3></div>`;
     return;
   }
 
@@ -6058,7 +6672,7 @@ function renderAuditTable() {
             <td data-label="#" style="color:var(--text-muted);font-size:12px">${start+i+1}</td>
             <td data-label="Action">
               <span class="badge ${ACTION_CLASSES[log.action]||'badge-muted'}">
-                <span style="display:inline-flex;align-items:center;gap:6px;color:var(--text-secondary)">${ACTION_ICONS[log.action]||getSvgIcon('info', 14)} ${log.action.replace(/_/g,' ')}</span>
+                ${ACTION_ICONS[log.action]||'📝'} ${log.action.replace(/_/g,' ')}
               </span>
             </td>
             <td data-label="Description" style="font-size:13px">${log.description}</td>
@@ -6094,16 +6708,17 @@ function renderSettings() {
   const isSuperAdmin = user.role === 'super_admin';
   const isAdmin = ['super_admin','admin'].includes(user.role);
   const taxCfg = getTaxConfig();
+  const currency = getCurrency();
 
   renderShell('Settings', 'Platform configuration and preferences', `
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 24)} System Settings</h1>
+          <h1 class="page-title">⚙️ System Settings</h1>
           <p class="page-subtitle">Platform configuration, preferences, and account management</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
 
@@ -6112,7 +6727,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('user', 18)} Profile Settings</div>
+              <div class="card-title">👤 Profile Settings</div>
               <div class="card-subtitle">Your account information</div>
             </div>
           </div>
@@ -6168,7 +6783,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Tax Configuration</div>
+              <div class="card-title">🏛️ Tax Configuration</div>
               <div class="card-subtitle">Configure global tax rates for billing engine</div>
             </div>
           </div>
@@ -6193,7 +6808,7 @@ function renderSettings() {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>${getSvgIcon('check', 14)} Save Tax Rules</button>
+            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Tax Rules</button>
             <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
           </div>
           <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:12px">
@@ -6205,11 +6820,37 @@ function renderSettings() {
           </div>
         </div>` : ''}
 
+        <!-- Currency Configuration -->
+        <div class="card col-6">
+          <div class="card-header">
+            <div>
+              <div class="card-title">💵 Currency Settings</div>
+              <div class="card-subtitle">Select global and warehouse currency preferences</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Global Base Currency</label>
+            <select id="s-global-currency" class="form-control" ${!isSuperAdmin ? 'disabled style="opacity:0.7"' : ''}>
+              <option value="USD" ${currency==='USD'?'selected':''}>USD ($) - US Dollar</option>
+              <option value="INR" ${currency==='INR'?'selected':''}>INR (₹) - Indian Rupee</option>
+              <option value="EUR" ${currency==='EUR'?'selected':''}>EUR (€) - Euro</option>
+              <option value="GBP" ${currency==='GBP'?'selected':''}>GBP (£) - British Pound</option>
+              <option value="AED" ${currency==='AED'?'selected':''}>AED (د.إ) - UAE Dirham</option>
+              <option value="SGD" ${currency==='SGD'?'selected':''}>SGD (S$) - Singapore Dollar</option>
+            </select>
+            <div class="form-hint">Sets the base currency for global financial metrics, invoices, and analytics.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Currency</button>
+            <span id="currency-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
+          </div>
+        </div>
+
         <!-- Notifications -->
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bell', 18)} Notifications</div>
+              <div class="card-title">🔔 Notifications</div>
               <div class="card-subtitle">Manage alert preferences</div>
             </div>
           </div>
@@ -6295,18 +6936,13 @@ function renderSettings() {
   `);
 
   // Profile save
-  document.getElementById('profile-form')?.addEventListener('submit', async e => {
+  document.getElementById('profile-form')?.addEventListener('submit', e => {
     e.preventDefault();
     const name = document.getElementById('s-name').value.trim();
     if (!name) return;
-    
-    const res = await updateUser(user.id, { name });
-    if (res && res.error) {
-      showToast('Error Updating Profile', res.error, 'error');
-      return;
-    }
-    showToast('Profile updated','Your name has been updated','success');
-    renderSettings();
+    const s = getStore();
+    const u = s.users.find(u=>u.id===s.currentUserId);
+    if (u) { u.name = name; u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2); saveStore(); showToast('Profile updated','Your name has been updated','success'); }
   });
 
   // Password change
@@ -6327,7 +6963,7 @@ function renderSettings() {
   });
 
   // TAX SAVE — actually persist to store
-  document.getElementById('save-tax-btn')?.addEventListener('click', async () => {
+  document.getElementById('save-tax-btn')?.addEventListener('click', () => {
     if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change tax rates','error'); return; }
     const normal = parseFloat(document.getElementById('tax-normal')?.value);
     const luxury = parseFloat(document.getElementById('tax-luxury')?.value);
@@ -6335,39 +6971,35 @@ function renderSettings() {
       showToast('Invalid values','Tax rates must be between 0 and 100','error');
       return;
     }
-    await saveTaxConfig({ normal, luxury });
-    showToast('Tax rules saved', `Normal: ${normal}% | Luxury: ${luxury}% — applied to future bills`, 'success');
-    // Show inline confirmation
-    const msg = document.getElementById('tax-saved-msg');
+    saveTaxConfig({ normal, luxury }).then(() => {
+      showToast('Tax rules saved', `Normal: ${normal}% | Luxury: ${luxury}% — applied to future bills`, 'success');
+      // Show inline confirmation
+      const msg = document.getElementById('tax-saved-msg');
+      if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 3000); }
+      // Update the displayed active rates
+      document.querySelectorAll('#tax-saved-msg').forEach(el => el.style.display='inline');
+    });
+  });
+
+  // CURRENCY SAVE — actually persist to store
+  document.getElementById('save-currency-btn')?.addEventListener('click', () => {
+    if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change base currency','error'); return; }
+    const currency = document.getElementById('s-global-currency').value;
+    saveCurrency(currency);
+    showToast('Currency updated', `Platform currency set to: ${currency}`, 'success');
+    const msg = document.getElementById('currency-saved-msg');
     if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 3000); }
-    // Update the displayed active rates
-    document.querySelectorAll('#tax-saved-msg').forEach(el => el.style.display='inline');
   });
 
   // Notification toggles
   document.querySelectorAll('.notif-toggle-input').forEach(input => {
-    input.addEventListener('change', async () => {
+    input.addEventListener('change', () => {
       const s = getStore();
       const u = s.users.find(usr => usr.id === s.currentUserId);
       if (!u.settings) u.settings = {};
       if (!u.settings.notifications) u.settings.notifications = {};
       u.settings.notifications[input.dataset.key] = input.checked;
-      
-      const res = await updateUser(u.id, { settings: u.settings });
-      if (res && res.error) {
-        showToast('Error Saving Preference', res.error, 'error');
-        return;
-      }
-      
-      await apiFetch('/audit-logs/', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'settings_update',
-          description: `Notification preference changed: ${input.dataset.key} set to ${input.checked ? 'enabled' : 'disabled'}`,
-          warehouseId: s.currentWarehouseId || null
-        })
-      });
-      
+      saveStore();
       showToast('Preference saved', `${input.dataset.key} alerts ${input.checked ? 'enabled' : 'disabled'}`, 'info');
       renderSettings(); // Re-render to update toggle colors
     });
@@ -6442,11 +7074,11 @@ function renderSubscription() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 24)} Subscription Management</h1>
+          <h1 class="page-title">💳 Subscription Management</h1>
           <p class="page-subtitle">Your current plan, limits, and upgrade options</p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">${getSvgIcon('back', 14)} Dashboard</button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
 
@@ -6454,7 +7086,7 @@ function renderSubscription() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
         <div style="background:${isEnterprise ? 'linear-gradient(135deg,rgba(99,102,241,0.15),rgba(168,85,247,0.15))' : 'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(5,150,105,0.15))'};border:1px solid ${isEnterprise ? 'rgba(99,102,241,0.4)' : 'rgba(16,185,129,0.4)'};border-radius:16px;padding:28px">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-            <div style="color:${isEnterprise ? 'var(--accent-purple)' : 'var(--accent-emerald)'};display:flex;align-items:center">${getSvgIcon('subscription', 36)}</div>
+            <div style="font-size:36px">${isEnterprise ? '🟣' : '🟢'}</div>
             <div>
               <div style="font-size:22px;font-weight:900;color:var(--text-primary)">${isEnterprise ? 'Enterprise' : 'Starter'} Plan</div>
               <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Current Active Plan</div>
@@ -6483,12 +7115,12 @@ function renderSubscription() {
         <!-- Quick Stats -->
         <div style="display:flex;flex-direction:column;gap:12px">
           ${[
-            { icon:'warehouses', label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
-            { icon:'items', label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
-            { icon:'user', label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
+            { icon:'🏭', label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
+            { icon:'📦', label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
+            { icon:'👑', label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
           ].map(s=>`
-            <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px;flex:1">
-              <div style="color:${s.color};display:flex;align-items:center">${getSvgIcon(s.icon, 24)}</div>
+            <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px;flex:1">
+              <div style="font-size:24px">${s.icon}</div>
               <div>
                 <div style="font-size:18px;font-weight:800;color:${s.color}">${s.val}</div>
                 <div style="font-size:12px;color:var(--text-muted)">${s.label}</div>
@@ -6498,19 +7130,20 @@ function renderSubscription() {
         </div>
       </div>
 
+      <!-- Plan Features -->
       <div style="margin-bottom:32px">
         <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:16px">Plan Features</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           ${[
-            { icon:'warehouses', feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
-            { icon:'workforce', feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
-            { icon:'billing', feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
-            { icon:'analytics', feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
-            { icon:'tables', feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
-            { icon:'audit', feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
+            { icon:'🏭', feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
+            { icon:'👥', feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
+            { icon:'💰', feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
+            { icon:'📊', feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
+            { icon:'📋', feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
+            { icon:'🔍', feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
           ].map(f=>`
             <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px">
-              <span style="display:flex;align-items:center;color:var(--text-secondary)">${getSvgIcon(f.icon, 20)}</span>
+              <span style="font-size:20px">${f.icon}</span>
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${f.feat}</div>
                 <div style="font-size:12px;color:var(--text-muted)">Starter: ${f.starter}</div>
@@ -6719,6 +7352,9 @@ window.addEventListener('wareops_storage_sync', () => {
 // Initialize app when DOM is ready
 async function init() {
   try {
+    // Bind active currency dynamically for formatting sync
+    window.wareops_currency = getActiveCurrency();
+
     const currentPath = getActivePath();
     const user = getCurrentUser();
 

@@ -14,7 +14,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // Modules
-import { getCurrentUser, getWarehouses, getStore, seedDemoData } from './modules/store.js';
+import { getCurrentUser, getWarehouses, getStore, seedDemoData, getActiveCurrency } from './modules/store.js';
 
 // Pages
 import { renderLogin, renderSignup, renderWarehouseRegistration } from './pages/auth.js';
@@ -170,6 +170,9 @@ window.addEventListener('wareops_storage_sync', () => {
 // Initialize app when DOM is ready
 async function init() {
   try {
+    // Bind active currency dynamically for formatting sync
+    window.wareops_currency = getActiveCurrency();
+
     const currentPath = getActivePath();
     const user = getCurrentUser();
 

@@ -19,6 +19,15 @@
 }
 
 @media (max-width: 768px) {
+  .sidebar-collapse-btn {
+    display: none !important;
+  }
+  .sidebar.collapsed {
+    width: var(--sidebar-width) !important;
+  }
+  .main-content.sidebar-collapsed {
+    margin-left: 0 !important;
+  }
   .sidebar {
     transform: translateX(calc(-1 * var(--sidebar-width)));
     z-index: var(--z-modal);
