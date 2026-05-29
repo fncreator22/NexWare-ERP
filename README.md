@@ -1,61 +1,292 @@
-# NexWare ERP
+# NexWare ERP — Enterprise SaaS Platform
 
-## Unified Business Operations & Management Platform
-
-> 🚀 **Landing Page Redesigned** — Professional SaaS showcase with fully interactive embedded ERP demo. No sign-in required to explore the platform.
-
-NexWare ERP is a modern SaaS-based operations platform designed to help businesses manage workforce operations, workflows, billing, inventory, reporting, and business activities from a single connected ecosystem.
+> 🚀 **Unified Business Operations Platform** — Multi-tenant ERP with workforce management, billing, inventory, dynamic workflows, real-time WebSockets, and a premium SaaS landing page.
 
 ---
 
-## 🖥 Interactive ERP Showcase (Landing Page)
+## 🖥️ Live Preview (Local Development)
 
-The landing page (`warehouse-erp/landing.html`) has been completely redesigned as a **professional SaaS product showcase** with a fully interactive embedded ERP dashboard — no sign-in, no backend connection required.
+| Service | URL | Description |
+|:---|:---|:---|
+| **Landing Page** | `http://localhost:3000/landing` | Premium SaaS showcase with interactive embedded demo |
+| **Dashboard App** | `http://localhost:3000` | Full ERP dashboard (login required) |
+| **Backend API** | `http://localhost:8000` | FastAPI REST + WebSocket server |
+| **API Docs** | `http://localhost:8000/docs` | Swagger interactive API documentation |
+| **Health Check** | `http://localhost:8000/health` | System heartbeat endpoint |
 
-### What the Landing Page Includes
+---
 
-| Section | Description |
-|:---|:---|
-| **Hero Section** | Animated hero with floating browser dashboard mockup, hero stats, and dual CTA buttons |
-| **Trust Bar** | Social proof logos from 6 demo enterprise clients |
-| **Metrics Strip** | 4 key system benchmarks (E2E test coverage, API latency, onboarding speed, RBAC tier count) |
-| **Features Grid** | 6 detailed feature cards (Warehouses, RBAC, Billing, Inventory, Tables, Audit Logs) |
-| **🎯 Interactive ERP Demo** | Live embedded ERP dashboard with 8 fully interactive pages |
-| **Workflow Section** | 4-step onboarding flow explanation |
-| **All Features Grid** | 9-cell capability matrix (JWT auth, WebSockets, CSV import, multi-tenant isolation, etc.) |
-| **Testimonials** | 3 role-realistic customer quotes |
-| **Pricing** | Starter $49/mo + Enterprise $199/mo with full feature lists |
-| **CTA Section** | Gradient call-to-action with dual buttons |
-| **Footer** | 4-column footer with technology credits and system status badge |
+## ⚡ Quick Start — Run on Any Device
 
-### 🎯 Interactive ERP Demo — 8 Live Pages
+> **Prerequisites:** [Node.js v18+](https://nodejs.org/) · [Python 3.11+](https://python.org/) · [MongoDB v6+](https://www.mongodb.com/try/download/community) · [Git](https://git-scm.com/)
 
-The showcase embeds a **pixel-perfect replica of the actual NexWare ERP dashboard** directly inside the landing page. Visitors can:
+### Step 1 — Clone Both Repositories
 
-- Click sidebar navigation items to switch between pages
-- Use the tab bar above the demo frame to jump directly to any module
-- Interact with search bars, dropdown filters, tab switchers, and sliders
-- View live Chart.js charts (revenue bar, revenue line, warehouse doughnut)
-- Scroll through realistic data tables
+```bash
+# Clone the frontend repository
+git clone https://github.com/fncreator22/NexWare-ERP.git
 
-**Available interactive pages:**
+# Clone the backend repository
+git clone https://github.com/fncreator22/backend-next-ware.git
+```
 
-| Page | What Visitors See |
-|:---|:---|
-| 📊 **Dashboard** | KPI cards, 6-month revenue bar chart, live activity feed, warehouse list, low-stock alerts |
-| 📦 **Inventory** | 247-item searchable table with SKU, category, price, stock, tax, warehouse columns |
-| 🧾 **Billing** | Financial stats strip, 5-invoice table with customer, date, tax, total, status |
-| 👥 **Workforce** | Role breakdown cards, 5-member team table with role badges and status |
-| 📋 **Tables** | 3 table schema cards, maintenance log rows with dropdown status badges |
-| 🔍 **Audit Logs** | 7-entry audit timeline with action type, description, user, warehouse, timestamp |
-| 📈 **Analytics** | Line revenue chart, warehouse doughnut chart, per-warehouse revenue breakdown table |
-| ⚙️ **Settings** | Profile editor, tax rate range sliders (Normal 5% / Luxury 15%), live preview |
+---
 
-> ⚠️ **No backend dependency.** The demo uses purely static mock data embedded in HTML. Nothing is saved. No APIs are called. No real data is touched.
+### Step 2 — Start MongoDB
 
-### 🖼️ Dashboard Preview Images
+Make sure MongoDB is installed and running on your machine before launching the backend.
 
-Four premium ERP dashboard mockups are integrated into the platform assets:
+**Windows (if installed as a service):**
+```powershell
+# Start MongoDB service
+net start MongoDB
+
+# OR start manually if not a service
+"C:\Program Files\MongoDB\Server\8.0\bin\mongod.exe" --dbpath "C:\data\db"
+```
+
+**Linux / macOS:**
+```bash
+# Start MongoDB (systemd)
+sudo systemctl start mongod
+
+# OR start manually
+mongod --dbpath /data/db
+```
+
+> 💡 **MongoDB Atlas (Cloud):** If using Atlas, skip this step. Set your `MONGODB_URL` in the backend `.env` file to your Atlas connection string instead.
+
+---
+
+### Step 3 — Setup & Run the Backend (FastAPI)
+
+```bash
+# Enter the backend directory
+cd backend-next-ware
+
+# Create a Python virtual environment
+python -m venv .venv
+
+# Activate the virtual environment
+# Windows:
+.venv\Scripts\activate
+# Linux / macOS:
+source .venv/bin/activate
+
+# Install all backend dependencies
+pip install -r requirements.txt
+
+# Configure environment variables
+# Copy the example env file and edit it
+copy .env.example .env        # Windows
+cp .env.example .env          # Linux / macOS
+
+# Start the backend development server (with hot-reload)
+python -m uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+✅ **Backend is live at:** `http://127.0.0.1:8000`
+
+---
+
+### Step 4 — Setup & Run the Frontend (Node.js)
+
+Open a **new terminal window**, then:
+
+```bash
+# Enter the frontend app directory
+cd NexWare-ERP/warehouse-erp
+
+# Install Node.js dependencies
+npm install
+
+# Start the frontend development server (with auto-rebuild)
+npm run dev
+```
+
+✅ **Frontend is live at:** `http://localhost:3000`
+
+---
+
+### Step 5 — Open the App
+
+1. Open your browser and go to: **`http://localhost:3000/landing`**
+2. Click **"Get Started"** or **"Sign In"** to reach the ERP login page
+3. Register a new **Super Admin** account (first-time setup)
+4. Create your first **Warehouse** after registration
+5. Start managing your operations!
+
+---
+
+## 🧰 All Available Commands
+
+### Frontend Commands
+
+```bash
+# Navigate to the frontend directory first
+cd NexWare-ERP/warehouse-erp
+
+# Start development server (auto-rebuilds JS bundle on file changes)
+npm run dev
+
+# Build JS bundle only (without starting a server)
+npm run build
+
+# Start static file server only (no file watching)
+npm start
+```
+
+### Backend Commands
+
+```bash
+# Navigate to the backend directory first
+cd backend-next-ware
+
+# Activate your virtual environment (required before running any command)
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate       # Linux / macOS
+
+# Start backend with hot-reload (development)
+python -m uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Start backend without hot-reload (production-like)
+python -m uvicorn src.main:app --host 0.0.0.0 --port 8000
+
+# Run database backup
+python db_maintenance.py backup --file backups/my_backup.json
+
+# Restore database from a backup
+python db_maintenance.py restore --file backups/my_backup.json
+
+# Reset database to clean slate
+python db_maintenance.py reset
+```
+
+---
+
+## 📁 Repository Structure
+
+```text
+NexWare-ERP/
+└── warehouse-erp/              # Main frontend application
+    ├── assets/                 # Static images and preview assets
+    ├── css/                    # Modular CSS (variables, layout, components, animations)
+    ├── js/
+    │   ├── app.js              # SPA bootstrap, router guards, auth flow
+    │   ├── components/         # Shell layout, sidebar, topbar, command palette
+    │   ├── modules/            # Store (localStorage), router, UI helpers, API client
+    │   └── pages/              # Dashboard, Billing, Inventory, Tables, Workforce, etc.
+    ├── build.mjs               # ESM bundle compiler script
+    ├── dev.mjs                 # Dev server with file watcher and auto-rebuild
+    ├── watch.mjs               # File watcher only (no server)
+    ├── bundle.js               # Compiled JS bundle (served to browser)
+    ├── index.html              # Main SPA shell (ERP dashboard entry point)
+    ├── landing.html            # Premium SaaS landing page
+    └── package.json            # npm scripts and project metadata
+```
+
+---
+
+## 🔐 Environment Configuration (Backend)
+
+The backend reads from a `.env` file in the `backend-next-ware/` directory. Copy `.env.example` to `.env` and configure:
+
+```env
+# Server Configuration
+HOST=127.0.0.1
+PORT=8000
+RELOAD=True
+
+# Database — Local MongoDB
+MONGODB_URL=mongodb://localhost:27017
+DB_NAME=wareops_erp_db
+
+# OR — MongoDB Atlas (Cloud)
+# MONGODB_URL=mongodb+srv://<user>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority
+
+# Security (CHANGE THIS before any production deployment!)
+JWT_SECRET=your-cryptographically-random-64-char-secret-string-here
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Redis (Optional — falls back to in-memory cache if not available)
+REDIS_URL=redis://localhost:6379/0
+
+# SMTP Email (Optional — displays emails in console if not configured)
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=noreply@nexware-erp.com
+```
+
+---
+
+## 🏗️ System Architecture
+
+```text
+┌──────────────────────────────────────────────────────┐
+│                    NexWare ERP                       │
+└──────────────────────┬───────────────────────────────┘
+                       │
+       ┌───────────────┴───────────────┐
+       ▼                               ▼
+┌─────────────────────┐         ┌─────────────────────┐
+│   Frontend (Node)   │         │   Backend (Python)  │
+│   localhost:3000    │◄───────►│   localhost:8000    │
+│                     │  JWT +  │                     │
+│  Landing Page       │  REST + │  FastAPI ASGI       │
+│  ERP Dashboard      │   WS    │  MongoDB Motor      │
+│  Hash-SPA Router    │         │  WebSocket Manager  │
+└─────────────────────┘         └──────────┬──────────┘
+                                            │
+                                            ▼
+                                 ┌─────────────────────┐
+                                 │   MongoDB :27017    │
+                                 │   wareops_erp_db    │
+                                 └─────────────────────┘
+```
+
+---
+
+## 🎯 Feature Matrix
+
+| Feature | Frontend | Backend | Status |
+|:---|:---:|:---:|:---:|
+| Authentication (Login/Signup/Logout) | ✅ | ✅ | **Complete** |
+| Multi-Tenant Warehouse Management | ✅ | ✅ | **Complete** |
+| Hierarchical RBAC (5 role levels) | ✅ | ✅ | **Complete** |
+| Inventory & Item Catalog | ✅ | ✅ | **Complete** |
+| Billing & Automated Tax Invoicing | ✅ | ✅ | **Complete** |
+| Airtable-Style Dynamic Table Builder | ✅ | ✅ | **Complete** |
+| Analytics & Revenue Dashboards | ✅ | ✅ | **Complete** |
+| Real-Time Notifications (WebSocket) | ✅ | ✅ | **Complete** |
+| Audit Logs (Role-Scoped) | ✅ | ✅ | **Complete** |
+| Global Command Palette (Ctrl+K) | ✅ | — | **Complete** |
+| CSV Import / Export | ✅ | ✅ | **Complete** |
+| Dynamic Currency Configuration | ✅ | ✅ | **Complete** |
+| Legal Pages (Privacy / Terms) | ✅ | — | **Complete** |
+| SaaS Landing Page | ✅ | — | **Complete** |
+| Health Monitoring Endpoints | — | ✅ | **Complete** |
+| Subscription Module | ✅ (mock) | — | *Frontend Only* |
+
+---
+
+## 🔒 Role-Based Access Control
+
+| Capability | Super Admin | Admin | Manager | Staff | Employee |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| Create / Delete Warehouses | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Manage Warehouse Config | ✅ | ✅ (own) | ❌ | ❌ | ❌ |
+| Manage Table Schemas | ✅ | ✅ (own) | ❌ | ❌ | ❌ |
+| Manage Workforce Users | ✅ | ✅ | ✅ (lower) | ❌ | ❌ |
+| Create Bills & Inventory | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Write / Update Table Data | ✅ | ✅ | ✅ | ✅ | ❌ |
+| View Analytics & Reports | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+## 🖼️ Dashboard Previews
 
 #### 📊 Main Enterprise Dashboard
 ![Main ERP Dashboard Mockup](warehouse-erp/assets/dashboard-preview.png)
@@ -66,434 +297,65 @@ Four premium ERP dashboard mockups are integrated into the platform assets:
 #### 🧾 Automated Billing & Taxation
 ![Billing and Invoice Mockup](warehouse-erp/assets/billing-preview.png)
 
-#### 👥 Workforce & Real-time Audit Logs
+#### 👥 Workforce & Audit Logs
 ![Workforce and Audit Logs Mockup](warehouse-erp/assets/workforce-audit-preview.png)
 
-### Technical Design Notes
-
-- **Zero dependencies** beyond Chart.js (loaded via CDN) — no framework required
-- Design tokens exactly mirror the real app's `variables.css` and `components.css`
-- Sidebar uses the same `.demo-item`, `.demo-section-label`, `.demo-sidebar` patterns as the production `shell.js`
-- Demo pages switch via pure CSS class toggling (`display:flex` vs `display:none`) with a `pageIn` keyframe animation
-- Chart.js instances are destroyed and re-created on page switch to prevent canvas leaks
-- Tax rate sliders in Settings respond in real-time (purely visual — no data mutation)
-- Scroll reveal powered by `IntersectionObserver` — no dependencies
-- Fully responsive: sidebar hidden on mobile, demo content remains scrollable
-
 ---
 
+## 🧪 Verifying the System is Running
 
-The platform is built for organizations that require operational clarity, scalable management, and centralized control without the complexity of traditional enterprise ERP systems.
+After starting both servers, run these quick health checks:
 
-Although the system fully supports warehouse and inventory operations, it is not limited to warehouse businesses alone. NexWare ERP is designed as a flexible operational infrastructure that can adapt to multiple industries including retail, logistics, service-based companies, multi-branch businesses, operational teams, franchise systems, and growing organizations that require structured business management.
+```bash
+# Check backend health
+curl http://localhost:8000/health
 
-The core philosophy behind the platform is simple:
+# Check MongoDB connection
+curl http://localhost:8000/health/db
 
-> Businesses should not have to change their workflow to match software limitations.  
-> The software should adapt to the business.
+# Check system metrics (CPU, RAM)
+curl http://localhost:8000/health/system
 
----
-
-# Why NexWare ERP?
-
-Most businesses eventually reach a stage where operations become fragmented.
-
-Different departments begin using:
-- Spreadsheets
-- Manual reporting systems
-- Separate billing software
-- Inventory tools
-- Task tracking platforms
-- Unstructured communication channels
-
-This creates:
-- Operational confusion
-- Duplicate work
-- Reporting delays
-- Poor visibility
-- Workforce coordination issues
-- Scalability problems
-
-Traditional ERP systems solve some of these challenges but often introduce new ones:
-- Complex onboarding
-- Difficult customization
-- Expensive infrastructure
-- Rigid workflows
-- Overloaded interfaces
-
-NexWare ERP was built to bridge the gap between operational simplicity and enterprise-level scalability.
-
----
-
-# What Makes the Platform Different?
-
-The platform is not designed as a fixed ERP structure.
-
-Instead, NexWare ERP functions as a modular operational ecosystem where businesses can build workflows according to their own operational structure.
-
-One of the platform’s most distinctive features is the **Dynamic Workflow Engine**.
-
-Administrators can create custom operational tables and workflow systems directly inside the platform without requiring development changes or external tools.
-
-Organizations can create:
-- Task management systems
-- Workflow trackers
-- Service operations
-- Inventory records
-- Internal reporting systems
-- Team coordination boards
-- Audit systems
-- Branch operation structures
-- Billing workflows
-
-inside the same ecosystem.
-
-This provides the flexibility of spreadsheets while maintaining the structure, permissions, reporting, and scalability of enterprise software.
-
----
-
-# Platform Workflow
-
-```text
-┌──────────────────────────────┐
-│      Public SaaS Platform    │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│   Plan Selection & Signup    │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│    Super Admin Creation      │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│ Business / Workspace Setup   │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│ Team & Role Assignment       │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│ Workflow & Operations Setup  │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│ Daily Business Management    │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│ Analytics, Billing & Reports │
-└──────────────────────────────┘
+# Expected response:
+# {"success": true, "status": "healthy", ...}
 ```
 
 ---
 
-# Role-Based Management Structure
-
-```text
-                        ┌─────────────────┐
-                        │   Super Admin   │
-                        └────────┬────────┘
-                                 │
-          ┌──────────────────────┼──────────────────────┐
-          │                                             │
-          ▼                                             ▼
- ┌─────────────────┐                         ┌─────────────────┐
- │      Admin      │                         │      Admin      │
- └────────┬────────┘                         └────────┬────────┘
-          │                                             │
-          ▼                                             ▼
- ┌─────────────────┐                         ┌─────────────────┐
- │     Manager     │                         │     Manager     │
- └────────┬────────┘                         └────────┬────────┘
-          │                                             │
-          ▼                                             ▼
- ┌─────────────────┐                         ┌─────────────────┐
- │      Staff      │                         │      Staff      │
- └────────┬────────┘                         └────────┬────────┘
-          │                                             │
-          ▼                                             ▼
- ┌─────────────────┐                         ┌─────────────────┐
- │    Employees    │                         │    Employees    │
- └─────────────────┘                         └─────────────────┘
-```
-
----
-
-# Core Platform Ecosystem
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                        NexWare ERP                         │
-└─────────────────────────────────────────────────────────────┘
-
-        ┌────────────────┬────────────────┬────────────────┐
-        │                │                │                │
-        ▼                ▼                ▼                ▼
-
-┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
-│   Workforce    │ │   Operations   │ │    Billing     │ │   Analytics    │
-│   Management   │ │   Management   │ │   & Taxation   │ │   & Reports    │
-└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
-
-        │                │                │                │
-
-        ▼                ▼                ▼                ▼
-
- • Teams          • Inventory       • Auto Billing    • Business Reports
- • Roles          • Workflows       • Tax Engine      • Revenue Tracking
- • Permissions    • Dynamic Tables  • Invoices        • Performance Data
- • Assignments    • Operations      • Transactions    • Operational Insights
- • Activity Logs  • Task Systems    • History Logs    • Workforce Analytics
-```
-
----
-
-# Core Features
-
-## Dynamic Workflow Builder
-
-Businesses can create operational systems directly from the dashboard.
-
-This eliminates dependency on:
-- External spreadsheets
-- Manual workflow tracking
-- Separate task management systems
-
-while preserving enterprise-level structure and permissions.
-
----
-
-## Workforce & Team Management
-
-Manage:
-- Employees
-- Staff
-- Managers
-- Operational teams
-- Branch admins
-- Department structures
-
-from one centralized environment.
-
----
-
-## Multi-Workspace / Multi-Warehouse Management
-
-Organizations can operate:
-- Single locations
-- Multiple branches
-- Warehouses
-- Operational departments
-
-under one centralized management system while maintaining isolated operational visibility where required.
-
----
-
-## Billing & Taxation System
-
-The billing engine supports:
-- Automated tax calculations
-- Invoice generation
-- Billing history
-- Operational transaction tracking
-- Category-based taxation
-
-designed to reduce manual accounting inconsistencies.
-
----
-
-## Inventory & Operational Tracking
-
-Track:
-- Products
-- Services
-- Operational assets
-- Stock movement
-- Branch activities
-- Workflow operations
-
-depending on the business structure.
-
----
-
-## Analytics & Reporting
-
-The platform converts operational activities into role-based business insights.
-
-Organizations can monitor:
-- Revenue trends
-- Workforce productivity
-- Workflow efficiency
-- Operational growth
-- Inventory movement
-- Branch performance
-
-through centralized dashboards and reporting systems.
-
----
-
-## Global Command Palette (Ctrl+K)
-
-The system includes a premium global search keyboard-driven Command Palette overlay:
-- Toggle instantly by pressing `Ctrl + K` (or `Cmd + K` on macOS), or `ESC` to close.
-- Instantly search all pages, dynamic actions, system settings, inventory items, and warehouses.
-- View real-time system metrics (Revenue, Total Inventory, Stock Health) as high-value insights inside the overlay without leaving the current context.
-
----
-
-## Smart Restock Prioritizer
-
-The system features an AI-simulated Smart Restock engine to optimize inventory:
-- Automatically filters items under threshold guidelines to identify reorder requests.
-- Ranks item priority using stock levels coupled with sales velocity/frequencies.
-- Visualizes key suggestions via custom priorities directly in dashboard views to maintain healthy inventory pipelines.
-
-# Role-Based Access Control (RBAC) Matrix
-
-To support structured workforce operations and enterprise data integrity, NexWare ERP enforces strict Role-Based Access Control (RBAC) rules:
-
-| Action / Capability | Super Admin | Admin | Manager | Staff | Employee |
-|---------------------|:-----------:|:-----:|:-------:|:-----:|:--------:|
-| Create & Delete Warehouses | **Yes** | No | No | No | No |
-| Manage Warehouse Configurations | **Yes** | Yes (Own) | No | No | No |
-| Manage Operational Table Structures | **Yes** | Yes (Own) | No | No | No |
-| Manage Workforce Users | **Yes** | Yes (Lower Roles) | Yes (Staff/Employee) | No | No |
-| Create Bills & Add Inventory Items | **Yes** | **Yes** | **Yes** | **Yes** | No |
-| Write or Update Table Data Rows | **Yes** | **Yes** | **Yes** | **Yes** | No |
-| View Warehouse Analytics & Reports | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
-
----
-
-# Directory & Project Structure
-
-The repository follows a clean, modular component-based Single Page Application (SPA) layout:
-
-```text
-warehouse-erp/
-├── css/                 # UI styles, HSL color tokens, compact tables, animations
-├── js/
-│   ├── components/      # UI Layout shell structure, Global Command Palette (Ctrl+K)
-│   ├── modules/         # Client router, localStorage-backed store, common UI helpers
-│   ├── pages/           # Dashboard, analytics, billing, items, tables, workforce views
-│   └── app.js           # Core bootstrap and SPA initialization module
-├── build.mjs            # Automated build bundling script
-├── dev.mjs              # Automated dev server setup script
-├── index.html           # Main SPA client container shell
-├── landing.html         # SaaS platform introduction and subscription landing portal
-└── package.json         # Script macros (start, serve, build, dev) and project dependencies
-```
-
----
-
-# Subscription Structure
-
-| Plan | Workspace Support | Features |
-|------|------------------|-----------|
-| Starter | Single Workspace | Workforce Management, Billing, Workflow Management |
-| Enterprise | Unlimited Workspaces | Centralized Analytics, Cross-Workspace Management, Advanced Operations |
-
-Both plans support:
-- Monthly Billing
-- Yearly Billing
-
----
-
-# Technology Stack
+## 🛠️ Technology Stack
 
 | Layer | Technology |
-|---|---|
-| Frontend | Vanilla JavaScript (ES6+), CSS3 Variables |
-| Backend | Simulation (localStorage + In-Memory Store) |
-| Database | Browser LocalStorage |
-| Authentication | Role-Based Access Control (RBAC) Simulation |
-| Charts | Chart.js |
-| Icons | Unicode Symbols & Font Awesome (Optional) |
-| Architecture | Modular Component-Based SPA |
+|:---|:---|
+| **Frontend Runtime** | Vanilla JavaScript (ES6+), HTML5, CSS3 |
+| **Frontend Build** | Custom ESM bundler (`build.mjs`) → `bundle.js` |
+| **Frontend Server** | `@small-tech/https` static server via `dev.mjs` |
+| **Backend Framework** | FastAPI 0.136+ (ASGI, async) |
+| **Backend Server** | Uvicorn ASGI server |
+| **Database** | MongoDB 6+ via Motor (async driver) |
+| **Authentication** | JWT access + refresh tokens, Argon2id password hashing |
+| **Caching** | Redis (primary) → In-memory TTL fallback |
+| **Real-Time** | WebSocket (`/api/v1/realtime/ws`) + MongoDB Change Streams |
+| **Rate Limiting** | Sliding window — 100 req / 60s per IP |
+| **Charts** | Chart.js (loaded via CDN) |
+| **Routing** | Hash-based SPA (`#/path`) with authentication guards |
 
 ---
 
-# Getting Started
+## 🚀 Production Deployment Notes
 
-To get the platform running locally on your machine, follow these steps:
-
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v16 or higher recommended)
-- [npm](https://www.npmjs.com/) (installed with Node.js)
-
-### Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/fncreator22/New-folder.git
-   ```
-2. Navigate to the project directory:
-   ```bash
-   cd New-folder/warehouse-erp
-   ```
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-### Running Locally
-To start the development server:
-```bash
-npm run dev
-```
-The application will be available at `http://localhost:3000` (or the port specified in your console).
-
-### Building for Production
-To create a bundled version of the application:
-```bash
-npm run build
-```
+> ⚠️ **Before any production deployment, ensure:**
+> 1. Set `JWT_SECRET` to a cryptographically random 64+ character string in `.env`
+> 2. Set `ALLOWED_ORIGINS` to your production domain only (not `localhost`)
+> 3. Set `RELOAD=false` in your production `.env`
+> 4. Run `npm run build` inside `warehouse-erp/` to regenerate `bundle.js`
+> 5. Use a process manager (PM2, Gunicorn, Systemd) to keep the backend running
 
 ---
 
-# System Design Philosophy
+## 📄 License
 
-The platform is designed around:
-- Modular architecture
-- Operational flexibility
-- Role-based scalability
-- Table-first workflows
-- Centralized management
-- Enterprise usability
-
-Every module is built to extend operational visibility while reducing workflow friction.
-
-The goal is not simply to manage inventory or warehouses.
-
-The goal is to provide businesses with a scalable operational infrastructure that helps teams manage workflows, workforce coordination, business operations, reporting, and growth from one connected  ecosystem.
+NexWare ERP is an enterprise SaaS platform. All rights reserved.
 
 ---
 
-# Future Scalability
-
-The architecture is prepared for future expansion into:
-- AI operational insights
-- Workflow automation
-- Supplier ecosystems
-- CRM integrations
-- Real-time notifications
-- Cloud-native deployment
-- Business intelligence systems
-
-without requiring foundational restructuring.
-
----
-
-# Vision
-
-NexWare ERP is built for businesses that are growing beyond disconnected operational tools but do not want the complexity and rigidity of traditional enterprise ERP systems.
-
-The platform combines flexibility, operational structure, and scalable SaaS architecture into a single ecosystem designed to evolve alongside business growth.
+*Built with ❤️ — NexWare ERP Enterprise Platform v2.0*
