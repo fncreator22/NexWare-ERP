@@ -242,6 +242,12 @@
   gap: 0;
 }
 
+.app-shell.collapsed .sidebar-item {
+  padding: var(--space-3) 0;
+  justify-content: center;
+  gap: 0;
+}
+
 /* Sidebar collapse toggle button in topbar */
 .topbar-collapse-btn {
   display: flex;

@@ -17,6 +17,10 @@ const _dashboardCharts = {};
  */
 export function renderDashboard() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const whs = getWarehouses();
   const users = getAllUsers();
   const items = getItems();
@@ -60,15 +64,15 @@ export function renderDashboard() {
 
       <!-- Welcome Banner -->
       <div style="background:var(--gradient-card);border:1px solid var(--border-brand);border-radius:var(--radius-xl);padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <div style="width:48px;height:48px;background:var(--gradient-brand);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:var(--shadow-brand);flex-shrink:0">👋</div>
+        <div style="width:48px;height:48px;background:var(--gradient-brand);border-radius:14px;display:flex;align-items:center;justify-content:center;color:white;box-shadow:var(--shadow-brand);flex-shrink:0">${getSvgIcon('dashboard', 22)}</div>
         <div style="flex:1;min-width:0">
           <h2 style="font-size:20px;font-weight:800;margin-bottom:2px">Welcome back, ${user.name.split(' ')[0]}!</h2>
           <p style="color:var(--text-muted);font-size:13px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})} · ${roleLabel}</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${isSA ? `<button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'">🏭 Warehouses</button>
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/billing'">🧾 New Bill</button>` : ''}
-          ${!isSA ? `<button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'">🧾 New Bill</button>` : ''}
+          ${isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/warehouses'">${getSvgIcon('warehouses', 14)} Warehouses</button>
+          <button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
+          ${!isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
         </div>
       </div>
 
@@ -170,7 +174,7 @@ export function renderDashboard() {
           <div style="display:flex;flex-direction:column;gap:8px">
             ${whs.slice(0,4).map(wh=>`
               <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-input);border-radius:8px;cursor:pointer" onclick="location.hash='#/warehouses/${wh.id}'">
-                <div style="font-size:20px">${wh.logo||'🏭'}</div>
+                <div style="display:flex;align-items:center">${wh.logo ? `<span style="font-size:20px">${wh.logo}</span>` : getSvgIcon('warehouses', 20)}</div>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wh.name}</div>
                   <div style="font-size:11px;color:var(--text-muted)">${wh.staffCount||0} staff · ${formatCurrency(wh.revenue||0)}</div>
@@ -186,7 +190,7 @@ export function renderDashboard() {
           </div>
           ${myWh ? `
           <div style="text-align:center;padding:8px 0">
-            <div style="font-size:40px;margin-bottom:8px">${myWh.logo||'🏭'}</div>
+            <div style="display:flex;justify-content:center;margin-bottom:8px">${myWh.logo ? `<span style="font-size:40px">${myWh.logo}</span>` : getSvgIcon('warehouses', 40)}</div>
             <div style="font-size:16px;font-weight:700;color:var(--text-primary)">${myWh.name}</div>
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${myWh.businessName}</div>
             <div style="display:flex;justify-content:center;gap:20px">
@@ -261,18 +265,18 @@ export function renderDashboard() {
         <div class="chart-card col-5">
           <div class="chart-card-header">
             <div>
-              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Smart Restock</div>
-              <div class="chart-card-subtitle">AI-prioritized inventory needs</div>
+              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Restock Recommender</div>
+              <div class="chart-card-subtitle">Priority inventory reorder requirements</div>
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
             ${restockSuggestions.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text-muted)">Stock levels optimal</div>' :
               restockSuggestions.map(s => `
-                <div style="background:rgba(99,102,241,0.05);padding:12px;border-radius:10px;border:1px solid rgba(99,102,241,0.1);display:flex;align-items:center;gap:12px">
+                <div style="background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;border:1px solid var(--border-default);display:flex;align-items:center;gap:12px">
                   <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0">${getSvgIcon('items', 18)}</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:700;color:var(--text-primary)">${s.name}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} sold recently · Priority: ${s.priority > 30 ? 'High 🔥' : 'Medium'}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} units sold · Priority: ${s.priority > 30 ? 'High' : 'Normal'}</div>
                   </div>
                   <div style="text-align:right">
                     <div style="font-size:14px;font-weight:800;color:${s.stock < 10 ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
@@ -288,25 +292,18 @@ export function renderDashboard() {
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Summary</div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Gross Revenue</div>
-              <div style="font-size:18px;font-weight:800;color:var(--accent-emerald)">${formatCurrency(totalRevenue).split('.')[0]}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;height:calc(100% - 48px);align-content:center">
+            <div style="padding:18px 12px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:12px;text-align:center;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Gross Revenue</div>
+              <div style="font-size:20px;font-weight:800;color:var(--accent-emerald)">${formatCurrency(totalRevenue).split('.')[0]}</div>
             </div>
-            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Total Tax</div>
-              <div style="font-size:18px;font-weight:800;color:var(--accent-amber)">${formatCurrency(totalTax).split('.')[0]}</div>
+            <div style="padding:18px 12px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:12px;text-align:center;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Total Tax</div>
+              <div style="font-size:20px;font-weight:800;color:var(--accent-amber)">${formatCurrency(totalTax).split('.')[0]}</div>
             </div>
-            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Net Earnings</div>
-              <div style="font-size:18px;font-weight:800;color:var(--text-brand)">${formatCurrency(totalRevenue-totalTax).split('.')[0]}</div>
-            </div>
-          </div>
-          <div style="margin-top:15px;padding:15px;background:linear-gradient(90deg, rgba(99,102,241,0.1), transparent);border-radius:12px;display:flex;align-items:center;gap:12px">
-            <div style="display:flex;align-items:center;color:var(--accent-emerald)">${getSvgIcon('analytics', 24)}</div>
-            <div>
-              <div style="font-size:13px;font-weight:700">Projected Growth</div>
-              <div style="font-size:11px;color:var(--text-muted)">Expected +12% increase based on current month volume</div>
+            <div style="padding:18px 12px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:12px;text-align:center;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Net Earnings</div>
+              <div style="font-size:20px;font-weight:800;color:var(--text-brand)">${formatCurrency(totalRevenue-totalTax).split('.')[0]}</div>
             </div>
           </div>
         </div>
@@ -323,11 +320,15 @@ export function renderDashboard() {
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
             ${['admin','manager','staff','employee'].map(r=>{
               const count = users.filter(u=>u.role===r).length;
-              const icons={admin:'🔵',manager:'🟢',staff:'🟡',employee:'⚫'};
-              return `<div style="text-align:center;padding:10px;background:var(--bg-input);border-radius:8px">
-                <div style="font-size:16px;margin-bottom:4px">${icons[r]}</div>
-                <div style="font-size:18px;font-weight:800;color:var(--text-primary)">${count}</div>
-                <div style="font-size:10px;color:var(--text-muted);text-transform:capitalize">${r}</div>
+              const badges={
+                admin: `<span class="badge role-admin" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Admin</span>`,
+                manager: `<span class="badge role-manager" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Manager</span>`,
+                staff: `<span class="badge role-staff" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Staff</span>`,
+                employee: `<span class="badge role-employee" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Employee</span>`
+              };
+              return `<div style="text-align:center;padding:10px 4px;background:var(--bg-input);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+                <div style="font-size:18px;font-weight:800;color:var(--text-primary);line-height:1">${count}</div>
+                ${badges[r]}
               </div>`;
             }).join('')}
           </div>

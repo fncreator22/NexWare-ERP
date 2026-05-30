@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, getAllUsers, getBills, getPlanWarehouseLimit, getSubscription, addNotification, getItems, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wh_currentView = 'grid';
@@ -29,20 +29,19 @@ function refreshShell() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">🏭 Warehouse Management</h1>
+          <h1 class="page-title">Warehouse Management</h1>
           <p class="page-subtitle">Centralized control for all warehouse locations · <span style="color:var(--text-brand);font-weight:600">${planLabel}</span></p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" id="view-toggle">☰ Table</button>
+          <button class="btn btn-secondary btn-sm" id="view-toggle" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('tables', 14)} Table View</button>
           <button class="btn btn-primary" id="create-wh-btn" ${atLimit ? 'disabled title="Warehouse limit reached for your plan"' : ''}>
-            + New Warehouse ${atLimit ? '🔒' : ''}
+            + New Warehouse ${atLimit ? '(Limit Reached)' : ''}
           </button>
         </div>
       </div>
-
       ${atLimit ? `
       <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
-        <span style="font-size:20px">⚠️</span>
+        <span style="color:var(--accent-amber);display:flex;align-items:center">${getSvgIcon('warning', 20)}</span>
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--text-primary)">Warehouse Limit Reached</div>
           <div style="font-size:12px;color:var(--text-muted)">Your <strong>Starter plan</strong> allows only 1 warehouse. <a href="#/subscription" style="color:var(--text-brand)">Upgrade to Enterprise</a> for unlimited warehouses.</div>
@@ -52,27 +51,27 @@ function refreshShell() {
       <!-- Summary Stat Cards -->
       <div class="stat-grid">
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
+          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);color:var(--text-brand);display:flex;align-items:center;justify-content:center">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value" id="wh-count">${whs.length}</div>
           <div class="stat-card-label">Total Warehouses</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">✅</div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);color:var(--accent-emerald);display:flex;align-items:center;justify-content:center">${getSvgIcon('check', 20)}</div>
           <div class="stat-card-value">${whs.filter(w=>w.status==='active').length}</div>
           <div class="stat-card-label">Active</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">👥</div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15);color:var(--text-primary);display:flex;align-items:center;justify-content:center">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${allUsers.length}</div>
           <div class="stat-card-label">Total Staff</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">💰</div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);color:var(--accent-amber);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
           <div class="stat-card-value">${formatCurrency(whs.reduce((s,w)=>s+(w.revenue||0),0))}</div>
           <div class="stat-card-label">Combined Revenue</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15)">📊</div>
+          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15);color:var(--text-primary);display:flex;align-items:center;justify-content:center">${getSvgIcon('analytics', 20)}</div>
           <div class="stat-card-value">${limit < 0 ? '∞' : limit}</div>
           <div class="stat-card-label">Plan Limit</div>
         </div>
@@ -81,7 +80,7 @@ function refreshShell() {
       <!-- Search + Filter -->
       <div class="table-toolbar" style="margin-bottom:20px">
         <div class="table-search" style="max-width:400px;flex:none">
-          <span>🔍</span>
+          <span>${getSvgIcon('search', 14)}</span>
           <input type="text" id="wh-search" placeholder="Search warehouses..." />
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
@@ -117,7 +116,10 @@ function refreshShell() {
   document.getElementById('wh-status-filter')?.addEventListener('change', refreshList);
   document.getElementById('view-toggle')?.addEventListener('click', (e) => {
     wh_currentView = wh_currentView === 'grid' ? 'table' : 'grid';
-    e.target.textContent = wh_currentView === 'grid' ? '☰ Table' : '⊞ Grid';
+    const btn = e.currentTarget;
+    btn.innerHTML = wh_currentView === 'grid' 
+      ? `${getSvgIcon('tables', 14)} Table View` 
+      : `${getSvgIcon('dashboard', 14)} Grid View`;
     refreshList();
   });
 
@@ -144,7 +146,7 @@ function refreshList() {
 function renderWarehouseGrid(whs, allUsers) {
   if (whs.length === 0) return `
     <div class="card" style="text-align:center;padding:64px">
-      <div style="font-size:48px;margin-bottom:16px;opacity:0.4">🏭</div>
+      <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('warehouses', 48)}</div>
       <h3 style="color:var(--text-secondary);margin-bottom:8px">No warehouses found</h3>
       <p style="color:var(--text-muted);font-size:14px;margin-bottom:24px">Create your first warehouse to get started</p>
       <button class="btn btn-primary" onclick="document.getElementById('create-wh-btn').click()">+ Create Warehouse</button>
@@ -157,19 +159,23 @@ function renderWarehouseGrid(whs, allUsers) {
       return `
       <div class="warehouse-card animate-slideUp" data-wh-id="${wh.id}" style="cursor:pointer" title="Click to view warehouse dashboard">
         <div class="warehouse-card-top">
-          <div class="warehouse-avatar">${wh.logo || '🏭'}</div>
+          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0">${renderWarehouseLogo(wh.logo, 24)}</div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             <span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'} badge-dot"> ${wh.status}</span>
             <div style="display:flex;gap:4px">
-              <button class="action-btn edit" data-id="${wh.id}" title="Edit" onclick="event.stopPropagation()">✏️</button>
-              <button class="action-btn delete" data-id="${wh.id}" title="Delete" onclick="event.stopPropagation()">🗑️</button>
+              <button class="action-btn edit" data-id="${wh.id}" title="Edit" onclick="event.stopPropagation()">${getSvgIcon('edit', 14)}</button>
+              <button class="action-btn delete" data-id="${wh.id}" title="Delete" onclick="event.stopPropagation()">${getSvgIcon('trash', 14)}</button>
             </div>
           </div>
         </div>
         <div class="warehouse-name">${wh.name}</div>
         <div class="warehouse-biz">${wh.businessName}</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">📍 ${wh.address}</div>
-        <div style="font-size:12px;color:var(--text-muted)">📧 ${wh.email} · 📞 ${wh.contact}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;display:flex;align-items:center;gap:6px">${getSvgIcon('location', 12)} ${wh.address}</div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px">
+          <span style="display:inline-flex;align-items:center;gap:4px">${getSvgIcon('mail', 12)} ${wh.email}</span>
+          <span>·</span>
+          <span style="display:inline-flex;align-items:center;gap:4px">${getSvgIcon('phone', 12)} ${wh.contact}</span>
+        </div>
         <div class="warehouse-stats">
           <div><div class="warehouse-stat-val">${staff}</div><div class="warehouse-stat-lbl">Staff</div></div>
           <div><div class="warehouse-stat-val">${wh.items || 0}</div><div class="warehouse-stat-lbl">Items</div></div>
@@ -187,7 +193,7 @@ function renderWarehouseGrid(whs, allUsers) {
 function renderWarehouseTable(whs, allUsers) {
   if (whs.length === 0) return `
     <div class="card" style="text-align:center;padding:64px">
-      <div style="font-size:48px;margin-bottom:16px;opacity:0.4">🏭</div>
+      <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('warehouses', 48)}</div>
       <h3 style="color:var(--text-secondary);margin-bottom:8px">No warehouses found</h3>
       <p style="color:var(--text-muted);font-size:14px;margin-bottom:24px">Create your first warehouse to get started</p>
       <button class="btn btn-primary" onclick="document.getElementById('create-wh-btn').click()">+ Create Warehouse</button>
@@ -216,15 +222,15 @@ function renderWarehouseTable(whs, allUsers) {
               const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
               return `
                 <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
-                  <td data-label="Logo"><div style="font-size:24px">${wh.logo || '🏭'}</div></td>
+                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:6px;width:32px;height:32px;overflow:hidden">${renderWarehouseLogo(wh.logo, 20)}</div></td>
                   <td data-label="Name">
                     <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">📍 ${wh.address}</div>
+                    <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('location', 11)} ${wh.address}</div>
                   </td>
                   <td data-label="Business Name">${wh.businessName}</td>
                   <td data-label="Contact Info">
-                    <div style="font-size:12px">${wh.email}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">📞 ${wh.contact}</div>
+                    <div style="font-size:12px;display:inline-flex;align-items:center;gap:4px">${getSvgIcon('mail', 11)} ${wh.email}</div>
+                    <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px;margin-top:2px">${getSvgIcon('phone', 11)} ${wh.contact}</div>
                   </td>
                   <td data-label="Staff"><span class="badge badge-brand">${staff}</span></td>
                   <td data-label="Items"><span class="badge badge-info">${wh.items || 0}</span></td>
@@ -232,8 +238,8 @@ function renderWarehouseTable(whs, allUsers) {
                   <td data-label="Status"><span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'}">${wh.status}</span></td>
                   <td data-label="Actions" style="text-align:right" onclick="event.stopPropagation()">
                     <div style="display:inline-flex;gap:4px">
-                      <button class="action-btn edit" data-id="${wh.id}" title="Edit">✏️</button>
-                      <button class="action-btn delete" data-id="${wh.id}" title="Delete">🗑️</button>
+                      <button class="action-btn edit" data-id="${wh.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                      <button class="action-btn delete" data-id="${wh.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                     </div>
                   </td>
                 </tr>
@@ -292,6 +298,8 @@ function showWarehouseModal(wh) {
     }
   }
 
+  let selectedLogo = wh?.logo || 'icon:industrial';
+
   const body = `
     <form id="wh-modal-form">
       <div class="form-row">
@@ -328,10 +336,46 @@ function showWarehouseModal(wh) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Logo</label>
-          <select id="m-wh-logo" class="form-control">
-            ${['🏭','🏗️','🏢','⚙️','🚛','📦','🏢','🏬'].map(l=>`<option value="${l}" ${wh?.logo===l?'selected':''}>${l} ${l}</option>`).join('')}
-          </select>
+          <label class="form-label">Warehouse Logo / Branding Icon</label>
+          <div class="wh-branding-selector" style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px;">
+            <!-- Professional Icon Grid -->
+            <div class="wh-icon-grid" style="display:grid;grid-template-columns:repeat(5, 1fr);gap:8px;">
+              <div class="wh-icon-option ${wh?.logo === 'icon:industrial' || (!wh?.logo || (!wh.logo.startsWith('data:') && !['icon:distribution','icon:retail','icon:office','icon:tech'].includes(wh?.logo))) ? 'selected' : ''}" data-icon="icon:industrial" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Industrial">
+                ${renderWarehouseLogo('icon:industrial', 24)}
+                <span style="font-size:10px;margin-top:4px;">Industrial</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:distribution' ? 'selected' : ''}" data-icon="icon:distribution" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Distribution">
+                ${renderWarehouseLogo('icon:distribution', 24)}
+                <span style="font-size:10px;margin-top:4px;">Distribution</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:retail' ? 'selected' : ''}" data-icon="icon:retail" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Retail">
+                ${renderWarehouseLogo('icon:retail', 24)}
+                <span style="font-size:10px;margin-top:4px;">Retail</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:office' ? 'selected' : ''}" data-icon="icon:office" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Office Hub">
+                ${renderWarehouseLogo('icon:office', 24)}
+                <span style="font-size:10px;margin-top:4px;">Office Hub</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:tech' ? 'selected' : ''}" data-icon="icon:tech" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Tech Hub">
+                ${renderWarehouseLogo('icon:tech', 24)}
+                <span style="font-size:10px;margin-top:4px;">Tech Hub</span>
+              </div>
+            </div>
+            
+            <!-- Custom Logo Uploader -->
+            <div class="wh-logo-uploader" style="display:flex;align-items:center;gap:12px;padding:12px;border:1px dashed var(--border-default);border-radius:var(--radius-md);background:var(--bg-card);">
+              <div class="wh-logo-preview" id="m-wh-logo-preview" style="width:48px;height:48px;border-radius:var(--radius-sm);border:1px solid var(--border-default);background:var(--bg-elevated);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                ${renderWarehouseLogo(selectedLogo, 32)}
+              </div>
+              <div style="flex-grow:1;">
+                <div style="font-size:var(--text-sm);font-weight:500;color:var(--text-primary);">Custom Brand Logo</div>
+                <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:6px;">Upload image (Max 2MB, png/jpg/svg)</div>
+                <button type="button" class="btn btn-secondary btn-sm" id="wh-logo-upload-btn">Choose File</button>
+                <input type="file" id="wh-logo-file-input" accept="image/*" style="display:none;" />
+                <button type="button" class="btn btn-ghost btn-sm" id="wh-logo-remove-btn" style="color:var(--accent-red);padding:0 8px;margin-left:8px;${selectedLogo.startsWith('data:') ? 'display:inline-block;' : 'display:none;'}">Reset</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="form-row">
@@ -362,10 +406,65 @@ function showWarehouseModal(wh) {
 
   const footer = `
     <button class="btn btn-secondary" id="m-cancel">Cancel</button>
-    <button class="btn btn-primary" id="m-save">${isEdit ? '✓ Update' : '+ Create'} Warehouse</button>
+    <button class="btn btn-primary" id="m-save">${isEdit ? 'Update' : 'Create'} Warehouse</button>
   `;
 
-  const modal = createModal({ title: isEdit ? '✏️ Edit Warehouse' : '🏭 New Warehouse', body, footer });
+  const modal = createModal({ title: isEdit ? 'Edit Warehouse' : 'New Warehouse', body, footer });
+
+  // Attach branding grid events
+  const iconOptions = modal.el.querySelectorAll('.wh-icon-option');
+  const previewEl = modal.el.querySelector('#m-wh-logo-preview');
+  const fileInput = modal.el.querySelector('#wh-logo-file-input');
+  const uploadBtn = modal.el.querySelector('#wh-logo-upload-btn');
+  const removeBtn = modal.el.querySelector('#wh-logo-remove-btn');
+
+  iconOptions.forEach(opt => {
+    opt.addEventListener('click', () => {
+      iconOptions.forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      selectedLogo = opt.dataset.icon;
+      if (previewEl) {
+        previewEl.innerHTML = renderWarehouseLogo(selectedLogo, 32);
+      }
+      if (removeBtn) removeBtn.style.display = 'none';
+      if (fileInput) fileInput.value = '';
+    });
+  });
+
+  uploadBtn?.addEventListener('click', () => fileInput?.click());
+
+  fileInput?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('File too large', 'Image size must be less than 2MB', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target.result;
+      selectedLogo = base64;
+      iconOptions.forEach(o => o.classList.remove('selected'));
+      if (previewEl) {
+        previewEl.innerHTML = `<img src="${base64}" style="width:32px;height:32px;object-fit:contain;border-radius:6px;" />`;
+      }
+      if (removeBtn) removeBtn.style.display = 'inline-block';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  removeBtn?.addEventListener('click', () => {
+    selectedLogo = 'icon:industrial';
+    iconOptions.forEach(o => o.classList.remove('selected'));
+    modal.el.querySelector('.wh-icon-option[data-icon="icon:industrial"]')?.classList.add('selected');
+    if (previewEl) {
+      previewEl.innerHTML = renderWarehouseLogo(selectedLogo, 32);
+    }
+    if (removeBtn) removeBtn.style.display = 'none';
+    if (fileInput) fileInput.value = '';
+  });
 
   modal.el.querySelector('#m-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#m-save')?.addEventListener('click', () => {
@@ -392,7 +491,7 @@ function showWarehouseModal(wh) {
     const data = {
       name, businessName, address, contact, email,
       taxPreference: document.getElementById('m-wh-tax')?.value || 'standard',
-      logo: document.getElementById('m-wh-logo')?.value || '🏭',
+      logo: selectedLogo,
       currency: document.getElementById('m-wh-currency')?.value || '',
       ...(isEdit ? { status: document.getElementById('m-wh-status')?.value } : {})
     };
@@ -459,7 +558,7 @@ export function renderWarehouseDetail(whId) {
       <div class="page-header">
         <div class="page-header-left">
           <div style="display:flex;align-items:center;gap:14px">
-            <div style="font-size:44px;line-height:1">${wh.logo||'🏭'}</div>
+            <div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 36)}</div>
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
                 <h1 class="page-title" style="margin:0">${wh.name}</h1>
@@ -469,23 +568,29 @@ export function renderWarehouseDetail(whId) {
             </div>
           </div>
         </div>
-        <div class="page-header-actions">
+        <div class="page-header-actions" style="align-items:center">
+          ${wh.barcode ? `
+          <div style="display:flex;align-items:center;gap:8px;background:white;padding:4px 8px;border:1px solid var(--border-default);border-radius:6px;margin-right:12px;box-shadow:var(--shadow-sm)">
+            <img src="http://localhost:8000/api/v1/registry/barcode?code=${wh.barcode}" style="height:28px" />
+            <div style="font-family:var(--font-mono);font-size:9px;color:#1f2937;font-weight:700">${wh.barcode}</div>
+          </div>
+          ` : ''}
           ${isSA?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/warehouses'">← Warehouses</button>`:''}
-          ${isSA?`<button class="btn btn-secondary btn-sm" id="wd-edit-btn">✏️ Edit</button>`:''}
-          <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'">🧾 New Invoice</button>
+          ${isSA?`<button class="btn btn-secondary btn-sm" id="wd-edit-btn" style="display:inline-flex;align-items:center;gap:4px">${getSvgIcon('edit', 14)} Edit</button>`:''}
+          <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'">${getSvgIcon('plus', 14)} New Invoice</button>
         </div>
       </div>
 
       <div class="dashboard-grid">
         ${[
-          {icon:'💰',val:formatCurrency(revenue), label:'Revenue',       color:'var(--accent-emerald)',glow:'#10b981'},
-          {icon:'💵',val:formatCurrency(netRev),  label:'Net Revenue',   color:'var(--accent-cyan)',   glow:'#06b6d4'},
-          {icon:'🏛️',val:formatCurrency(tax),     label:'Tax Collected', color:'var(--accent-amber)',  glow:'#f59e0b'},
-          {icon:'🧾',val:bills.length,            label:'Invoices',      color:'var(--text-brand)',    glow:'#6366f1'},
-          {icon:'👥',val:staff.length,            label:'Team Members',  color:'var(--accent-violet)', glow:'#8b5cf6'},
-          {icon:'📦',val:totalStock.toLocaleString(),label:'Stock Units',color:'var(--text-primary)',  glow:'#64748b'},
-          {icon:'💎',val:formatCurrency(invValue),label:'Inv. Value',    color:'var(--accent-rose)',   glow:'#f43f5e'},
-          {icon:'⚠️',val:lowStock.length,         label:'Low Stock',     color:lowStock.length>0?'var(--accent-rose)':'var(--accent-emerald)',glow:'#f59e0b'},
+          {icon:getSvgIcon('revenue'),val:formatCurrency(revenue), label:'Revenue',       color:'var(--accent-emerald)',glow:'#10b981'},
+          {icon:getSvgIcon('revenue'),val:formatCurrency(netRev),  label:'Net Revenue',   color:'var(--accent-cyan)',   glow:'#06b6d4'},
+          {icon:getSvgIcon('settings'),val:formatCurrency(tax),     label:'Tax Collected', color:'var(--accent-amber)',  glow:'#f59e0b'},
+          {icon:getSvgIcon('billing'),val:bills.length,            label:'Invoices',      color:'var(--text-brand)',    glow:'#6366f1'},
+          {icon:getSvgIcon('workforce'),val:staff.length,            label:'Team Members',  color:'var(--accent-violet)', glow:'#8b5cf6'},
+          {icon:getSvgIcon('items'),val:totalStock.toLocaleString(),label:'Stock Units',color:'var(--text-primary)',  glow:'#64748b'},
+          {icon:getSvgIcon('palette'),val:formatCurrency(invValue),label:'Inv. Value',    color:'var(--accent-rose)',   glow:'#f43f5e'},
+          {icon:getSvgIcon('warning'),val:lowStock.length,         label:'Low Stock',     color:lowStock.length>0?'var(--accent-rose)':'var(--accent-emerald)',glow:'#f59e0b'},
         ].map(s=>`
           <div class="stat-card">
             <div class="stat-card-glow" style="background:${s.glow}"></div>
@@ -499,7 +604,7 @@ export function renderWarehouseDetail(whId) {
       <div class="dashboard-grid">
         <div class="card col-8">
           <div class="card-header">
-            <div class="card-title">📈 Revenue Trend (Last 6 Months)</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 16)} Revenue Trend (Last 6 Months)</div>
             <div style="font-size:12px;color:var(--text-muted)">Total: ${formatCurrency(revenue)}</div>
           </div>
           <div style="display:flex;align-items:flex-end;gap:6px;height:100px;padding:0 4px">
@@ -515,7 +620,7 @@ export function renderWarehouseDetail(whId) {
           </div>
         </div>
         <div class="card col-4">
-          <div class="card-header"><div class="card-title">💰 Billing Summary</div></div>
+          <div class="card-header"><div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('revenue', 16)} Billing Summary</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${[
               {label:'Total Revenue',val:formatCurrency(revenue),color:'var(--accent-emerald)'},
@@ -539,7 +644,7 @@ export function renderWarehouseDetail(whId) {
       <div class="dashboard-grid">
         <div class="card col-6">
           <div class="card-header">
-            <div class="card-title">👥 Team (${staff.length})</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 16)} Team (${staff.length})</div>
             ${isAdmin?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
           </div>
           ${staff.length===0
@@ -567,7 +672,7 @@ export function renderWarehouseDetail(whId) {
 
         <div class="card col-6">
           <div class="card-header">
-            <div class="card-title">🧾 Recent Invoices</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 16)} Recent Invoices</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">+ New</button>
           </div>
           ${bills.length===0
@@ -589,7 +694,7 @@ export function renderWarehouseDetail(whId) {
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
           <div>
-            <div class="card-title">📦 Inventory (${items.length} items · ${totalStock.toLocaleString()} units)</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('items', 16)} Inventory (${items.length} items · ${totalStock.toLocaleString()} units)</div>
             <div class="card-subtitle">Inventory value: ${formatCurrency(invValue)}</div>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/items'" style="font-size:11px">Manage →</button>
@@ -639,7 +744,7 @@ export function renderWarehouseDetail(whId) {
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">🏢 Warehouse Information</div></div>
+        <div class="card-header"><div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 16)} Warehouse Information</div></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;font-size:13px">
           ${[
             {label:'Business Name',  val:wh.businessName},

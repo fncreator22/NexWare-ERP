@@ -400,3 +400,173 @@
   .ss-toolbar-right { width: 100%; justify-content: flex-end; }
   .ss-container { height: calc(100vh - 300px); }
 }
+
+/* =========================================================
+   EXCEL-STYLE PREMIUM LIGHT THEME (SCOPED)
+   ========================================================= */
+#spreadsheet-workspace {
+  --bg-card: #ffffff;
+  --bg-elevated: #f9fafb;
+  --border-subtle: #e5e7eb;
+  --border-default: #d1d5db;
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-muted: #6b7280;
+  --text-disabled: #9ca3af;
+  --glass-bg: rgba(0, 0, 0, 0.04);
+  background: #f3f4f6 !important;
+  color: #111827 !important;
+  padding: 16px;
+  border-radius: var(--radius-xl);
+}
+
+#spreadsheet-workspace .ss-toolbar {
+  background: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+#spreadsheet-workspace .ss-container {
+  background: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+#spreadsheet-workspace .ss-th {
+  background: #f9fafb !important;
+  border-right: 1px solid #e5e7eb !important;
+  border-bottom: 2px solid var(--header-color, #6366f1) !important;
+}
+
+#spreadsheet-workspace .ss-th-row-num {
+  background: #f3f4f6 !important;
+  border-right: 1px solid #d1d5db !important;
+}
+
+#spreadsheet-workspace .ss-th-inner {
+  color: #4b5563 !important;
+  font-weight: 700;
+}
+
+#spreadsheet-workspace .ss-col-name {
+  color: #111827 !important;
+}
+
+#spreadsheet-workspace .ss-td {
+  background: #ffffff !important;
+  border-right: 1px solid #e5e7eb !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  color: #111827 !important;
+}
+
+#spreadsheet-workspace .ss-td-row-num {
+  background: #f9fafb !important;
+  border-right: 1px solid #d1d5db !important;
+}
+
+#spreadsheet-workspace .ss-row-num {
+  color: #6b7280 !important;
+  font-weight: 600;
+}
+
+/* Hover effects */
+#spreadsheet-workspace .ss-row:hover .ss-td {
+  background: #f3f4f6 !important;
+}
+
+#spreadsheet-workspace .ss-row:hover .ss-td-row-num {
+  background: #e5e7eb !important;
+}
+
+#spreadsheet-workspace .ss-row-virtual .ss-td {
+  background: #ffffff !important;
+  opacity: 0.85;
+}
+
+#spreadsheet-workspace .ss-row-virtual:hover .ss-td {
+  background: #f9fafb !important;
+}
+
+#spreadsheet-workspace .ss-cell-virtual:hover .ss-cell-placeholder {
+  background: rgba(99, 102, 241, 0.05) !important;
+}
+
+/* Row states */
+#spreadsheet-workspace .ss-row-locked .ss-td {
+  background: #fffbeb !important; /* Premium light amber for conflict row locks */
+}
+
+/* Inputs and interactive elements */
+#spreadsheet-workspace .ss-input {
+  color: #111827 !important;
+}
+
+#spreadsheet-workspace .ss-input:focus {
+  background: #ffffff !important;
+  box-shadow: inset 0 0 0 2px var(--header-color, #6366f1) !important;
+  border-radius: 4px;
+}
+
+#spreadsheet-workspace .ss-select {
+  background-color: transparent !important;
+  color: #111827 !important;
+}
+
+/* FIX: White-on-white text select option rendering bug */
+#spreadsheet-workspace select.ss-select option {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+#spreadsheet-workspace .ss-checkbox input[type="checkbox"] {
+  accent-color: var(--header-color, #6366f1) !important;
+}
+
+/* Badges styling for light background contrast */
+#spreadsheet-workspace .badge-muted {
+  background: #f3f4f6 !important;
+  color: #4b5563 !important;
+  border: 1px solid #e5e7eb;
+}
+
+#spreadsheet-workspace .badge-info {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+
+#spreadsheet-workspace .badge-purple {
+  background: #f3e8ff !important;
+  color: #6b21a8 !important;
+}
+
+#spreadsheet-workspace .badge-success {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+}
+
+#spreadsheet-workspace .badge-warning {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+/* Status Bar */
+#spreadsheet-workspace .ss-status-bar {
+  background: #f9fafb !important;
+  border-top: 1px solid #e5e7eb !important;
+  color: #4b5563 !important;
+}
+
+/* Scrollbar overrides for light mode */
+#spreadsheet-workspace .ss-grid-wrap::-webkit-scrollbar-track {
+  background: #f3f4f6 !important;
+}
+
+#spreadsheet-workspace .ss-grid-wrap::-webkit-scrollbar-thumb {
+  background: #d1d5db !important;
+  border-radius: 4px !important;
+}
+
+#spreadsheet-workspace .ss-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af !important;
+}
+

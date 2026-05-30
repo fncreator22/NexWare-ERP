@@ -1,9 +1,9 @@
 /**
  * Command Palette Component — Ctrl+K for pro navigation
  */
-import { getItems, getWarehouses, getCurrentUser, getBills, getStockHealth } from '../modules/store.js';
+import { getItems, getWarehouses, getCurrentUser, getBills, getStockHealth, getStore, getAllUsers } from '../modules/store.js';
 import { navigate } from '../modules/router.js';
-import { formatCurrency, formatNumber } from '../modules/ui.js';
+import { formatCurrency, formatNumber, getSvgIcon, capitalize } from '../modules/ui.js';
 
 let paletteOpen = false;
 let query = '';
@@ -121,18 +121,18 @@ function updateResults() {
   const bills = getBills();
 
   const commands = [
-    { type: 'page', label: 'Go to Dashboard', path: '/dashboard', icon: '📊' },
-    { type: 'page', label: 'Manage Inventory', path: '/items', icon: '📦' },
-    { type: 'page', label: 'Billing & Invoices', path: '/billing', icon: '💰' },
-    { type: 'page', label: 'Analytics Reports', path: '/analytics', icon: '📈' },
-    { type: 'action', label: 'Create New Bill', action: 'billing', icon: '➕' },
-    { type: 'action', label: 'Add New Item', action: 'items', icon: '📦' },
+    { type: 'page', label: 'Go to Dashboard', path: '/dashboard', icon: getSvgIcon('dashboard', 16) },
+    { type: 'page', label: 'Manage Inventory', path: '/items', icon: getSvgIcon('items', 16) },
+    { type: 'page', label: 'Billing & Invoices', path: '/billing', icon: getSvgIcon('billing', 16) },
+    { type: 'page', label: 'Analytics Reports', path: '/analytics', icon: getSvgIcon('analytics', 16) },
+    { type: 'action', label: 'Create New Bill', action: 'billing', icon: getSvgIcon('plus', 16) },
+    { type: 'action', label: 'Add New Item', action: 'items', icon: getSvgIcon('plus', 16) },
   ];
 
   if (user.role === 'super_admin') {
-    commands.push({ type: 'page', label: 'Manage Warehouses', path: '/warehouses', icon: '🏭' });
-    commands.push({ type: 'page', label: 'User Management', path: '/workforce', icon: '👥' });
-    commands.push({ type: 'page', label: 'Audit Logs', path: '/audit', icon: '🔍' });
+    commands.push({ type: 'page', label: 'Manage Warehouses', path: '/warehouses', icon: getSvgIcon('warehouses', 16) });
+    commands.push({ type: 'page', label: 'User Management', path: '/workforce', icon: getSvgIcon('workforce', 16) });
+    commands.push({ type: 'page', label: 'Audit Logs', path: '/audit', icon: getSvgIcon('audit', 16) });
   }
 
   const matches = [];
@@ -141,9 +141,9 @@ function updateResults() {
   if (!query) {
     const totalRev = bills.reduce((sum, b) => sum + (b.total || 0), 0);
     const health = getStockHealth();
-    matches.push({ type: 'insight', label: 'Quick Insight: Revenue', sub: `Total across all warehouses: ${formatCurrency(totalRev)}`, icon: '💰' });
-    matches.push({ type: 'insight', label: 'Quick Insight: Inventory', sub: `Total items tracked: ${formatNumber(items.length)}`, icon: '📦' });
-    matches.push({ type: 'insight', label: 'Quick Insight: Stock Health', sub: `Current status: ${health}% healthy`, icon: '🛡️' });
+    matches.push({ type: 'insight', label: 'Quick Insight: Revenue', sub: `Total across all warehouses: ${formatCurrency(totalRev)}`, icon: getSvgIcon('revenue', 16) });
+    matches.push({ type: 'insight', label: 'Quick Insight: Inventory', sub: `Total items tracked: ${formatNumber(items.length)}`, icon: getSvgIcon('items', 16) });
+    matches.push({ type: 'insight', label: 'Quick Insight: Stock Health', sub: `Current status: ${health}% healthy`, icon: getSvgIcon('check', 16) });
     matches.push({ type: 'divider', label: 'Suggested Commands' });
   }
 
@@ -152,11 +152,11 @@ function updateResults() {
     if (c.label.toLowerCase().includes(query)) matches.push(c);
   });
 
-  // Filter items
+  // Filter items (Inventory)
   if (query.length > 1) {
     items.forEach(i => {
       if (i.name.toLowerCase().includes(query) || i.sku.toLowerCase().includes(query)) {
-        matches.push({ type: 'item', label: i.name, sub: `SKU: ${i.sku} · ${formatCurrency(i.price)}`, id: i.id, icon: '📦' });
+        matches.push({ type: 'item', label: i.name, sub: `SKU: ${i.sku} · ${formatCurrency(i.price)}`, id: i.id, icon: getSvgIcon('items', 16) });
       }
     });
   }
@@ -165,7 +165,58 @@ function updateResults() {
   if (user.role === 'super_admin' && query.length > 1) {
     whs.forEach(w => {
       if (w.name.toLowerCase().includes(query)) {
-        matches.push({ type: 'warehouse', label: w.name, sub: w.address, id: w.id, icon: '🏭' });
+        matches.push({ type: 'warehouse', label: w.name, sub: w.address, id: w.id, icon: getSvgIcon('warehouses', 16) });
+      }
+    });
+  }
+
+  // Filter workforce (User Management)
+  if (query.length > 1) {
+    const allUsers = getAllUsers();
+    allUsers.forEach(u => {
+      if (u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query)) {
+        matches.push({ type: 'workforce', label: u.name, sub: `${capitalize(u.role.replace('_', ' '))} · ${u.email}`, id: u.id, icon: getSvgIcon('workforce', 16) });
+      }
+    });
+  }
+
+  // Filter dynamic tables
+  if (query.length > 1) {
+    const tables = getStore().tables || [];
+    tables.forEach(t => {
+      const title = t.displayName || t.name;
+      if (title.toLowerCase().includes(query)) {
+        matches.push({ type: 'table', label: title, sub: `Custom Table · ${t.columns?.length || 0} columns`, id: t.id, icon: getSvgIcon('tables', 16) });
+      }
+    });
+  }
+
+  // Filter billing invoices
+  if (query.length > 1) {
+    bills.forEach(b => {
+      if (b.billNo.toLowerCase().includes(query) || b.customer.toLowerCase().includes(query)) {
+        matches.push({ type: 'billing', label: b.billNo, sub: `Invoice · ${b.customer} · ${formatCurrency(b.total)}`, id: b.id, icon: getSvgIcon('billing', 16) });
+      }
+    });
+  }
+
+  // Filter CRM Customers
+  if (query.length > 1) {
+    const uniqueCustomers = [];
+    const seenCusts = new Set();
+    bills.forEach(b => {
+      if (b.customer && !seenCusts.has(b.customer.toLowerCase())) {
+        seenCusts.add(b.customer.toLowerCase());
+        uniqueCustomers.push({
+          name: b.customer,
+          email: b.customerEmail || 'No email',
+          phone: b.customerPhone || 'No phone'
+        });
+      }
+    });
+    uniqueCustomers.forEach(cust => {
+      if (cust.name.toLowerCase().includes(query) || cust.email.toLowerCase().includes(query)) {
+        matches.push({ type: 'customer', label: cust.name, sub: `CRM Customer · ${cust.email} · ${cust.phone}`, id: cust.name, icon: getSvgIcon('customer', 16) });
       }
     });
   }
@@ -241,8 +292,15 @@ function executeCommand(cmd) {
     }
   } else if (cmd.type === 'item') {
     navigate('/items');
-    // We could potentially pass state to filter by this item
   } else if (cmd.type === 'warehouse') {
     navigate('/warehouses/' + cmd.id);
+  } else if (cmd.type === 'workforce') {
+    navigate('/workforce');
+  } else if (cmd.type === 'table') {
+    navigate('/tables');
+  } else if (cmd.type === 'billing') {
+    navigate('/billing');
+  } else if (cmd.type === 'customer') {
+    navigate('/customers');
   }
 }

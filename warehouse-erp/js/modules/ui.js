@@ -152,7 +152,7 @@ export function buildDataTable({ columns, data, onEdit, onDelete, onView, emptyM
   const tbody = el('tbody');
   if (!data || data.length === 0) {
     const emptyRow = el('tr');
-    const emptyTd = el('td', 'table-empty', `<div class="table-empty-icon">📭</div><div class="table-empty-title">${emptyMsg}</div>`, { colspan: columns.length + 1 });
+    const emptyTd = el('td', 'table-empty', `<div class="table-empty-icon">${getSvgIcon('info', 28)}</div><div class="table-empty-title">${emptyMsg}</div>`, { colspan: columns.length + 1 });
     emptyRow.appendChild(emptyTd);
     tbody.appendChild(emptyRow);
   } else {
@@ -165,9 +165,9 @@ export function buildDataTable({ columns, data, onEdit, onDelete, onView, emptyM
       });
       const tdActions = el('td', '', '', { 'data-label': 'Actions' });
       const actionsDiv = el('div', 'table-actions');
-      if (onView) { const btn = el('button', 'action-btn view', '👁️', { title: 'View' }); btn.onclick = () => onView(row); actionsDiv.appendChild(btn); }
-      if (onEdit) { const btn = el('button', 'action-btn edit', '✏️', { title: 'Edit' }); btn.onclick = () => onEdit(row); actionsDiv.appendChild(btn); }
-      if (onDelete) { const btn = el('button', 'action-btn delete', '🗑️', { title: 'Delete' }); btn.onclick = () => onDelete(row); actionsDiv.appendChild(btn); }
+      if (onView) { const btn = el('button', 'action-btn view', getSvgIcon('view', 14), { title: 'View' }); btn.onclick = () => onView(row); actionsDiv.appendChild(btn); }
+      if (onEdit) { const btn = el('button', 'action-btn edit', getSvgIcon('edit', 14), { title: 'Edit' }); btn.onclick = () => onEdit(row); actionsDiv.appendChild(btn); }
+      if (onDelete) { const btn = el('button', 'action-btn delete', getSvgIcon('trash', 14), { title: 'Delete' }); btn.onclick = () => onDelete(row); actionsDiv.appendChild(btn); }
       tdActions.appendChild(actionsDiv);
       tr.appendChild(tdActions);
       tbody.appendChild(tr);
@@ -436,6 +436,125 @@ export function getSvgIcon(name, size = 20) {
     lock:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
     info:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
     palette:    `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="8" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="8" r="1" fill="currentColor"/><circle cx="16" cy="14" r="1" fill="currentColor"/></svg>`,
+    view:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    save:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
+    export:     `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`,
+    database:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>`,
+    customer:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    location:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
+    mail:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+    phone:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
   };
   return icons[name] || `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
 }
+
+export function applyTheme(themeName) {
+  const root = document.documentElement;
+  if (themeName === 'classic') {
+    root.classList.add('theme-classic');
+  } else {
+    root.classList.remove('theme-classic');
+  }
+}
+
+export function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
+  if (avatar && (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://'))) {
+    return `<img src="${avatar}" style="${sizeStyle}" />`;
+  }
+  return avatar || '';
+}
+
+export function renderWarehouseLogo(logo, size = 24) {
+  if (logo && logo.startsWith('data:image/')) {
+    return `<img src="${logo}" style="width:${size}px;height:${size}px;object-fit:contain;border-radius:6px;display:inline-block;vertical-align:middle" />`;
+  }
+  
+  const s = size;
+  const icons = {
+    'icon:industrial': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
+    'icon:distribution': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+    'icon:retail': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+    'icon:office': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
+    'icon:tech': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
+  };
+  
+  if (logo && icons[logo]) return icons[logo];
+  if (logo && logo.startsWith('icon:')) {
+    const key = logo.toLowerCase();
+    if (icons[key]) return icons[key];
+  }
+  
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
+}
+
+// ---- INLINE BARCODE GENERATOR (Code128 subset B) ----
+// Generates a standalone SVG barcode — no HTTP, no external library, works in print.
+export function generateBarcodeSVG(text, opts = {}) {
+  const barW   = opts.barWidth  || 1.4;
+  const height = opts.height    || 38;
+  const quiet  = opts.quiet     || 8;
+  const color  = opts.color     || '#000';
+  const showLabel = opts.showLabel !== false;
+  const labelH = showLabel ? 11 : 0;
+
+  // Code128B patterns (space=32 to ~=126, plus start 104, checksum, stop 106)
+  const P = [
+    '11011001100','11001101100','11001100110','10010011000','10010001100',
+    '10001001100','10011001000','10011000100','10001100100','11001001000',
+    '11001000100','11000100100','10110011100','10011011100','10011001110',
+    '10111001100','10011101100','10011100110','11001110010','11001011100',
+    '11001001110','11011100100','11001110100','11101101110','11101001100',
+    '11100101100','11100100110','11101100100','11100110100','11100110010',
+    '11011011000','11011000110','11000110110','10100011000','10001011000',
+    '10001000110','10110001000','10001101000','10001100010','11010001000',
+    '11000101000','11000100010','10110111000','10110001110','10001101110',
+    '10111011000','10111000110','10001110110','11101110110','11010001110',
+    '11000101110','11011101000','11011100010','11011101110','11101011000',
+    '11101000110','11100010110','11101101000','11101100010','11100011010',
+    '11101111010','11001000010','11110001010','10100110000','10100001100',
+    '10010110000','10010000110','10000101100','10000100110','10110010000',
+    '10110000100','10011010000','10011000010','10000110100','10000110010',
+    '11000010010','11001010000','11110111010','11000010100','10001111010',
+    '10100111100','10010111100','10010011110','10111100100','10011110100',
+    '10011110010','11110100100','11110010100','11110010010','11011011110',
+    '11011110110','11110110110','10101111000','10100011110','10001011110',
+    '10111101000','10111100010','11110101000','11110100010','10111011110',
+    '10111101110','11101011110','11110101110','11010000100','11010010000',
+    '11010011100','1100011101011'
+  ];
+
+  const START_B = 104;
+  const STOP    = 106;
+
+  function encode(str) {
+    let cs = START_B;
+    const bars = [P[START_B]];
+    Array.from(str).forEach((ch, i) => {
+      const code = ch.charCodeAt(0) - 32;
+      if (code < 0 || code > 95) return;
+      cs += code * (i + 1);
+      bars.push(P[code]);
+    });
+    bars.push(P[cs % 103]);
+    bars.push(P[STOP]);
+    return bars.join('');
+  }
+
+  const pattern = encode(text);
+  const svgW = quiet * 2 + pattern.length * barW;
+  const svgH = height + labelH + 4;
+
+  let rects = '';
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === '1') {
+      rects += `<rect x="${(quiet + i * barW).toFixed(1)}" y="0" width="${barW}" height="${height}" fill="${color}"/>`;
+    }
+  }
+
+  const labelSVG = showLabel
+    ? `<text x="${(svgW / 2).toFixed(1)}" y="${height + labelH - 1}" text-anchor="middle" font-family="monospace" font-size="8.5" fill="${color}">${text}</text>`
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(svgW)}" height="${svgH}" viewBox="0 0 ${Math.ceil(svgW)} ${svgH}" role="img" aria-label="Barcode: ${text}">${rects}${labelSVG}</svg>`;
+}
+

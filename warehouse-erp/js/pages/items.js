@@ -1,9 +1,9 @@
 /**
  * Items / Inventory Management Page
  */
-import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig } from '../modules/store.js';
+import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig, syncWithBackend } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce, getSvgIcon } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let it_searchQ = '';
@@ -13,30 +13,27 @@ let it_page = 1;
 const it_PER_PAGE = 10;
 
 const CATEGORIES = ['Electronics','Furniture','Apparel','Food & Beverage','Tools','Medical','Automotive','Books','Sports','Other'];
-function getTaxCats() {
-  const cfg = getTaxConfig();
-  return [
-    { val: 'normal', label: `Normal (${cfg.normal}%)` },
-    { val: 'luxury', label: `Luxury (${cfg.luxury}%)` }
-  ];
-}
 
 export function renderItems() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const whs = getWarehouses();
   const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   renderShell('Inventory', 'Manage items, stock, and categories', `
     <div class="animate-slideUp">
-      <div class="it_page-header">
-        <div class="it_page-header-left">
-          <h1 class="it_page-title">📦 Inventory Management</h1>
-          <p class="it_page-subtitle">Track items, stock levels, and pricing</p>
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Inventory Management</h1>
+          <p class="page-subtitle">Track items, stock levels, and pricing</p>
         </div>
-        <div class="it_page-header-actions">
+        <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="import-csv-btn">📥 Import CSV</button>
+            <button class="btn btn-secondary btn-sm" id="import-csv-btn">Import CSV</button>
             <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
         </div>
@@ -48,7 +45,7 @@ export function renderItems() {
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
           <input type="text" id="item-search" placeholder="Search items..." />
         </div>
         <div class="table-filter">
@@ -85,6 +82,10 @@ export function renderItems() {
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
 
   window._showItemModal = (item) => showItemModal(item);
+  
+  // Realtime WebSocket auto-refresh for inventory
+  window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
+  window.addEventListener('wareops_ws_event', _handleInventoryWsEvent);
 }
 
 function renderItemStats() {
@@ -96,10 +97,10 @@ function renderItemStats() {
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">⚠️</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center;color:#6366f1">${getSvgIcon('items', 18)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;color:#10b981">${getSvgIcon('analytics', 18)}</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center;color:#06b6d4">${getSvgIcon('revenue', 18)}</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15);display:flex;align-items:center;justify-content:center;color:#f43f5e">${getSvgIcon('warning', 18)}</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
     </div>
   `;
 }
@@ -122,7 +123,7 @@ function renderItemsTable() {
   if (!container) return;
 
   if (items.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">📦</div><h3 style="color:var(--text-secondary)">No items found</h3></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="color:var(--text-muted);margin-bottom:16px">${getSvgIcon('items', 40)}</div><h3 style="color:var(--text-secondary)">No items found</h3></div>`;
     return;
   }
 
@@ -131,7 +132,7 @@ function renderItemsTable() {
       <table>
         <thead><tr>
           <th>Item</th><th>SKU</th><th>Category</th><th>Price</th>
-          <th>Stock</th><th>Tax</th><th>Warehouse</th>
+          <th>Stock</th><th>Warehouse</th>
           ${canEdit ? '<th>Actions</th>' : ''}
         </tr></thead>
         <tbody>
@@ -140,19 +141,18 @@ function renderItemsTable() {
             const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
             return `<tr>
               <td data-label="Item">
-                <div class="primary-cell">${item.name}</div>
+                <div class="primary-cell clickable-item-name" data-iid="${item.id}" style="cursor:pointer;color:var(--text-brand);text-decoration:underline;text-underline-offset:4px;" title="View Product Card">${item.name}</div>
                 <div class="sub-cell">Added ${formatDate(item.createdAt)}</div>
               </td>
               <td data-label="SKU"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">${item.sku||'—'}</span></td>
               <td data-label="Category"><span class="badge badge-brand">${item.category}</span></td>
               <td data-label="Price"><strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong></td>
               <td data-label="Stock"><span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span></td>
-              <td data-label="Tax"><span class="badge ${item.taxCategory==='luxury'?'badge-purple':'badge-info'}">${item.taxCategory==='luxury' ? getTaxConfig(item.warehouseId).luxury+'%' : getTaxConfig(item.warehouseId).normal+'%'}</span></td>
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">🗑️</button>
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
               </td>` : ''}
             </tr>`;
@@ -177,10 +177,25 @@ function renderItemsTable() {
     container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
-        if (ok) { deleteItem(btn.dataset.iid); showToast('Item deleted','','success'); renderItemStats(); renderItemsTable(); }
+        if (ok) {
+          const res = await deleteItem(btn.dataset.iid);
+          if (res && res.error) {
+            showToast('Delete failed', res.error, 'error');
+            return;
+          }
+          showToast('Item deleted','','success');
+          renderItemStats();
+          renderItemsTable();
+        }
       });
     });
   }
+  container.querySelectorAll('.clickable-item-name[data-iid]').forEach(el => {
+    el.addEventListener('click', () => {
+      const item = getItems().find(i => i.id === el.dataset.iid);
+      if (item) showItemCardModal(item);
+    });
+  });
   container.querySelectorAll('.it_page-btn[data-pg]').forEach(btn => { btn.addEventListener('click', () => { it_page=parseInt(btn.dataset.pg); renderItemsTable(); }); });
   container.querySelector('#ip-prev')?.addEventListener('click', () => { if(it_page>1){it_page--;renderItemsTable();} });
   container.querySelector('#ip-next')?.addEventListener('click', () => { if(it_page<it_pages){it_page++;renderItemsTable();} });
@@ -209,12 +224,6 @@ function showItemModal(item) {
             ${CATEGORIES.map(c=>`<option value="${c}" ${item?.category===c?'selected':''}>${c}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Tax Category</label>
-          <select id="m-i-tax" class="form-control">
-            ${getTaxCats().map(t=>`<option value="${t.val}" ${item?.taxCategory===t.val?'selected':''}>${t.label}</option>`).join('')}
-          </select>
-        </div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -239,26 +248,156 @@ function showItemModal(item) {
           ${whs.map(w=>`<option value="${w.id}" ${item?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
         </select>
       </div>
+      
+      <!-- Product Media Gallery -->
+      <div class="form-group" style="margin-top: 16px;">
+        <label class="form-label">Product Media Gallery</label>
+        <div class="item-media-gallery-container" style="border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 12px; background: var(--bg-card);">
+          <!-- Thumbnail Grid -->
+          <div class="item-media-grid" id="m-item-media-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-bottom: 12px;">
+            <!-- Rendered thumbnails will go here -->
+          </div>
+          
+          <!-- Dropzone/Upload Button -->
+          <div class="item-media-dropzone" style="border: 1.5px dashed var(--border-default); border-radius: var(--radius-sm); padding: 16px; text-align: center; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;" id="item-media-upload-trigger">
+            <span style="color: var(--brand-500); display: block; margin-bottom: 4px;">${getSvgIcon('upload', 20)}</span>
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Upload Product Images</span>
+            <span style="font-size: 10px; color: var(--text-secondary); display: block; margin-top: 2px;">PNG, JPG, WebP up to 2MB (multiple allowed)</span>
+            <input type="file" id="m-item-file-input" accept="image/*" multiple style="display:none;" />
+          </div>
+        </div>
+      </div>
     </form>
   `;
 
   const footer = `
     <button class="btn btn-secondary" id="m-i-cancel">Cancel</button>
-    <button class="btn btn-primary" id="m-i-save">${isEdit?'✓ Update':'+ Create'} Item</button>
+    <button class="btn btn-primary" id="m-i-save">${isEdit?'Update':'Create'} Item</button>
   `;
 
-  const modal = createModal({ title: isEdit ? '✏️ Edit Item' : '📦 Add New Item', body, footer });
+  let selectedImages = item?.images ? [...item.images] : [];
+
+  const modal = createModal({ title: isEdit ? 'Edit Item' : 'Add New Item', body, footer });
+
+  function renderThumbnails() {
+    const grid = modal.el.querySelector('#m-item-media-grid');
+    if (!grid) return;
+    if (selectedImages.length === 0) {
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 16px; color: var(--text-muted); font-size: 11px;">No product images uploaded yet</div>`;
+      return;
+    }
+    
+    grid.innerHTML = selectedImages.map((img, index) => {
+      return `
+        <div class="item-media-thumb" style="position: relative; width: 80px; height: 80px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); overflow: hidden; background: var(--bg-elevated); display: flex; align-items: center; justify-content: center;" data-index="${index}">
+          <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" />
+          
+          <div class="item-media-overlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; gap: 4px; opacity: 0; transition: opacity 0.15s; z-index: 2;">
+            <button type="button" class="action-btn-sm move-left-btn" style="background: rgba(255,255,255,0.2); border: none; border-radius: 4px; color: white; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;" title="Move Left" ${index === 0 ? 'disabled style="opacity:0.3;pointer-events:none;"' : ''}>←</button>
+            <button type="button" class="action-btn-sm delete-thumb-btn" style="background: rgba(239,68,68,0.8); border: none; border-radius: 4px; color: white; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;" title="Remove">×</button>
+            <button type="button" class="action-btn-sm move-right-btn" style="background: rgba(255,255,255,0.2); border: none; border-radius: 4px; color: white; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;" title="Move Right" ${index === selectedImages.length - 1 ? 'disabled style="opacity:0.3;pointer-events:none;"' : ''}>→</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const thumbs = grid.querySelectorAll('.item-media-thumb');
+    thumbs.forEach(thumb => {
+      thumb.addEventListener('mouseenter', () => {
+        const overlay = thumb.querySelector('.item-media-overlay');
+        if (overlay) overlay.style.opacity = '1';
+      });
+      thumb.addEventListener('mouseleave', () => {
+        const overlay = thumb.querySelector('.item-media-overlay');
+        if (overlay) overlay.style.opacity = '0';
+      });
+
+      const index = parseInt(thumb.dataset.index);
+      thumb.querySelector('.delete-thumb-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedImages.splice(index, 1);
+        renderThumbnails();
+      });
+      thumb.querySelector('.move-left-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (index > 0) {
+          const temp = selectedImages[index];
+          selectedImages[index] = selectedImages[index - 1];
+          selectedImages[index - 1] = temp;
+          renderThumbnails();
+        }
+      });
+      thumb.querySelector('.move-right-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (index < selectedImages.length - 1) {
+          const temp = selectedImages[index];
+          selectedImages[index] = selectedImages[index + 1];
+          selectedImages[index + 1] = temp;
+          renderThumbnails();
+        }
+      });
+    });
+  }
+
+  // Initial render
+  renderThumbnails();
+
+  const trigger = modal.el.querySelector('#item-media-upload-trigger');
+  const fileInput = modal.el.querySelector('#m-item-file-input');
+  
+  trigger?.addEventListener('click', () => fileInput?.click());
+  
+  fileInput?.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    let processedCount = 0;
+    if (files.length === 0) return;
+
+    files.forEach(file => {
+      if (file.size > 2 * 1024 * 1024) {
+        showToast('File too large', `Image "${file.name}" exceeds 2MB limit`, 'warning');
+        processedCount++;
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        selectedImages.push(event.target.result);
+        processedCount++;
+        if (processedCount === files.length) {
+          renderThumbnails();
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-i-name').value.trim();
     const category = document.getElementById('m-i-cat').value;
     const price = parseFloat(document.getElementById('m-i-price').value);
     const stock = parseInt(document.getElementById('m-i-stock').value);
     const warehouseId = document.getElementById('m-i-wh').value;
     if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
-    const data = { name, category, price, stock, warehouseId, sku: document.getElementById('m-i-sku').value||`SKU-${Date.now()}`, unit: document.getElementById('m-i-unit').value, taxCategory: document.getElementById('m-i-tax').value };
-    if (isEdit) { updateItem(item.id, data); showToast('Item updated',`${name} updated`,'success'); }
-    else { createItem(data); showToast('Item added',`${name} added to inventory`,'success'); }
+    
+    const data = {
+      name, category, price, stock, warehouseId,
+      sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
+      unit: document.getElementById('m-i-unit').value,
+      taxCategory: 'normal',
+      images: selectedImages
+    };
+    
+    let res;
+    if (isEdit) {
+      res = await updateItem(item.id, data);
+      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+      showToast('Item updated',`${name} updated`,'success');
+    } else {
+      res = await createItem(data);
+      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+      showToast('Item added',`${name} added to inventory`,'success');
+    }
     modal.close();
     renderItemStats();
     renderItemsTable();
@@ -268,8 +407,8 @@ function showItemModal(item) {
 function showImportModal() {
   const body = `
     <div style="padding:16px">
-      <div id="drag-drop-zone" style="border:2px dashed var(--border-default);border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:rgba(99,102,241,0.02);transition:all 0.2s">
-        <div style="font-size:36px;margin-bottom:12px">📥</div>
+      <div id="drag-drop-zone" style="border:2px dashed var(--border-default);border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:rgba(99,102,241,0.02);transition:all 0.2s;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="color:var(--brand-500);margin-bottom:12px">${getSvgIcon('upload', 36)}</div>
         <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:4px">Drag & Drop CSV File here</div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">or click to browse from your computer</div>
         <input type="file" id="csv-file-input" accept=".csv" style="display:none" />
@@ -285,21 +424,22 @@ function showImportModal() {
         </div>
       </div>
       <div id="import-errors-container" style="margin-top:20px;display:none;background:rgba(244,63,94,0.06);border:1px solid rgba(244,63,94,0.15);border-radius:10px;padding:12px;max-height:160px;overflow-y:auto">
-        <div style="font-size:12px;font-weight:700;color:var(--accent-rose);margin-bottom:8px">⚠️ Import Warnings/Errors:</div>
+        <div style="font-size:12px;font-weight:700;color:var(--accent-rose);margin-bottom:8px;display:flex;align-items:center;gap:6px">${getSvgIcon('warning', 14)} Import Warnings/Errors:</div>
         <ul id="import-errors-list" style="font-size:11px;color:var(--text-muted);margin:0;padding-left:16px;line-height:1.6"></ul>
       </div>
-      <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:11px;color:var(--text-muted)">
-        ℹ️ <strong>Expected columns:</strong> <code>name</code>, <code>sku</code>, <code>category</code>, <code>price</code>, <code>stock</code> (and optional <code>warehouseId</code>).
+      <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:11px;color:var(--text-muted);display:flex;align-items:flex-start;gap:6px">
+        <span style="color:var(--brand-500);flex-shrink:0;margin-top:1px">${getSvgIcon('info', 14)}</span>
+        <span><strong>Expected columns:</strong> <code>name</code>, <code>sku</code>, <code>category</code>, <code>price</code>, <code>stock</code> (and optional <code>warehouseId</code>).</span>
       </div>
     </div>
   `;
 
   const footer = `
     <button class="btn btn-secondary" id="import-cancel">Cancel</button>
-    <button class="btn btn-primary" id="import-start-btn" disabled>✓ Upload & Import</button>
+    <button class="btn btn-primary" id="import-start-btn" disabled style="display:flex;align-items:center;gap:6px">${getSvgIcon('check', 14)} Upload & Import</button>
   `;
 
-  const modal = createModal({ title: '📥 Bulk Import Inventory', body, footer });
+  const modal = createModal({ title: 'Bulk Import Inventory', body, footer });
   const fileInput = modal.el.querySelector('#csv-file-input');
   const zone = modal.el.querySelector('#drag-drop-zone');
   const startBtn = modal.el.querySelector('#import-start-btn');
@@ -341,7 +481,7 @@ function showImportModal() {
       return;
     }
     selectedFile = file;
-    zone.querySelector('div:nth-child(2)').textContent = `📄 Selected: ${file.name}`;
+    zone.querySelector('div:nth-child(2)').textContent = `Selected: ${file.name}`;
     zone.querySelector('div:nth-child(3)').textContent = `Size: ${(file.size/1024).toFixed(1)} KB`;
     startBtn.removeAttribute('disabled');
   }
@@ -413,7 +553,7 @@ function showImportModal() {
           cancelBtn.addEventListener('click', () => {
             modal.close();
             // trigger parallel frontend sync
-            import('../modules/store.js').then(m => m.syncWithBackend()).then(() => {
+            syncWithBackend().then(() => {
               renderItemStats();
               renderItemsTable();
             });
@@ -421,7 +561,7 @@ function showImportModal() {
         } else {
           modal.close();
           // trigger parallel frontend sync
-          import('../modules/store.js').then(m => m.syncWithBackend()).then(() => {
+          syncWithBackend().then(() => {
             renderItemStats();
             renderItemsTable();
           });
@@ -440,3 +580,172 @@ function showImportModal() {
     }
   });
 }
+
+function _handleInventoryWsEvent(e) {
+  const user = getCurrentUser();
+  if (!user) {
+    window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
+    return;
+  }
+  const payload = e.detail;
+  const evType = payload?.type || payload?.event_type;
+  if (evType === 'inventory_change') {
+    renderItemStats();
+    renderItemsTable();
+  }
+}
+
+function showItemCardModal(item) {
+  const whs = getWarehouses();
+  const wh = whs.find(w => w.id === item.warehouseId);
+  const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+  const statusLabel = (item.stock||0) === 0 ? 'Out of Stock' : (item.stock||0) < 20 ? 'Low Stock' : 'In Stock';
+  
+  const images = item.images && item.images.length > 0 ? item.images : [];
+  
+  // Custom Sliding Carousel HTML
+  let carouselHTML = '';
+  if (images.length === 0) {
+    carouselHTML = `
+      <div style="width:100%;height:220px;border-radius:var(--radius-lg);background:var(--bg-elevated);border:1px solid var(--border-default);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-muted);">
+        ${getSvgIcon('items', 48)}
+        <span style="font-size:12px;margin-top:8px;">No product media available</span>
+      </div>
+    `;
+  } else {
+    carouselHTML = `
+      <div class="item-carousel" style="position:relative;width:100%;height:220px;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border-default);background:black;">
+        <!-- Slides -->
+        <div class="carousel-slides" style="display:flex;width:100%;height:100%;transition:transform 0.3s ease-in-out;">
+          ${images.map((img, i) => `
+            <div class="carousel-slide" style="min-width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+              <img src="${img}" style="width:100%;height:100%;object-fit:contain;" />
+            </div>
+          `).join('')}
+        </div>
+        
+        <!-- Chevron Controls (if >1 image) -->
+        ${images.length > 1 ? `
+          <button type="button" class="carousel-prev" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);border:none;border-radius:50%;color:white;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:bold;z-index:3;">‹</button>
+          <button type="button" class="carousel-next" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);border:none;border-radius:50%;color:white;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:bold;z-index:3;">›</button>
+          
+          <!-- Indicator Dots -->
+          <div class="carousel-dots" style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:3;">
+            ${images.map((_, i) => `
+              <div class="carousel-dot ${i===0?'active':''}" data-slide="${i}" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.4);cursor:pointer;transition:all 0.2s;"></div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  const barcodeStr = item.barcode || item.sku || `ITEM-${item.id.slice(-6)}`;
+
+  const body = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:8px;" class="item-card-grid">
+      <!-- Media/Gallery Slide Column -->
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        ${carouselHTML}
+        <!-- Specs Highlights -->
+        <div style="padding:12px;background:var(--bg-input);border-radius:var(--radius-md);border:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <span style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;font-weight:700;">Status</span>
+            <span class="badge ${stockClass}" style="display:block;margin-top:4px;">${statusLabel}</span>
+          </div>
+          <div style="text-align:right;">
+            <span style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;font-weight:700;">Stock Valuation</span>
+            <strong style="display:block;font-size:14px;color:var(--text-primary);margin-top:4px;">${formatCurrency((item.price||0)*(item.stock||0))}</strong>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Specifications & Details Column -->
+      <div style="display:flex;flex-direction:column;gap:16px;justify-content:space-between;">
+        <div>
+          <h2 style="font-size:20px;font-weight:800;color:var(--text-primary);margin:0 0 4px 0;">${item.name}</h2>
+          <span style="font-size:12px;color:var(--text-brand);font-weight:600;display:inline-block;margin-bottom:12px;">Category: ${item.category}</span>
+          
+          <div style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--border-default);padding-top:12px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">SKU Code</span>
+              <strong style="color:var(--text-primary);font-family:var(--font-mono);">${item.sku || '—'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Unit Value</span>
+              <strong style="color:var(--text-primary);">${formatCurrency(item.price||0)} / ${item.unit||'pcs'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Total Qty</span>
+              <strong style="color:var(--text-primary);">${item.stock||0} ${item.unit||'pcs'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Assigned Hub</span>
+              <strong style="color:var(--text-primary);">${wh?.name || '—'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Created Date</span>
+              <strong style="color:var(--text-primary);">${formatDate(item.createdAt)}</strong>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Live Scannable Barcode SVG Block -->
+        <div style="padding:12px;background:white;border-radius:var(--radius-md);border:1px solid var(--border-default);display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:12px;">
+          <img src="http://localhost:8000/api/v1/registry/barcode?code=${barcodeStr}" style="height:45px;max-width:100%;mix-blend-mode:multiply;" title="Item Barcode" />
+          <span style="font-family:var(--font-mono);font-size:10px;color:#555;margin-top:4px;letter-spacing:1.5px;">${barcodeStr}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const footer = `<button class="btn btn-secondary" id="item-card-close" style="width:100%">Close Card</button>`;
+
+  const modal = createModal({ title: 'Inventory Item Card', body, footer, size: 'medium' });
+  modal.el.querySelector('#item-card-close')?.addEventListener('click', modal.close);
+
+  // Wire up sliding carousel events
+  if (images.length > 1) {
+    const slides = modal.el.querySelector('.carousel-slides');
+    const dots = modal.el.querySelectorAll('.carousel-dot');
+    let currentIdx = 0;
+
+    const updateCarousel = (idx) => {
+      currentIdx = idx;
+      slides.style.transform = `translateX(-${currentIdx * 100}%)`;
+      dots.forEach((dot, dIdx) => {
+        if (dIdx === currentIdx) {
+          dot.style.background = 'white';
+          dot.style.transform = 'scale(1.2)';
+        } else {
+          dot.style.background = 'rgba(255,255,255,0.4)';
+          dot.style.transform = 'scale(1)';
+        }
+      });
+    };
+
+    modal.el.querySelector('.carousel-prev')?.addEventListener('click', () => {
+      let idx = currentIdx - 1;
+      if (idx < 0) idx = images.length - 1;
+      updateCarousel(idx);
+    });
+
+    modal.el.querySelector('.carousel-next')?.addEventListener('click', () => {
+      let idx = currentIdx + 1;
+      if (idx >= images.length) idx = 0;
+      updateCarousel(idx);
+    });
+
+    dots.forEach((dot, idx) => {
+      dot.addEventListener('click', () => {
+        updateCarousel(idx);
+      });
+      // Initial style positioning
+      if (idx === 0) {
+        dot.style.background = 'white';
+        dot.style.transform = 'scale(1.2)';
+      }
+    });
+  }
+}
+

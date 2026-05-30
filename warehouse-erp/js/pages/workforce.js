@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getAllUsers, createUser, updateUser, deleteUser, getWarehouses } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce, getSvgIcon, renderAvatar } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wf_searchQ = '';
@@ -20,12 +20,12 @@ export function renderWorkforce() {
 
   renderShell('Workforce', 'Manage users, roles, and warehouse assignments', `
     <div class="animate-slideUp">
-      <div class="wf_page-header">
-        <div class="wf_page-header-left">
-          <h1 class="wf_page-title">👥 Workforce Management</h1>
-          <p class="wf_page-subtitle">Centralized user and role management across all warehouses</p>
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Workforce Management</h1>
+          <p class="page-subtitle">Centralized user and role management across all warehouses</p>
         </div>
-        <div class="wf_page-header-actions">
+        <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
@@ -37,7 +37,7 @@ export function renderWorkforce() {
       <!-- Table Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
           <input type="text" id="wf-search" placeholder="Search by name, email..." />
         </div>
         <div class="table-filter">
@@ -85,14 +85,19 @@ function renderWorkforceStats() {
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">👤</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">${getSvgIcon('user', 20)}</div>
         <div class="stat-card-value">${users.length}</div>
         <div class="stat-card-label">Total Users</div>
       </div>
       ${roles.map(r => {
         const count = users.filter(u=>u.role===r).length;
         const colors = {admin:'rgba(6,182,212,0.15)',manager:'rgba(16,185,129,0.15)',staff:'rgba(245,158,11,0.15)',employee:'rgba(100,116,139,0.15)'};
-        const icons = {admin:'🏭',manager:'👔',staff:'🧾',employee:'👨‍💼'};
+        const icons = {
+          admin: getSvgIcon('warehouses', 20),
+          manager: getSvgIcon('workforce', 20),
+          staff: getSvgIcon('billing', 20),
+          employee: getSvgIcon('user', 20)
+        };
         return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]}">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
       }).join('')}
     </div>
@@ -116,7 +121,7 @@ function renderWorkforceTable() {
   if (!container) return;
 
   if (users.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">👤</div><h3 style="color:var(--text-secondary)">No users found</h3></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('user', 40)}</div><h3 style="color:var(--text-secondary)">No users found</h3></div>`;
     document.getElementById('workforce-pagination').innerHTML = '';
     return;
   }
@@ -139,7 +144,7 @@ function renderWorkforceTable() {
             return `<tr>
               <td data-label="Name">
                 <div style="display:flex;align-items:center;gap:10px">
-                  <div style="width:32px;height:32px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0">${u.avatar}</div>
+                  <div style="width:32px;height:32px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0;overflow:hidden">${renderAvatar(u.avatar)}</div>
                   <div>
                     <div class="primary-cell">${u.name}</div>
                     <div class="sub-cell">ID: ${u.id.slice(0,8)}</div>
@@ -153,10 +158,10 @@ function renderWorkforceTable() {
               <td data-label="Assigned">${formatDate(u.assignedAt || u.createdAt)}</td>
               <td data-label="Actions">
                 ${['super_admin', 'admin'].includes(currentUser.role) ? `
-                <div class="table-actions">
-                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">🗑️</button>
-                </div>` : '—'}
+                 <div class="table-actions">
+                   <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                   <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                 </div>` : '—'}
               </td>
             </tr>`;
           }).join('')}
@@ -210,8 +215,30 @@ function showUserModal(u) {
     ? ['admin','manager','staff','employee']
     : ['manager','staff','employee'];
 
+  let m_avatar = u?.avatar || '';
+  const barcodeUrl = u?.barcode ? `http://localhost:8000/api/v1/registry/barcode?code=${u.barcode}` : '';
+
   const body = `
     <form id="user-modal-form">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border-subtle)">
+        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
+          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}
+        </div>
+        <div style="flex:1">
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary btn-xs" id="m-u-upload-photo-btn" type="button" style="padding:4px 8px;font-size:11px">Upload Photo</button>
+            <button class="btn btn-ghost btn-xs" id="m-u-remove-photo-btn" type="button" style="padding:4px 8px;font-size:11px;color:var(--text-danger)">Remove</button>
+          </div>
+          <input type="file" id="m-u-photo-input" accept="image/*" style="display:none" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Upload profile photo (max 2MB)</div>
+        </div>
+        ${u?.barcode ? `
+        <div style="text-align:right">
+          <img src="${barcodeUrl}" style="height:36px;background:white;padding:2px;border:1px solid var(--border-default);border-radius:4px;display:block" />
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);margin-top:2px;text-align:center">${u.barcode}</div>
+        </div>
+        ` : ''}
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Full Name <span class="req">*</span></label>
@@ -258,26 +285,66 @@ function showUserModal(u) {
 
   const footer = `
     <button class="btn btn-secondary" id="m-u-cancel">Cancel</button>
-    <button class="btn btn-primary" id="m-u-save">${isEdit ? '✓ Update' : '+ Add'} User</button>
+    <button class="btn btn-primary" id="m-u-save">${isEdit ? 'Update' : 'Add'} User</button>
   `;
 
-  const modal = createModal({ title: isEdit ? '✏️ Edit User' : '👤 Add New User', body, footer });
+  const modal = createModal({ title: isEdit ? 'Edit User' : 'Add New User', body, footer });
   modal.el.querySelector('#m-u-cancel')?.addEventListener('click', modal.close);
+
+  modal.el.querySelector('#m-u-upload-photo-btn')?.addEventListener('click', () => {
+    modal.el.querySelector('#m-u-photo-input')?.click();
+  });
+
+  modal.el.querySelector('#m-u-photo-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('File too large', 'Please upload an image smaller than 2MB', 'warning');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target.result;
+      m_avatar = base64;
+      const preview = modal.el.querySelector('#m-u-avatar-preview');
+      if (preview) {
+        preview.innerHTML = `<img src="${base64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`;
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  modal.el.querySelector('#m-u-remove-photo-btn')?.addEventListener('click', () => {
+    const name = document.getElementById('m-u-name').value.trim() || 'US';
+    const fallbackInitials = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+    m_avatar = fallbackInitials;
+    const preview = modal.el.querySelector('#m-u-avatar-preview');
+    if (preview) {
+      preview.innerHTML = fallbackInitials;
+    }
+  });
+
   modal.el.querySelector('#m-u-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-u-name').value.trim();
     const email = document.getElementById('m-u-email').value.trim();
     const role = document.getElementById('m-u-role').value;
     const warehouseId = document.getElementById('m-u-wh').value;
     if (!name || !email || !role || !warehouseId) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
+    
+    // Set avatar fallback if empty
+    if (!m_avatar) {
+      m_avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+    }
+
     if (isEdit) {
-      const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value };
+      const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value, avatar: m_avatar };
       const result = await updateUser(u.id, data);
       if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User updated', `${name}'s details updated`, 'success');
     } else {
       const password = document.getElementById('m-u-password').value;
       if (!password || password.length < 8) { showToast('Validation', 'Password must be at least 8 characters', 'warning'); return; }
-      const result = await createUser({ name, email, password, role, warehouseId });
+      const result = await createUser({ name, email, password, role, warehouseId, avatar: m_avatar });
       if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User created', `${name} added as ${role}`, 'success');
     }

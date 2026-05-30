@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, logout, getWarehouses, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, getSubscription, getStockHealth } from '../modules/store.js';
 import { navigate, getCurrentPath } from '../modules/router.js';
-import { capitalize, positionFixedElement, getSvgIcon, timeSince } from '../modules/ui.js';
+import { capitalize, positionFixedElement, getSvgIcon, timeSince, renderAvatar } from '../modules/ui.js';
 import { initPalette, togglePalette } from './palette.js';
 
 
@@ -16,6 +16,8 @@ const SUPER_ADMIN_NAV = [
     { path: '/workforce', icon: 'workforce', label: 'Workforce' },
     { path: '/items', icon: 'items', label: 'Inventory' },
     { path: '/tables', icon: 'tables', label: 'Tables' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
   { section: 'Finance', items: [
     { path: '/billing', icon: 'billing', label: 'Billing' },
@@ -36,6 +38,8 @@ const ADMIN_NAV = [
     { path: '/workforce', icon: 'workforce', label: 'User Management' },
     { path: '/items', icon: 'items', label: 'Item Management' },
     { path: '/tables', icon: 'tables', label: 'Tables' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
   { section: 'Finance', items: [
     { path: '/billing', icon: 'billing', label: 'Billing' },
@@ -54,6 +58,8 @@ const MANAGER_NAV = [
     { path: '/items', icon: 'items', label: 'Items' },
     { path: '/tables', icon: 'tables', label: 'Tables' },
     { path: '/billing', icon: 'billing', label: 'Billing' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
   { section: 'Reports', items: [
     { path: '/analytics', icon: 'analytics', label: 'Analytics' },
@@ -67,6 +73,8 @@ const STAFF_NAV = [
   { section: 'Work', items: [
     { path: '/tables', icon: 'tables', label: 'My Tables' },
     { path: '/billing', icon: 'billing', label: 'Billing' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
 ];
 
@@ -106,7 +114,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
     <div class="sidebar-section">
       <div class="sidebar-section-label">${section.section}</div>
       ${section.items.map(item => `
-        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" title="${item.label}">
+        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" data-tooltip="${item.label}">
           <span class="sidebar-item-icon">${getSvgIcon(item.icon)}</span>
           <span class="sidebar-item-label">${item.label}</span>
         </div>
@@ -136,19 +144,17 @@ export function renderShell(pageTitle, pageSubtitle, content) {
     <div class="app-shell ${isCollapsed ? 'collapsed' : ''}">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-logo" style="cursor:pointer" onclick="location.hash='#/dashboard'">
-          <div style="display:flex;align-items:center;gap:var(--space-3);flex:1">
-            <div class="sidebar-logo-icon">⚡</div>
-            <div class="sidebar-logo-text-wrapper">
-              <div class="sidebar-logo-name">WareOps</div>
-              <div class="sidebar-logo-tagline">Enterprise ERP</div>
-            </div>
+          <div class="sidebar-logo-icon" style="color:var(--brand-500);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="sidebar-logo-text-wrapper">
+            <div class="sidebar-logo-name">WareOps</div>
+            <div class="sidebar-logo-tagline">Enterprise ERP</div>
           </div>
         </div>
         <nav class="sidebar-nav" id="sidebar-nav">${navHTML}</nav>
         ${sidebarWidget}
         <div class="sidebar-footer">
-          <div class="sidebar-user" id="user-menu-btn" title="${user.name} (${capitalize(user.role)})">
-            <div class="sidebar-user-avatar">${user.avatar}</div>
+          <div class="sidebar-user" id="user-menu-btn" data-tooltip="${user.name} (${capitalize(user.role)})">
+            <div class="sidebar-user-avatar">${renderAvatar(user.avatar)}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
               <div class="sidebar-user-role" style="font-size:11px;color:var(--text-muted);font-weight:500;">${capitalize(user.role.replace('_', ' '))} · ${whAccessText}</div>
@@ -159,9 +165,9 @@ export function renderShell(pageTitle, pageSubtitle, content) {
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
       <main class="main-content">
         <header class="topbar">
-          <button class="topbar-menu-btn" id="topbar-menu-btn">☰</button>
-          <button class="topbar-collapse-btn" id="topbar-collapse-btn" title="Toggle Sidebar">
-            ${getSvgIcon('collapse', 20)}
+          <button class="topbar-menu-btn" id="topbar-menu-btn" style="display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+          <button class="topbar-collapse-btn" id="topbar-collapse-btn" data-tooltip="Toggle Sidebar">
+            ${getSvgIcon(isCollapsed ? 'chevron_right' : 'collapse', 20)}
           </button>
           <div class="topbar-breadcrumb">${breadcrumb}</div>
           <div class="topbar-actions">
@@ -173,7 +179,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
               ${getSvgIcon('bell', 18)}
               ${unreadCount > 0 ? `<span class="badge" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--accent-rose);border-radius:50%;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base)">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
             </div>
-            <div class="icon-btn" data-tooltip="Profile" id="profile-btn">${user.avatar}</div>
+            <div class="icon-btn" data-tooltip="Profile" id="profile-btn">${renderAvatar(user.avatar)}</div>
           </div>
         </header>
         <div class="page-content" id="page-content">
@@ -194,12 +200,14 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   });
 
   // Collapsible sidebar toggle
-  document.getElementById('topbar-collapse-btn')?.addEventListener('click', () => {
+  document.getElementById('topbar-collapse-btn')?.addEventListener('click', (e) => {
     const shell = document.querySelector('.app-shell');
     if (shell) {
       shell.classList.toggle('collapsed');
       const collapsed = shell.classList.contains('collapsed');
       localStorage.setItem('wareops_sidebar_collapsed', collapsed);
+      const btn = e.currentTarget;
+      btn.innerHTML = getSvgIcon(collapsed ? 'chevron_right' : 'collapse', 20);
     }
   });
 
@@ -260,11 +268,11 @@ function showNotificationDropdown(anchor) {
   
   positionFixedElement(anchor, dropdown, { offset: 8, preferredAlign: 'right' });
 
-  const typeIcons = { warehouse_create:'🏭', bill_create:'🧾', user_create:'👤', login:'🔐', settings_update:'⚙️', default:'🔔' };
+  const typeIconNames = { warehouse_create:'warehouses', bill_create:'billing', user_create:'user', login:'lock', settings_update:'settings', default:'bell' };
 
   dropdown.innerHTML = `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between">
-      <div style="font-weight:700;font-size:14px;color:var(--text-primary)">🔔 Notifications</div>
+      <div style="font-weight:700;font-size:14px;color:var(--text-primary);display:flex;align-items:center;gap:6px">${getSvgIcon('bell', 16)} Notifications</div>
       <div style="display:flex;gap:12px;align-items:center">
         ${unread.length > 0 ? `<button id="mark-all-read" style="font-size:12px;color:var(--text-brand);background:none;border:none;cursor:pointer;font-family:var(--font-sans)">Mark all read</button>` : '<span style="font-size:12px;color:var(--text-muted)">All caught up</span>'}
         ${notifications.length > 0 ? `<button id="clear-all-notif" style="font-size:12px;color:var(--accent-rose);background:none;border:none;cursor:pointer;font-family:var(--font-sans)">Clear all</button>` : ''}
@@ -274,7 +282,7 @@ function showNotificationDropdown(anchor) {
       ${notifications.length === 0 ? `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">No notifications yet</div>` :
         notifications.slice(0,10).map(n => `
           <div class="notif-item" data-nid="${n.id}" data-link="${n.link||'/dashboard'}" style="padding:12px 16px;border-bottom:1px solid var(--border-subtle);cursor:pointer;background:${n.read ? 'transparent' : 'rgba(99,102,241,0.06)'};transition:background 0.15s;display:flex;gap:12px;align-items:flex-start">
-            <div style="font-size:18px;flex-shrink:0;margin-top:2px">${typeIcons[n.type]||typeIcons.default}</div>
+            <div style="display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0;margin-top:2px">${getSvgIcon(typeIconNames[n.type]||typeIconNames.default, 16)}</div>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:${n.read?'500':'700'};color:var(--text-primary);margin-bottom:2px">${n.title}</div>
               <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n.message}</div>
@@ -320,7 +328,9 @@ function showProfileDropdown(anchor) {
   if (existing) { existing.remove(); return; }
   const user = getCurrentUser();
   const sub = getSubscription();
-  const planLabel = sub.plan === 'starter' ? '🟢 Starter' : '🟣 Enterprise';
+  const planBadge = sub.plan === 'starter' 
+    ? '<span class="badge badge-info" style="font-size:10px;padding:2px 6px">Starter</span>' 
+    : '<span class="badge badge-brand" style="font-size:10px;padding:2px 6px">Enterprise</span>';
 
   const dropdown = document.createElement('div');
   dropdown.id = 'profile-dropdown';
@@ -329,23 +339,46 @@ function showProfileDropdown(anchor) {
   
   const isSidebar = anchor.id === 'user-menu-btn';
   
-  // Use positionFixedElement to position the profile dropdown perfectly relative to anchor
-  positionFixedElement(anchor, dropdown, {
-    offset: 8,
-    preferredAlign: isSidebar ? 'left' : 'right',
-    preferredVertical: isSidebar ? 'top' : 'bottom'
-  });
+  if (isSidebar) {
+    // Append to body if not already there to measure
+    if (!dropdown.parentElement) document.body.appendChild(dropdown);
+    
+    const rect = anchor.getBoundingClientRect();
+    const elRect = dropdown.getBoundingClientRect();
+    const winH = window.innerHeight;
+    
+    // Position outside sidebar (to the right of the sidebar)
+    let left = rect.right + 8;
+    // Align upward (so the bottom of the dropdown aligns with the bottom of the anchor)
+    let top = rect.bottom - elRect.height;
+    
+    // Clamp inside viewport
+    if (top < 10) top = 10;
+    if (top + elRect.height > winH - 10) top = winH - elRect.height - 10;
+    
+    dropdown.style.position = 'fixed';
+    dropdown.style.left = left + 'px';
+    dropdown.style.top = top + 'px';
+    dropdown.style.right = 'auto';
+    dropdown.style.zIndex = '9999';
+  } else {
+    positionFixedElement(anchor, dropdown, {
+      offset: 8,
+      preferredAlign: 'right',
+      preferredVertical: 'bottom'
+    });
+  }
 
   dropdown.innerHTML = `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
       <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${user.name}</div>
       <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
-      <div style="font-size:11px;color:var(--text-brand);margin-top:4px;font-weight:600">${planLabel} Plan</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
     </div>
-    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">⚙️ Settings</div>
-    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">💳 Subscription</div>` : ''}
+    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
+    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
     <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
-    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">🚪 Sign Out</div>
+    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
   `;
 
   document.body.appendChild(dropdown);
@@ -383,6 +416,16 @@ function initGlobalTooltips() {
   document.addEventListener('mouseenter', (e) => {
     const trigger = e.target.closest?.('[data-tooltip]');
     if (!trigger) return;
+
+    // Avoid redundant or duplicate tooltips for sidebar elements when expanded
+    if (trigger.classList.contains('sidebar-item') || trigger.classList.contains('sidebar-user')) {
+      const isCollapsed = document.querySelector('.app-shell')?.classList.contains('collapsed');
+      if (!isCollapsed) return;
+    }
+
+    // Do not show tooltip if the dropdown is already active
+    if (trigger.id === 'notif-btn' && document.getElementById('notif-dropdown')) return;
+    if ((trigger.id === 'profile-btn' || trigger.id === 'user-menu-btn') && document.getElementById('profile-dropdown')) return;
 
     const text = trigger.getAttribute('data-tooltip');
     if (!text) return;

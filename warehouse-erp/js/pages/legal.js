@@ -12,7 +12,7 @@ export function renderPrivacy() {
       <div class="auth-bg-grid"></div>
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
-          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.href='landing.html'">
+          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
             <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>
@@ -60,7 +60,7 @@ export function renderTerms() {
       <div class="auth-bg-grid"></div>
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
-          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.href='landing.html'">
+          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
             <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>

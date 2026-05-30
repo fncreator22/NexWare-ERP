@@ -3,10 +3,10 @@
  * Airtable / Notion style inline-editable grid with realtime collaboration
  */
 import {
-  getCurrentUser, getWarehouses, apiFetch
+  getCurrentUser, getWarehouses, apiFetch, sendWebSocketMessage, addAuditLog
 } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, capitalize, debounce } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, capitalize, debounce, getSvgIcon } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -29,6 +29,10 @@ let _debounceSavers  = new Map();       // rowIndex → debounced save fn
 // ─── Entry point ──────────────────────────────────────────────────────────────
 export async function renderTables() {
   const user     = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const whs      = getWarehouses();
   const canManage = ['super_admin','admin'].includes(user.role);
 
@@ -45,13 +49,22 @@ export async function renderTables() {
 async function _renderTableList(user, whs, canManage) {
   // Fetch schemas from backend
   const res = await apiFetch('/dynamic-tables/');
-  const schemas = (res?.success && Array.isArray(res.data)) ? res.data : [];
+  let schemas = (res?.success && Array.isArray(res.data)) ? res.data : [];
+
+  // Role-based schema filtering: non-admins only see tables assigned to their role
+  if (!canManage) {
+    schemas = schemas.filter(t => {
+      if (!t.roles || t.roles.length === 0) return true; // no restriction = visible to all
+      return t.roles.includes(user.role);
+    });
+  }
+
 
   renderShell('Tables', 'Dynamic table builder and spreadsheet workspace', `
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">📋 Table Builder</h1>
+          <h1 class="page-title">Table Builder</h1>
           <p class="page-subtitle">Airtable-style inline spreadsheet workspaces</p>
         </div>
         <div class="page-header-actions">
@@ -62,14 +75,14 @@ async function _renderTableList(user, whs, canManage) {
 
       ${schemas.length === 0 ? `
         <div class="card" style="text-align:center;padding:80px 40px">
-          <div style="font-size:56px;margin-bottom:20px;opacity:0.4">📋</div>
+          <div style="font-size:48px;margin-bottom:20px;opacity:0.4;display:flex;justify-content:center;color:var(--text-muted)">${getSvgIcon('tables', 48)}</div>
           <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
           <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Create your first table and start tracking data like a spreadsheet</p>
           ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create First Table</button>` : ''}
         </div>
       ` : `
         <div class="table-toolbar" style="margin-bottom:16px">
-          <div class="table-search"><span>🔍</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
+          <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
         </div>
         <div class="table-wrap">
           <table>
@@ -97,9 +110,9 @@ async function _renderTableList(user, whs, canManage) {
                   <td>${formatDate(t.createdAt)}</td>
                   <td>
                     <div class="table-actions">
-                      <button class="action-btn view" data-tid="${t.id}" title="Open Spreadsheet">📊</button>
-                      ${canManage ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">✏️</button>` : ''}
-                      ${canManage ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">🗑️</button>` : ''}
+                      <button class="action-btn view" data-tid="${t.id}" title="Open Spreadsheet">${getSvgIcon('analytics', 14)}</button>
+                      ${canManage ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">${getSvgIcon('edit', 14)}</button>` : ''}
+                      ${canManage ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                     </div>
                   </td>
                 </tr>`;
@@ -157,6 +170,17 @@ async function _openSpreadsheet(user, canManage) {
     return;
   }
 
+  // Enforce role-based access on schema open
+  if (!canManage && _schema.roles && _schema.roles.length > 0) {
+    if (!_schema.roles.includes(user.role)) {
+      showToast('Access Denied', `You don't have permission to access this table`, 'error');
+      _activeTableId = null;
+      await renderTables();
+      return;
+    }
+  }
+
+
   const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
 
@@ -171,8 +195,8 @@ async function _openSpreadsheet(user, canManage) {
       <div class="ss-toolbar">
         <div class="ss-toolbar-left">
           <button class="btn btn-secondary btn-sm" id="ss-back">← All Tables</button>
-          <div class="ss-table-badge" style="background:${headerColor}22;border-color:${headerColor}44">
-            <span style="color:${headerColor}">📊</span>
+          <div class="ss-table-badge" style="background:${headerColor}22;border-color:${headerColor}44;display:inline-flex;align-items:center;gap:6px">
+            <span style="color:${headerColor};display:flex;align-items:center">${getSvgIcon('tables', 14)}</span>
             <span style="font-weight:700;color:var(--text-primary)">${_schema.name}</span>
             <span class="badge badge-muted" style="font-size:11px">${_schema.category}</span>
           </div>
@@ -183,10 +207,10 @@ async function _openSpreadsheet(user, canManage) {
             <span class="ss-save-spinner">⟳</span> Saving…
           </div>
           ${canImport ? `
-            <button class="btn btn-secondary btn-sm" id="ss-import-btn">📥 Import CSV</button>
-            <button class="btn btn-secondary btn-sm" id="ss-export-btn">📤 Export CSV</button>
+            <button class="btn btn-secondary btn-sm" id="ss-import-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('upload', 14)} Import CSV</button>
+            <button class="btn btn-secondary btn-sm" id="ss-export-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('export', 14)} Export CSV</button>
           ` : ''}
-          ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn">⚙️ Edit Schema</button>` : ''}
+          ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('settings', 14)} Edit Schema</button>` : ''}
           ${canEdit ? `<button class="btn btn-primary btn-sm" id="ss-add-row-btn">+ Add Row</button>` : ''}
         </div>
       </div>
@@ -269,7 +293,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
       data-row-id="${row.id}" data-row-idx="${idx}">
     <td class="ss-td ss-td-row-num">
       ${isLockedByOther
-        ? `<span class="ss-lock-indicator" title="${lockInfo.userName} is editing">✏️</span>`
+        ? `<span class="ss-lock-indicator" style="display:inline-flex;align-items:center;color:var(--brand-500)" title="${lockInfo.userName} is editing">${getSvgIcon('edit', 12)}</span>`
         : `<span class="ss-row-num">${idx + 1}</span>`
       }
     </td>
@@ -284,7 +308,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
     `).join('')}
     ${canEdit ? `
       <td class="ss-td ss-td-actions">
-        <button class="ss-action-btn ss-del-row" data-row-id="${row.id}" data-row-idx="${idx}" title="Delete row">🗑️</button>
+        <button class="ss-action-btn ss-del-row" data-row-id="${row.id}" data-row-idx="${idx}" title="Delete row">${getSvgIcon('trash', 12)}</button>
       </td>
     ` : ''}
   </tr>`;
@@ -352,7 +376,9 @@ function _buildReadonlyCell(value, col) {
   const v = value ?? '';
   if (v === '' || v === null || v === undefined) return '<span style="color:var(--text-disabled)">—</span>';
   switch (col.type) {
-    case 'checkbox': return v ? '✅' : '☐';
+    case 'checkbox': return v 
+      ? `<span style="color:var(--accent-emerald);font-weight:700;display:inline-flex;align-items:center">${getSvgIcon('check', 12)}</span>` 
+      : `<span style="color:var(--text-disabled);font-size:14px;font-family:sans-serif;user-select:none">☐</span>`;
     case 'price':    return `<strong>$${Number(v).toFixed(2)}</strong>`;
     case 'date':     return `<span style="font-size:12px;font-family:var(--font-mono)">${v}</span>`;
     case 'tags':     return String(v).split(',').map(t => `<span class="badge badge-purple" style="margin-right:2px">${t.trim()}</span>`).join('');
@@ -411,6 +437,36 @@ function _attachGridEvents(cols, canEdit, user) {
     const rowIdx = parseInt(btn.dataset.rowIdx);
     _deleteRow(rowId, rowIdx, cols, canEdit, user);
   });
+
+  // Emit row_lock over WebSocket on focusin
+  tbody.addEventListener('focusin', e => {
+    const inp = e.target.closest('.ss-input');
+    if (!inp) return;
+    const rowId = inp.dataset.rowId;
+    if (!rowId || inp.dataset.virtual === 'true') return;
+
+    sendWebSocketMessage({
+      event: 'row_lock',
+      tableId: _activeTableId,
+      rowId: rowId,
+      userName: user.name
+    });
+  });
+
+  // Emit row_unlock over WebSocket on focusout
+  tbody.addEventListener('focusout', e => {
+    const inp = e.target.closest('.ss-input');
+    if (!inp) return;
+    const rowId = inp.dataset.rowId;
+    if (!rowId || inp.dataset.virtual === 'true') return;
+
+    sendWebSocketMessage({
+      event: 'row_unlock',
+      tableId: _activeTableId,
+      rowId: rowId,
+      userName: user.name
+    });
+  });
 }
 
 // ─── VIRTUAL ROW ACTIVATION ───────────────────────────────────────────────────
@@ -432,8 +488,7 @@ function _activateVirtualRow(tr, cols, canEdit, user) {
   // Replace actions cell
   const actionsTd = tr.querySelector('.ss-td-actions');
   if (actionsTd && canEdit) {
-    actionsTd.innerHTML = `<button class="ss-action-btn ss-save-new-row" title="Save new row">💾</button>`;
-    actionsTd.querySelector('.ss-save-new-row')?.addEventListener('click', () => _saveNewVirtualRow(tr, cols, canEdit, user));
+    actionsTd.innerHTML = '';
   }
 
   // Auto-focus first input
@@ -527,26 +582,10 @@ function _collectRowData(tr, cols) {
 function _appendVirtualRow(cols, canEdit, user) {
   const tbody = document.getElementById('ss-tbody');
   if (!tbody) return;
-  const idx = _rows.length + tbody.querySelectorAll('tr.ss-row:not(.ss-row-virtual)').length;
-  const tr = document.createElement('tr');
-  tr.className = 'ss-row';
-  tr.dataset.rowIdx = idx;
-  tr.innerHTML = `
-    <td class="ss-td ss-td-row-num"><span class="ss-row-num">${idx + 1}</span></td>
-    ${cols.map(col => `<td class="ss-td ss-cell" data-col="${col.id}" data-type="${col.type}">
-      ${_buildEditableCell('', col, `__new_${Date.now()}__`, idx)}
-    </td>`).join('')}
-    <td class="ss-td ss-td-actions">
-      <button class="ss-action-btn ss-save-new-row" title="Save new row">💾</button>
-    </td>
-  `;
-  // Insert before first virtual row
   const firstVirtual = tbody.querySelector('tr.ss-row-virtual');
-  if (firstVirtual) tbody.insertBefore(tr, firstVirtual);
-  else tbody.appendChild(tr);
-
-  tr.querySelector('.ss-save-new-row')?.addEventListener('click', () => _saveNewVirtualRow(tr, cols, canEdit, user));
-  tr.querySelector('.ss-input')?.focus();
+  if (firstVirtual) {
+    _activateVirtualRow(firstVirtual, cols, canEdit, user);
+  }
 }
 
 // ─── DELETE ROW ───────────────────────────────────────────────────────────────
@@ -592,14 +631,18 @@ function _subscribeToTableEvents() {
 }
 
 function _handleWsEvent(e) {
+  const user = getCurrentUser();
+  if (!user) {
+    window.removeEventListener('wareops_ws_event', _handleWsEvent);
+    return;
+  }
   const payload = e.detail;
   if (!payload || !payload.type || !_activeTableId) return;
 
   const { type, data } = payload;
   if (!data?.tableId || data.tableId !== _activeTableId) return;
 
-  const user = getCurrentUser();
-  const userId = String(user?.id || user?._id || '');
+  const userId = String(user.id || user._id || '');
 
   switch (type) {
     case 'table_row_created': {
@@ -621,6 +664,20 @@ function _handleWsEvent(e) {
       if (data.actorId !== userId && data.rowId) {
         _applyRemoteRowDelete(data.rowId);
         _showCollabToast(`${data.actorName} deleted a row`);
+      }
+      break;
+    }
+    case 'row_lock': {
+      if (data.userId !== userId) {
+        _lockedRows.set(data.rowId, { userId: data.userId, userName: data.userName });
+        _applyRowLockStatus(data.rowId, true, data.userName);
+      }
+      break;
+    }
+    case 'row_unlock': {
+      if (data.userId !== userId) {
+        _lockedRows.delete(data.rowId);
+        _applyRowLockStatus(data.rowId, false);
       }
       break;
     }
@@ -694,8 +751,104 @@ function _applyRemoteRowDelete(rowId) {
   _updateRowCount();
 }
 
+function _applyRowLockStatus(rowId, isLocked, userName = '') {
+  const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
+  if (!tr) return;
+
+  if (isLocked) {
+    tr.classList.add('ss-row-locked');
+    const rowNumTd = tr.querySelector('.ss-td-row-num');
+    if (rowNumTd) {
+      rowNumTd.innerHTML = `<span class="ss-lock-indicator" style="cursor:help;display:inline-flex;align-items:center;color:var(--brand-500)" title="${userName} is editing">${getSvgIcon('edit', 12)}</span>`;
+    }
+    // Set all cells to readonly for other users
+    tr.querySelectorAll('.ss-cell').forEach(cell => {
+      cell.dataset.readonly = 'true';
+      const inp = cell.querySelector('.ss-input');
+      if (inp) {
+        inp.disabled = true;
+      }
+    });
+  } else {
+    tr.classList.remove('ss-row-locked');
+    const rowIdx = parseInt(tr.dataset.rowIdx);
+    const rowNumTd = tr.querySelector('.ss-td-row-num');
+    if (rowNumTd) {
+      rowNumTd.innerHTML = `<span class="ss-row-num">${rowIdx + 1}</span>`;
+    }
+    // Set cells back to editable if canEdit
+    const user = getCurrentUser();
+    const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+    tr.querySelectorAll('.ss-cell').forEach(cell => {
+      if (canEdit) {
+        delete cell.dataset.readonly;
+        const inp = cell.querySelector('.ss-input');
+        if (inp) {
+          inp.disabled = false;
+        }
+      }
+    });
+  }
+}
+
+async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) {
+  const rowData = _collectRowData(tr, cols);
+  const isBlank = Object.values(rowData).every(v => v === '' || v === null || v === undefined);
+  if (isBlank) return;
+
+  _showSavingIndicator(true);
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`, {
+    method: 'POST',
+    body: JSON.stringify(rowData)
+  });
+  _showSavingIndicator(false);
+
+  if (res?.success && res.data) {
+    _rows.push(res.data);
+    const idx = _rows.length - 1;
+    
+    // Replace virtual row with real row in DOM
+    const newTrHtml = _buildRow(res.data, idx, cols, canEdit, user, true);
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = `<table><tbody>${newTrHtml}</tbody></table>`;
+    const newTr = tempDiv.querySelector('tr');
+    tr.replaceWith(newTr);
+    
+    _updateRowCount();
+    
+    // Broadcast creation event to other collaborators
+    sendWebSocketMessage({
+      event: 'table_row_created',
+      tableId: _activeTableId,
+      rowId: res.data.id
+    });
+    
+    // Re-attach grid events
+    _attachGridEvents(cols, canEdit, user);
+    
+    // Restore focus to the edited cell in the new real row
+    if (changedInput) {
+      const colId = changedInput.dataset.colId;
+      const targetInput = newTr.querySelector(`[data-col-id="${colId}"]`);
+      if (targetInput) {
+        targetInput.focus();
+        if (targetInput.type === 'text') {
+          const val = targetInput.value;
+          targetInput.value = '';
+          targetInput.value = val;
+        }
+      }
+    }
+    showToast('Row created', '', 'success');
+  } else {
+    showToast('Save failed', res?.error || 'Check field values', 'error');
+  }
+}
+
 function _handleVirtualCellChange(inp, cols, canEdit, user) {
-  // No-op: handled via virtual row click activation
+  const tr = inp.closest('tr');
+  if (!tr) return;
+  _promoteAndSaveVirtualRow(tr, cols, canEdit, user, inp);
 }
 
 // ─── CSV EXPORT ────────────────────────────────────────────────────────────────
@@ -728,6 +881,10 @@ function _exportCSV() {
   URL.revokeObjectURL(a.href);
 
   showToast('Export complete', `${_rows.length} rows exported as CSV`, 'success');
+  const user = getCurrentUser();
+  if (user) {
+    addAuditLog('export', `Exported spreadsheet table '${_schema.name}' as CSV (${_rows.length} rows)`, user.id);
+  }
 }
 
 // ─── CSV IMPORT ────────────────────────────────────────────────────────────────
@@ -846,10 +1003,15 @@ function _showSchemaModal(schema, whs) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Access Roles <span style="font-size:11px;color:var(--text-muted)">(hold Ctrl/Cmd for multi)</span></label>
-          <select id="t-roles" class="form-control" multiple style="height:80px">
-            ${['admin','manager','staff','employee'].map(r=>`<option value="${r}" ${(schema?.roles||[]).includes(r)?'selected':''}>${capitalize(r)}</option>`).join('')}
-          </select>
+          <label class="form-label">Access Roles</label>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px 14px;align-items:center;height:44px">
+            ${['admin','manager','staff','employee'].map(r=>`
+              <label class="checkbox-group" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0">
+                <input type="checkbox" class="role-checkbox" value="${r}" ${(schema?.roles||[]).includes(r)?'checked':''} />
+                <span style="font-size:13px">${capitalize(r)}</span>
+              </label>
+            `).join('')}
+          </div>
         </div>
       </div>
 
@@ -894,32 +1056,32 @@ function _showSchemaModal(schema, whs) {
 
   const footer = `
     <button class="btn btn-secondary" id="t-cancel">Cancel</button>
-    <button class="btn btn-primary" id="t-save">${isEdit?'✓ Update':'+ Create'} Table</button>
+    <button class="btn btn-primary" id="t-save">${isEdit?'Update':'Create'} Table</button>
   `;
 
-  const modal = createModal({ title: isEdit?'✏️ Edit Table':'📋 Build New Table', body, footer, size: 'lg' });
+  const modal = createModal({ title: isEdit?'Edit Table':'Build New Table', body, footer, size: 'lg' });
   modal.el.querySelector('#t-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#t-save')?.addEventListener('click', async () => {
     const name = document.getElementById('t-name').value.trim();
     if (!name) { showToast('Validation', 'Table name is required', 'warning'); return; }
 
     const colEls = body.querySelectorAll('.col-row');
-    const cols   = Array.from(colEls).map((row, i) => {
+    const cols   = Array.from(colEls).map((row) => {
+      const colId     = row.dataset.colId;
       const typeEl    = row.querySelector('.col-type');
       const optEl     = row.querySelector('.col-options');
       const rawOpts   = optEl?.value || '';
-      // Normalize options: trim each, remove empties
       const normOpts  = rawOpts.split(',').map(o => o.trim()).filter(Boolean).join(',');
       return {
-        id:       columns[i]?.id || 'c' + Date.now() + i,
-        name:     row.querySelector('.col-name').value.trim() || `Column ${i+1}`,
+        id:       colId || 'c' + Date.now(),
+        name:     row.querySelector('.col-name').value.trim() || 'Column',
         type:     typeEl?.value || 'text',
         required: row.querySelector('.col-req').checked,
         options:  normOpts
       };
     }).filter(c => c.name);
 
-    const roles = Array.from(document.getElementById('t-roles').selectedOptions).map(o => o.value);
+    const roles = Array.from(body.querySelectorAll('.role-checkbox:checked')).map(cb => cb.value);
     const data  = {
       name,
       category:    document.getElementById('t-cat').value,
@@ -955,7 +1117,7 @@ function _showSchemaModal(schema, whs) {
 function _renderColumnRow(col, i) {
   const isDropdown = col.type === 'dropdown';
   return `
-    <div class="col-row" style="display:grid;grid-template-columns:1fr 140px auto auto auto;gap:8px;align-items:start;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px">
+    <div class="col-row" data-col-id="${col.id}" style="display:grid;grid-template-columns:1fr 140px auto auto auto;gap:8px;align-items:start;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px">
       <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
       <select class="col-type form-control" style="margin:0">
         ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
@@ -964,7 +1126,7 @@ function _renderColumnRow(col, i) {
         <input type="checkbox" class="col-req" ${col.required?'checked':''} />
         <label style="font-size:12px">Req.</label>
       </label>
-      <button type="button" class="action-btn delete" title="Remove" onclick="this.closest('.col-row').remove()">🗑️</button>
+      <button type="button" class="action-btn delete" title="Remove" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 12)}</button>
       <div class="col-options-wrap" style="grid-column:1/-1;display:${isDropdown?'block':'none'}">
         <input type="text" class="col-options form-control" value="${col.options||''}"
           placeholder="Dropdown options (comma separated: Yes, No, Pending)" style="margin-top:6px" />
@@ -991,8 +1153,14 @@ function _parseOptions(rawOpts) {
 
 function _colTypeIcon(type) {
   const icons = {
-    text: '𝐓', number: '#', price: '$', date: '📅',
-    checkbox: '☑', dropdown: '▾', status: '●', tags: '🏷'
+    text: `<span style="font-family:serif;font-weight:bold;font-size:12px">T</span>`, 
+    number: '<span style="font-weight:bold;font-size:11px">#</span>', 
+    price: '<span style="font-weight:bold;font-size:12px">$</span>', 
+    date: getSvgIcon('clock', 12),
+    checkbox: getSvgIcon('check', 12), 
+    dropdown: getSvgIcon('chevron_down', 12), 
+    status: getSvgIcon('info', 12), 
+    tags: getSvgIcon('palette', 12)
   };
-  return icons[type] || '𝐓';
+  return icons[type] || `<span style="font-family:serif;font-weight:bold;font-size:12px">T</span>`;
 }

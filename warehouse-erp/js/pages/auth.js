@@ -14,7 +14,7 @@ export function renderLogin() {
     <div class="auth-page">
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
-        <div class="auth-logo" style="cursor:pointer" onclick="window.location.href='landing.html'">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">⚡</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
@@ -75,7 +75,7 @@ export function renderSignup() {
     <div class="auth-page">
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
-        <div class="auth-logo" style="cursor:pointer" onclick="window.location.href='landing.html'">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">⚡</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
@@ -144,7 +144,7 @@ export function renderWarehouseRegistration() {
     <div class="warehouse-reg-page">
       ${authBgHTML()}
       <header class="warehouse-reg-header">
-        <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.href='landing.html'">
+        <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚡</div>
           <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
         </div>

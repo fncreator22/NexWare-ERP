@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-29T08:07:42.403Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-05-30T12:35:42.374Z
 
 
 // ===== modules/store.js =====
@@ -27,6 +27,7 @@ function getDefaultData() {
     notifications: [],
     taxConfig,
     subscription,
+    theme: 'enterprise',
     currentUserId: null,
     currentWarehouseId: null,
   };
@@ -191,8 +192,8 @@ async function syncWithBackend() {
       _store.bills = [];
     }
 
-    // 5. Fetch Audit Logs
-    const auditRes = await apiFetch('/audit-logs/');
+    // 5. Fetch Audit Logs (dashboard preview only)
+    const auditRes = await apiFetch('/audit-logs/?limit=10');
     if (auditRes && auditRes.success && Array.isArray(auditRes.data)) {
       _store.auditLogs = normalize(auditRes.data);
     } else {
@@ -270,6 +271,14 @@ async function logout() {
   const s = getStore();
   s.currentUserId = null;
   saveStore();
+  if (ws) {
+    try {
+      ws.close();
+    } catch (e) {
+      console.error('[WebSocket] Error closing socket:', e);
+    }
+    ws = null;
+  }
 }
 
 async function signup(name, email, password) {
@@ -485,61 +494,79 @@ function getItems(warehouseId) {
   return s.items.filter(i => i.warehouseId === u.warehouseId);
 }
 
-function createItem(data) {
-  const s = getStore();
+async function createItem(data) {
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null; // Employees cannot create items
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
+  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
   // SKU Uniqueness check to prevent tracking errors
+  const s = getStore();
   if (data.sku && s.items.find(i => i.sku === data.sku)) {
     return { error: 'SKU already exists in the system' };
   }
 
-  const id = 'item' + Date.now();
-  const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
-  s.items.push(item);
+  const res = await apiFetch('/items/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
 
-  saveStore();
-  addAuditLog('item_create', `Item created: ${data.name} (SKU: ${data.sku})`, s.currentUserId);
-  addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
-  return item;
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  await syncWithBackend();
+  return res.data;
 }
 
-function updateItem(id, data) {
+async function updateItem(id, data) {
   const s = getStore();
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
 
   const idx = s.items.findIndex(i => i.id === id);
-  if (idx === -1) return null;
+  if (idx === -1) return { error: 'Item not found' };
   const target = s.items[idx];
 
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return null;
-  if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
+  if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
   // SKU Uniqueness check for updates
   if (data.sku && s.items.find(i => i.sku === data.sku && i.id !== id)) {
     return { error: 'SKU already exists' };
   }
 
-  s.items[idx] = { ...s.items[idx], ...data, updatedAt: new Date().toISOString() };
-  saveStore();
-  addNotification('item_update', 'Inventory Updated', `${s.items[idx].name} stock or details updated`, '/items', s.items[idx].warehouseId);
-  return s.items[idx];
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  await syncWithBackend();
+  return res.data;
 }
 
-function deleteItem(id) {
+async function deleteItem(id) {
   const s = getStore();
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
 
   const target = s.items.find(i => i.id === id);
-  if (!target) return;
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return;
+  if (!target) return { error: 'Item not found' };
+  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
-  s.items = s.items.filter(i => i.id !== id);
-  saveStore();
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'DELETE'
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  await syncWithBackend();
+  return { success: true };
 }
 
 // ---- TABLES ----
@@ -680,53 +707,57 @@ function getBills(warehouseId) {
   );
 }
 
-function createBill(data) {
-  const s = getStore();
+async function createBill(data) {
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
+  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
-  // Manual Inventory Synchronization: Decrement stock for billed items
-  if (data.items && Array.isArray(data.items)) {
-    data.items.forEach(billItem => {
-      const itemIdx = s.items.findIndex(i => i.id === billItem.id);
-      if (itemIdx !== -1) {
-        s.items[itemIdx].stock = Math.max(0, (s.items[itemIdx].stock || 0) - billItem.qty);
-      }
-    });
+  const res = await apiFetch('/billing/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    return { error: res.error };
   }
 
-  const id = 'bill' + Date.now();
-  // Regional Tax Snapshot: Use warehouse-specific tax config if available
-  const taxConfig = getTaxConfig(data.warehouseId);
-  const bill = { 
-    id, ...data, 
-    taxConfigSnapshot: { ...taxConfig }, // Snapshot for record integrity
-    createdAt: new Date().toISOString(), 
-    createdBy: s.currentUserId, 
-    billNo: 'INV-' + String(s.bills.length + 1).padStart(4, '0') 
-  };
-  s.bills.push(bill);
-
-  saveStore();
-  addAuditLog('bill_create', `Bill generated: ${bill.billNo} — $${data.total}`, s.currentUserId);
-  addNotification('bill_create', 'New Invoice Generated', `${bill.billNo} for ${data.customer} — $${data.total}`, '/billing', data.warehouseId);
-  return bill;
+  await syncWithBackend();
+  return res.data;
 }
 
 // ---- AUDIT LOGS ----
 function addAuditLog(action, description, userId) {
   const s = getStore();
   const u = s.users.find(u => u.id === userId);
-  s.auditLogs.unshift({
+  const timestamp = new Date().toISOString();
+  
+  const localLog = {
     id: 'log' + Date.now(), action, description,
     userId, userName: u ? u.name : 'System',
     warehouseId: u ? u.warehouseId : null,
-    timestamp: new Date().toISOString()
-  });
-  // Increased limit for enterprise compliance and historical tracking
+    timestamp
+  };
+  s.auditLogs.unshift(localLog);
   if (s.auditLogs.length > 5000) s.auditLogs = s.auditLogs.slice(0, 5000);
   saveStore();
+
+  // Async push to backend in background (don't block caller)
+  if (localStorage.getItem('access_token')) {
+    apiFetch('/audit-logs/', {
+      method: 'POST',
+      body: JSON.stringify({
+        action,
+        description,
+        warehouseId: u ? u.warehouseId : null
+      })
+    }).then(res => {
+      if (res && res.success && res.data) {
+        localLog.id = res.data.id;
+        localLog.timestamp = res.data.timestamp;
+        saveStore();
+      }
+    }).catch(err => console.warn('[AuditLog] Failed background sync:', err));
+  }
 }
 
 function getAuditLogs() {
@@ -948,6 +979,14 @@ function connectWebSocket() {
   };
 }
 
+function sendWebSocketMessage(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+    return true;
+  }
+  return false;
+}
+
 // ---- CURRENCY HELPERS ----
 function getCurrency() {
   const s = getStore();
@@ -1160,7 +1199,7 @@ function buildDataTable({ columns, data, onEdit, onDelete, onView, emptyMsg = 'N
   const tbody = el('tbody');
   if (!data || data.length === 0) {
     const emptyRow = el('tr');
-    const emptyTd = el('td', 'table-empty', `<div class="table-empty-icon">📭</div><div class="table-empty-title">${emptyMsg}</div>`, { colspan: columns.length + 1 });
+    const emptyTd = el('td', 'table-empty', `<div class="table-empty-icon">${getSvgIcon('info', 28)}</div><div class="table-empty-title">${emptyMsg}</div>`, { colspan: columns.length + 1 });
     emptyRow.appendChild(emptyTd);
     tbody.appendChild(emptyRow);
   } else {
@@ -1173,9 +1212,9 @@ function buildDataTable({ columns, data, onEdit, onDelete, onView, emptyMsg = 'N
       });
       const tdActions = el('td', '', '', { 'data-label': 'Actions' });
       const actionsDiv = el('div', 'table-actions');
-      if (onView) { const btn = el('button', 'action-btn view', '👁️', { title: 'View' }); btn.onclick = () => onView(row); actionsDiv.appendChild(btn); }
-      if (onEdit) { const btn = el('button', 'action-btn edit', '✏️', { title: 'Edit' }); btn.onclick = () => onEdit(row); actionsDiv.appendChild(btn); }
-      if (onDelete) { const btn = el('button', 'action-btn delete', '🗑️', { title: 'Delete' }); btn.onclick = () => onDelete(row); actionsDiv.appendChild(btn); }
+      if (onView) { const btn = el('button', 'action-btn view', getSvgIcon('view', 14), { title: 'View' }); btn.onclick = () => onView(row); actionsDiv.appendChild(btn); }
+      if (onEdit) { const btn = el('button', 'action-btn edit', getSvgIcon('edit', 14), { title: 'Edit' }); btn.onclick = () => onEdit(row); actionsDiv.appendChild(btn); }
+      if (onDelete) { const btn = el('button', 'action-btn delete', getSvgIcon('trash', 14), { title: 'Delete' }); btn.onclick = () => onDelete(row); actionsDiv.appendChild(btn); }
       tdActions.appendChild(actionsDiv);
       tr.appendChild(tdActions);
       tbody.appendChild(tr);
@@ -1444,8 +1483,126 @@ function getSvgIcon(name, size = 20) {
     lock:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
     info:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
     palette:    `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="8" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="8" r="1" fill="currentColor"/><circle cx="16" cy="14" r="1" fill="currentColor"/></svg>`,
+    view:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    save:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
+    export:     `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`,
+    database:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>`,
+    customer:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    location:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
+    mail:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+    phone:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
   };
   return icons[name] || `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
+}
+
+function applyTheme(themeName) {
+  const root = document.documentElement;
+  if (themeName === 'classic') {
+    root.classList.add('theme-classic');
+  } else {
+    root.classList.remove('theme-classic');
+  }
+}
+
+function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
+  if (avatar && (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://'))) {
+    return `<img src="${avatar}" style="${sizeStyle}" />`;
+  }
+  return avatar || '';
+}
+
+function renderWarehouseLogo(logo, size = 24) {
+  if (logo && logo.startsWith('data:image/')) {
+    return `<img src="${logo}" style="width:${size}px;height:${size}px;object-fit:contain;border-radius:6px;display:inline-block;vertical-align:middle" />`;
+  }
+  
+  const s = size;
+  const icons = {
+    'icon:industrial': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
+    'icon:distribution': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+    'icon:retail': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+    'icon:office': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
+    'icon:tech': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
+  };
+  
+  if (logo && icons[logo]) return icons[logo];
+  if (logo && logo.startsWith('icon:')) {
+    const key = logo.toLowerCase();
+    if (icons[key]) return icons[key];
+  }
+  
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
+}
+
+// ---- INLINE BARCODE GENERATOR (Code128 subset B) ----
+// Generates a standalone SVG barcode — no HTTP, no external library, works in print.
+function generateBarcodeSVG(text, opts = {}) {
+  const barW   = opts.barWidth  || 1.4;
+  const height = opts.height    || 38;
+  const quiet  = opts.quiet     || 8;
+  const color  = opts.color     || '#000';
+  const showLabel = opts.showLabel !== false;
+  const labelH = showLabel ? 11 : 0;
+
+  // Code128B patterns (space=32 to ~=126, plus start 104, checksum, stop 106)
+  const P = [
+    '11011001100','11001101100','11001100110','10010011000','10010001100',
+    '10001001100','10011001000','10011000100','10001100100','11001001000',
+    '11001000100','11000100100','10110011100','10011011100','10011001110',
+    '10111001100','10011101100','10011100110','11001110010','11001011100',
+    '11001001110','11011100100','11001110100','11101101110','11101001100',
+    '11100101100','11100100110','11101100100','11100110100','11100110010',
+    '11011011000','11011000110','11000110110','10100011000','10001011000',
+    '10001000110','10110001000','10001101000','10001100010','11010001000',
+    '11000101000','11000100010','10110111000','10110001110','10001101110',
+    '10111011000','10111000110','10001110110','11101110110','11010001110',
+    '11000101110','11011101000','11011100010','11011101110','11101011000',
+    '11101000110','11100010110','11101101000','11101100010','11100011010',
+    '11101111010','11001000010','11110001010','10100110000','10100001100',
+    '10010110000','10010000110','10000101100','10000100110','10110010000',
+    '10110000100','10011010000','10011000010','10000110100','10000110010',
+    '11000010010','11001010000','11110111010','11000010100','10001111010',
+    '10100111100','10010111100','10010011110','10111100100','10011110100',
+    '10011110010','11110100100','11110010100','11110010010','11011011110',
+    '11011110110','11110110110','10101111000','10100011110','10001011110',
+    '10111101000','10111100010','11110101000','11110100010','10111011110',
+    '10111101110','11101011110','11110101110','11010000100','11010010000',
+    '11010011100','1100011101011'
+  ];
+
+  const START_B = 104;
+  const STOP    = 106;
+
+  function encode(str) {
+    let cs = START_B;
+    const bars = [P[START_B]];
+    Array.from(str).forEach((ch, i) => {
+      const code = ch.charCodeAt(0) - 32;
+      if (code < 0 || code > 95) return;
+      cs += code * (i + 1);
+      bars.push(P[code]);
+    });
+    bars.push(P[cs % 103]);
+    bars.push(P[STOP]);
+    return bars.join('');
+  }
+
+  const pattern = encode(text);
+  const svgW = quiet * 2 + pattern.length * barW;
+  const svgH = height + labelH + 4;
+
+  let rects = '';
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === '1') {
+      rects += `<rect x="${(quiet + i * barW).toFixed(1)}" y="0" width="${barW}" height="${height}" fill="${color}"/>`;
+    }
+  }
+
+  const labelSVG = showLabel
+    ? `<text x="${(svgW / 2).toFixed(1)}" y="${height + labelH - 1}" text-anchor="middle" font-family="monospace" font-size="8.5" fill="${color}">${text}</text>`
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(svgW)}" height="${svgH}" viewBox="0 0 ${Math.ceil(svgW)} ${svgH}" role="img" aria-label="Barcode: ${text}">${rects}${labelSVG}</svg>`;
 }
 
 // ===== modules/exporter.js =====
@@ -1838,6 +1995,8 @@ const SUPER_ADMIN_NAV = [
     { path: '/workforce', icon: 'workforce', label: 'Workforce' },
     { path: '/items', icon: 'items', label: 'Inventory' },
     { path: '/tables', icon: 'tables', label: 'Tables' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
   { section: 'Finance', items: [
     { path: '/billing', icon: 'billing', label: 'Billing' },
@@ -1858,6 +2017,8 @@ const ADMIN_NAV = [
     { path: '/workforce', icon: 'workforce', label: 'User Management' },
     { path: '/items', icon: 'items', label: 'Item Management' },
     { path: '/tables', icon: 'tables', label: 'Tables' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
   { section: 'Finance', items: [
     { path: '/billing', icon: 'billing', label: 'Billing' },
@@ -1876,6 +2037,8 @@ const MANAGER_NAV = [
     { path: '/items', icon: 'items', label: 'Items' },
     { path: '/tables', icon: 'tables', label: 'Tables' },
     { path: '/billing', icon: 'billing', label: 'Billing' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
   { section: 'Reports', items: [
     { path: '/analytics', icon: 'analytics', label: 'Analytics' },
@@ -1889,6 +2052,8 @@ const STAFF_NAV = [
   { section: 'Work', items: [
     { path: '/tables', icon: 'tables', label: 'My Tables' },
     { path: '/billing', icon: 'billing', label: 'Billing' },
+    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
+    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
   ]},
 ];
 
@@ -1928,7 +2093,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
     <div class="sidebar-section">
       <div class="sidebar-section-label">${section.section}</div>
       ${section.items.map(item => `
-        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" title="${item.label}">
+        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" data-tooltip="${item.label}">
           <span class="sidebar-item-icon">${getSvgIcon(item.icon)}</span>
           <span class="sidebar-item-label">${item.label}</span>
         </div>
@@ -1958,19 +2123,17 @@ function renderShell(pageTitle, pageSubtitle, content) {
     <div class="app-shell ${isCollapsed ? 'collapsed' : ''}">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-logo" style="cursor:pointer" onclick="location.hash='#/dashboard'">
-          <div style="display:flex;align-items:center;gap:var(--space-3);flex:1">
-            <div class="sidebar-logo-icon">⚡</div>
-            <div class="sidebar-logo-text-wrapper">
-              <div class="sidebar-logo-name">WareOps</div>
-              <div class="sidebar-logo-tagline">Enterprise ERP</div>
-            </div>
+          <div class="sidebar-logo-icon" style="color:var(--brand-500);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="sidebar-logo-text-wrapper">
+            <div class="sidebar-logo-name">WareOps</div>
+            <div class="sidebar-logo-tagline">Enterprise ERP</div>
           </div>
         </div>
         <nav class="sidebar-nav" id="sidebar-nav">${navHTML}</nav>
         ${sidebarWidget}
         <div class="sidebar-footer">
-          <div class="sidebar-user" id="user-menu-btn" title="${user.name} (${capitalize(user.role)})">
-            <div class="sidebar-user-avatar">${user.avatar}</div>
+          <div class="sidebar-user" id="user-menu-btn" data-tooltip="${user.name} (${capitalize(user.role)})">
+            <div class="sidebar-user-avatar">${renderAvatar(user.avatar)}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
               <div class="sidebar-user-role" style="font-size:11px;color:var(--text-muted);font-weight:500;">${capitalize(user.role.replace('_', ' '))} · ${whAccessText}</div>
@@ -1981,9 +2144,9 @@ function renderShell(pageTitle, pageSubtitle, content) {
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
       <main class="main-content">
         <header class="topbar">
-          <button class="topbar-menu-btn" id="topbar-menu-btn">☰</button>
-          <button class="topbar-collapse-btn" id="topbar-collapse-btn" title="Toggle Sidebar">
-            ${getSvgIcon('collapse', 20)}
+          <button class="topbar-menu-btn" id="topbar-menu-btn" style="display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+          <button class="topbar-collapse-btn" id="topbar-collapse-btn" data-tooltip="Toggle Sidebar">
+            ${getSvgIcon(isCollapsed ? 'chevron_right' : 'collapse', 20)}
           </button>
           <div class="topbar-breadcrumb">${breadcrumb}</div>
           <div class="topbar-actions">
@@ -1995,7 +2158,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
               ${getSvgIcon('bell', 18)}
               ${unreadCount > 0 ? `<span class="badge" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--accent-rose);border-radius:50%;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base)">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
             </div>
-            <div class="icon-btn" data-tooltip="Profile" id="profile-btn">${user.avatar}</div>
+            <div class="icon-btn" data-tooltip="Profile" id="profile-btn">${renderAvatar(user.avatar)}</div>
           </div>
         </header>
         <div class="page-content" id="page-content">
@@ -2016,12 +2179,14 @@ function renderShell(pageTitle, pageSubtitle, content) {
   });
 
   // Collapsible sidebar toggle
-  document.getElementById('topbar-collapse-btn')?.addEventListener('click', () => {
+  document.getElementById('topbar-collapse-btn')?.addEventListener('click', (e) => {
     const shell = document.querySelector('.app-shell');
     if (shell) {
       shell.classList.toggle('collapsed');
       const collapsed = shell.classList.contains('collapsed');
       localStorage.setItem('wareops_sidebar_collapsed', collapsed);
+      const btn = e.currentTarget;
+      btn.innerHTML = getSvgIcon(collapsed ? 'chevron_right' : 'collapse', 20);
     }
   });
 
@@ -2082,11 +2247,11 @@ function showNotificationDropdown(anchor) {
   
   positionFixedElement(anchor, dropdown, { offset: 8, preferredAlign: 'right' });
 
-  const typeIcons = { warehouse_create:'🏭', bill_create:'🧾', user_create:'👤', login:'🔐', settings_update:'⚙️', default:'🔔' };
+  const typeIconNames = { warehouse_create:'warehouses', bill_create:'billing', user_create:'user', login:'lock', settings_update:'settings', default:'bell' };
 
   dropdown.innerHTML = `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between">
-      <div style="font-weight:700;font-size:14px;color:var(--text-primary)">🔔 Notifications</div>
+      <div style="font-weight:700;font-size:14px;color:var(--text-primary);display:flex;align-items:center;gap:6px">${getSvgIcon('bell', 16)} Notifications</div>
       <div style="display:flex;gap:12px;align-items:center">
         ${unread.length > 0 ? `<button id="mark-all-read" style="font-size:12px;color:var(--text-brand);background:none;border:none;cursor:pointer;font-family:var(--font-sans)">Mark all read</button>` : '<span style="font-size:12px;color:var(--text-muted)">All caught up</span>'}
         ${notifications.length > 0 ? `<button id="clear-all-notif" style="font-size:12px;color:var(--accent-rose);background:none;border:none;cursor:pointer;font-family:var(--font-sans)">Clear all</button>` : ''}
@@ -2096,7 +2261,7 @@ function showNotificationDropdown(anchor) {
       ${notifications.length === 0 ? `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">No notifications yet</div>` :
         notifications.slice(0,10).map(n => `
           <div class="notif-item" data-nid="${n.id}" data-link="${n.link||'/dashboard'}" style="padding:12px 16px;border-bottom:1px solid var(--border-subtle);cursor:pointer;background:${n.read ? 'transparent' : 'rgba(99,102,241,0.06)'};transition:background 0.15s;display:flex;gap:12px;align-items:flex-start">
-            <div style="font-size:18px;flex-shrink:0;margin-top:2px">${typeIcons[n.type]||typeIcons.default}</div>
+            <div style="display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0;margin-top:2px">${getSvgIcon(typeIconNames[n.type]||typeIconNames.default, 16)}</div>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:${n.read?'500':'700'};color:var(--text-primary);margin-bottom:2px">${n.title}</div>
               <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n.message}</div>
@@ -2142,7 +2307,9 @@ function showProfileDropdown(anchor) {
   if (existing) { existing.remove(); return; }
   const user = getCurrentUser();
   const sub = getSubscription();
-  const planLabel = sub.plan === 'starter' ? '🟢 Starter' : '🟣 Enterprise';
+  const planBadge = sub.plan === 'starter' 
+    ? '<span class="badge badge-info" style="font-size:10px;padding:2px 6px">Starter</span>' 
+    : '<span class="badge badge-brand" style="font-size:10px;padding:2px 6px">Enterprise</span>';
 
   const dropdown = document.createElement('div');
   dropdown.id = 'profile-dropdown';
@@ -2151,23 +2318,46 @@ function showProfileDropdown(anchor) {
   
   const isSidebar = anchor.id === 'user-menu-btn';
   
-  // Use positionFixedElement to position the profile dropdown perfectly relative to anchor
-  positionFixedElement(anchor, dropdown, {
-    offset: 8,
-    preferredAlign: isSidebar ? 'left' : 'right',
-    preferredVertical: isSidebar ? 'top' : 'bottom'
-  });
+  if (isSidebar) {
+    // Append to body if not already there to measure
+    if (!dropdown.parentElement) document.body.appendChild(dropdown);
+    
+    const rect = anchor.getBoundingClientRect();
+    const elRect = dropdown.getBoundingClientRect();
+    const winH = window.innerHeight;
+    
+    // Position outside sidebar (to the right of the sidebar)
+    let left = rect.right + 8;
+    // Align upward (so the bottom of the dropdown aligns with the bottom of the anchor)
+    let top = rect.bottom - elRect.height;
+    
+    // Clamp inside viewport
+    if (top < 10) top = 10;
+    if (top + elRect.height > winH - 10) top = winH - elRect.height - 10;
+    
+    dropdown.style.position = 'fixed';
+    dropdown.style.left = left + 'px';
+    dropdown.style.top = top + 'px';
+    dropdown.style.right = 'auto';
+    dropdown.style.zIndex = '9999';
+  } else {
+    positionFixedElement(anchor, dropdown, {
+      offset: 8,
+      preferredAlign: 'right',
+      preferredVertical: 'bottom'
+    });
+  }
 
   dropdown.innerHTML = `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
       <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${user.name}</div>
       <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
-      <div style="font-size:11px;color:var(--text-brand);margin-top:4px;font-weight:600">${planLabel} Plan</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
     </div>
-    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">⚙️ Settings</div>
-    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">💳 Subscription</div>` : ''}
+    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
+    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
     <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
-    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">🚪 Sign Out</div>
+    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
   `;
 
   document.body.appendChild(dropdown);
@@ -2205,6 +2395,16 @@ function initGlobalTooltips() {
   document.addEventListener('mouseenter', (e) => {
     const trigger = e.target.closest?.('[data-tooltip]');
     if (!trigger) return;
+
+    // Avoid redundant or duplicate tooltips for sidebar elements when expanded
+    if (trigger.classList.contains('sidebar-item') || trigger.classList.contains('sidebar-user')) {
+      const isCollapsed = document.querySelector('.app-shell')?.classList.contains('collapsed');
+      if (!isCollapsed) return;
+    }
+
+    // Do not show tooltip if the dropdown is already active
+    if (trigger.id === 'notif-btn' && document.getElementById('notif-dropdown')) return;
+    if ((trigger.id === 'profile-btn' || trigger.id === 'user-menu-btn') && document.getElementById('profile-dropdown')) return;
 
     const text = trigger.getAttribute('data-tooltip');
     if (!text) return;
@@ -2403,18 +2603,18 @@ function updateResults() {
   const bills = getBills();
 
   const commands = [
-    { type: 'page', label: 'Go to Dashboard', path: '/dashboard', icon: '📊' },
-    { type: 'page', label: 'Manage Inventory', path: '/items', icon: '📦' },
-    { type: 'page', label: 'Billing & Invoices', path: '/billing', icon: '💰' },
-    { type: 'page', label: 'Analytics Reports', path: '/analytics', icon: '📈' },
-    { type: 'action', label: 'Create New Bill', action: 'billing', icon: '➕' },
-    { type: 'action', label: 'Add New Item', action: 'items', icon: '📦' },
+    { type: 'page', label: 'Go to Dashboard', path: '/dashboard', icon: getSvgIcon('dashboard', 16) },
+    { type: 'page', label: 'Manage Inventory', path: '/items', icon: getSvgIcon('items', 16) },
+    { type: 'page', label: 'Billing & Invoices', path: '/billing', icon: getSvgIcon('billing', 16) },
+    { type: 'page', label: 'Analytics Reports', path: '/analytics', icon: getSvgIcon('analytics', 16) },
+    { type: 'action', label: 'Create New Bill', action: 'billing', icon: getSvgIcon('plus', 16) },
+    { type: 'action', label: 'Add New Item', action: 'items', icon: getSvgIcon('plus', 16) },
   ];
 
   if (user.role === 'super_admin') {
-    commands.push({ type: 'page', label: 'Manage Warehouses', path: '/warehouses', icon: '🏭' });
-    commands.push({ type: 'page', label: 'User Management', path: '/workforce', icon: '👥' });
-    commands.push({ type: 'page', label: 'Audit Logs', path: '/audit', icon: '🔍' });
+    commands.push({ type: 'page', label: 'Manage Warehouses', path: '/warehouses', icon: getSvgIcon('warehouses', 16) });
+    commands.push({ type: 'page', label: 'User Management', path: '/workforce', icon: getSvgIcon('workforce', 16) });
+    commands.push({ type: 'page', label: 'Audit Logs', path: '/audit', icon: getSvgIcon('audit', 16) });
   }
 
   const matches = [];
@@ -2423,9 +2623,9 @@ function updateResults() {
   if (!query) {
     const totalRev = bills.reduce((sum, b) => sum + (b.total || 0), 0);
     const health = getStockHealth();
-    matches.push({ type: 'insight', label: 'Quick Insight: Revenue', sub: `Total across all warehouses: ${formatCurrency(totalRev)}`, icon: '💰' });
-    matches.push({ type: 'insight', label: 'Quick Insight: Inventory', sub: `Total items tracked: ${formatNumber(items.length)}`, icon: '📦' });
-    matches.push({ type: 'insight', label: 'Quick Insight: Stock Health', sub: `Current status: ${health}% healthy`, icon: '🛡️' });
+    matches.push({ type: 'insight', label: 'Quick Insight: Revenue', sub: `Total across all warehouses: ${formatCurrency(totalRev)}`, icon: getSvgIcon('revenue', 16) });
+    matches.push({ type: 'insight', label: 'Quick Insight: Inventory', sub: `Total items tracked: ${formatNumber(items.length)}`, icon: getSvgIcon('items', 16) });
+    matches.push({ type: 'insight', label: 'Quick Insight: Stock Health', sub: `Current status: ${health}% healthy`, icon: getSvgIcon('check', 16) });
     matches.push({ type: 'divider', label: 'Suggested Commands' });
   }
 
@@ -2434,11 +2634,11 @@ function updateResults() {
     if (c.label.toLowerCase().includes(query)) matches.push(c);
   });
 
-  // Filter items
+  // Filter items (Inventory)
   if (query.length > 1) {
     items.forEach(i => {
       if (i.name.toLowerCase().includes(query) || i.sku.toLowerCase().includes(query)) {
-        matches.push({ type: 'item', label: i.name, sub: `SKU: ${i.sku} · ${formatCurrency(i.price)}`, id: i.id, icon: '📦' });
+        matches.push({ type: 'item', label: i.name, sub: `SKU: ${i.sku} · ${formatCurrency(i.price)}`, id: i.id, icon: getSvgIcon('items', 16) });
       }
     });
   }
@@ -2447,7 +2647,58 @@ function updateResults() {
   if (user.role === 'super_admin' && query.length > 1) {
     whs.forEach(w => {
       if (w.name.toLowerCase().includes(query)) {
-        matches.push({ type: 'warehouse', label: w.name, sub: w.address, id: w.id, icon: '🏭' });
+        matches.push({ type: 'warehouse', label: w.name, sub: w.address, id: w.id, icon: getSvgIcon('warehouses', 16) });
+      }
+    });
+  }
+
+  // Filter workforce (User Management)
+  if (query.length > 1) {
+    const allUsers = getAllUsers();
+    allUsers.forEach(u => {
+      if (u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query)) {
+        matches.push({ type: 'workforce', label: u.name, sub: `${capitalize(u.role.replace('_', ' '))} · ${u.email}`, id: u.id, icon: getSvgIcon('workforce', 16) });
+      }
+    });
+  }
+
+  // Filter dynamic tables
+  if (query.length > 1) {
+    const tables = getStore().tables || [];
+    tables.forEach(t => {
+      const title = t.displayName || t.name;
+      if (title.toLowerCase().includes(query)) {
+        matches.push({ type: 'table', label: title, sub: `Custom Table · ${t.columns?.length || 0} columns`, id: t.id, icon: getSvgIcon('tables', 16) });
+      }
+    });
+  }
+
+  // Filter billing invoices
+  if (query.length > 1) {
+    bills.forEach(b => {
+      if (b.billNo.toLowerCase().includes(query) || b.customer.toLowerCase().includes(query)) {
+        matches.push({ type: 'billing', label: b.billNo, sub: `Invoice · ${b.customer} · ${formatCurrency(b.total)}`, id: b.id, icon: getSvgIcon('billing', 16) });
+      }
+    });
+  }
+
+  // Filter CRM Customers
+  if (query.length > 1) {
+    const uniqueCustomers = [];
+    const seenCusts = new Set();
+    bills.forEach(b => {
+      if (b.customer && !seenCusts.has(b.customer.toLowerCase())) {
+        seenCusts.add(b.customer.toLowerCase());
+        uniqueCustomers.push({
+          name: b.customer,
+          email: b.customerEmail || 'No email',
+          phone: b.customerPhone || 'No phone'
+        });
+      }
+    });
+    uniqueCustomers.forEach(cust => {
+      if (cust.name.toLowerCase().includes(query) || cust.email.toLowerCase().includes(query)) {
+        matches.push({ type: 'customer', label: cust.name, sub: `CRM Customer · ${cust.email} · ${cust.phone}`, id: cust.name, icon: getSvgIcon('customer', 16) });
       }
     });
   }
@@ -2523,9 +2774,16 @@ function executeCommand(cmd) {
     }
   } else if (cmd.type === 'item') {
     navigate('/items');
-    // We could potentially pass state to filter by this item
   } else if (cmd.type === 'warehouse') {
     navigate('/warehouses/' + cmd.id);
+  } else if (cmd.type === 'workforce') {
+    navigate('/workforce');
+  } else if (cmd.type === 'table') {
+    navigate('/tables');
+  } else if (cmd.type === 'billing') {
+    navigate('/billing');
+  } else if (cmd.type === 'customer') {
+    navigate('/customers');
   }
 }
 
@@ -2546,7 +2804,7 @@ function renderLogin() {
     <div class="auth-page">
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
-        <div class="auth-logo" style="cursor:pointer" onclick="window.location.href='landing.html'">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">⚡</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
@@ -2607,7 +2865,7 @@ function renderSignup() {
     <div class="auth-page">
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
-        <div class="auth-logo" style="cursor:pointer" onclick="window.location.href='landing.html'">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">⚡</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
@@ -2676,7 +2934,7 @@ function renderWarehouseRegistration() {
     <div class="warehouse-reg-page">
       ${authBgHTML()}
       <header class="warehouse-reg-header">
-        <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.href='landing.html'">
+        <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚡</div>
           <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
         </div>
@@ -2789,6 +3047,1076 @@ function renderWarehouseRegistration() {
   });
 }
 
+// ===== pages/landing.js =====
+/**
+ * Premium Landing Page — Unified SPA Component
+ */
+
+
+function renderLanding() {
+  const appEl = document.getElementById('app');
+  if (!appEl) return;
+
+  appEl.innerHTML = `
+    <!-- ═══════════ NAV ═══════════════════════════════════════ -->
+    <nav id="lp-nav">
+      <div class="lp-container lp-nav-inner">
+        <a href="#/" class="lp-logo">
+          <div class="lp-logo-icon">⚡</div>
+          <span>Nex<em>Ware</em></span>
+        </a>
+        <div class="lp-nav-links">
+          <a href="#features">Features</a>
+          <a href="#interactive-demo">Live Demo</a>
+          <a href="#workflow">How It Works</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#/login" class="lp-btn lp-btn-ghost" style="padding:7px 16px;font-size:13px;border-radius:8px">Log In</a>
+          <a href="#/signup" class="lp-btn lp-btn-primary" style="padding:7px 16px;font-size:13px;border-radius:8px">Get Started →</a>
+        </div>
+        <button class="lp-mob-btn" id="mobBtn">☰</button>
+      </div>
+    </nav>
+    <div class="lp-mob-menu" id="mobMenu">
+      <a href="#features">Features</a>
+      <a href="#interactive-demo">Live Demo</a>
+      <a href="#workflow">How It Works</a>
+      <a href="#pricing">Pricing</a>
+      <div class="sep"></div>
+      <a href="#/login" style="color:var(--text-primary);font-weight:600">Log In</a>
+      <a href="#/signup" class="lp-btn lp-btn-primary" style="margin-top:4px;justify-content:center">Get Started Free →</a>
+    </div>
+
+    <!-- ═══════════ HERO ══════════════════════════════════════ -->
+    <section class="hero">
+      <div class="hero-orb orb1"></div>
+      <div class="hero-orb orb2"></div>
+      <div class="hero-orb orb3"></div>
+      <div class="lp-container">
+        <div class="hero-pill">
+          <span class="dot"></span>
+          Enterprise ERP Platform &nbsp;·&nbsp; v2.0 · Fully Interactive Demo Below
+        </div>
+        <h1>The Modern ERP for<br>Enterprise Logistics</h1>
+        <p class="hero-sub">
+          Unify your entire warehouse operation — multi-location inventory, automated billing,
+          workforce access control, and compliance audit logs — in one beautiful real-time platform.
+        </p>
+        <div class="hero-actions">
+          <a href="#/signup" class="lp-btn lp-btn-primary lp-btn-lg">🚀 Start Free Trial</a>
+          <a href="#interactive-demo" class="lp-btn lp-btn-ghost lp-btn-lg">🖥 Try Live Demo ↓</a>
+        </div>
+        <div class="hero-stats">
+          <div class="hs"><div class="hs-val"><span>∞</span></div><div class="hs-lbl">Warehouses</div></div>
+          <div class="hs"><div class="hs-val"><span>100%</span></div><div class="hs-lbl">Real-time sync</div></div>
+          <div class="hs"><div class="hs-val"><span>5</span>-tier</div><div class="hs-lbl">RBAC system</div></div>
+          <div class="hs"><div class="hs-val">10/10</div><div class="hs-lbl">E2E test pass</div></div>
+        </div>
+        <!-- Hero browser preview -->
+        <div class="browser-wrap">
+          <div class="browser-glow"></div>
+          <div class="browser-frame">
+            <div class="browser-bar">
+              <div class="browser-dots"><span></span><span></span><span></span></div>
+              <div class="browser-url">app.nexware.io/dashboard</div>
+            </div>
+            <div class="browser-fade">
+              <img src="assets/dashboard-preview.png" class="browser-img" alt="NexWare ERP Dashboard" loading="eager">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ TRUST BAR ═════════════════════════════════ -->
+    <div class="trust-bar reveal">
+      <div class="lp-container trust-inner">
+        <span class="trust-lbl">Trusted by teams at</span>
+        <div class="trust-divider"></div>
+        <div class="trust-logos">
+          <span class="trust-logo">DallasFlex</span>
+          <span class="trust-logo">NorthTex Logistics</span>
+          <span class="trust-logo">Apex Manufacturing</span>
+          <span class="trust-logo">GlobalParts Co.</span>
+          <span class="trust-logo">IronWorks Ltd.</span>
+          <span class="trust-logo">SwiftDepot</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════ METRICS ═══════════════════════════════════ -->
+    <section class="lp-section" style="padding-bottom:40px">
+      <div class="lp-container">
+        <div class="metrics-grid reveal">
+          <div class="m-cell"><div class="m-val brand">10/10</div><div class="m-lbl">E2E Test Coverage</div><div class="m-sub">All workflows verified</div></div>
+          <div class="m-cell"><div class="m-val em">&lt;15ms</div><div class="m-lbl">API Response Latency</div><div class="m-sub">p50 read latency</div></div>
+          <div class="m-cell"><div class="m-val cy">&lt;500ms</div><div class="m-lbl">Full Onboarding Flow</div><div class="m-sub">Signup → first invoice</div></div>
+          <div class="m-cell"><div class="m-val vi">5-tier</div><div class="m-lbl">Role-Based Access</div><div class="m-sub">Super Admin → Employee</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ FEATURES ══════════════════════════════════ -->
+    <section id="features" class="lp-section">
+      <div class="lp-container">
+        <div class="text-center reveal">
+          <div class="lp-label">⚡ Platform Capabilities</div>
+          <h2 class="lp-h2">Everything your operations<br><span>need to scale</span></h2>
+          <p class="lp-sub">A complete, modular suite engineered for modern warehouse operations at any scale.</p>
+        </div>
+        <div class="feat-grid">
+          <div class="feat-card reveal">
+            <div class="feat-icon" style="background:rgba(99,102,241,.15)">🏭</div>
+            <h3 class="feat-title">Multi-Warehouse Management</h3>
+            <p class="feat-desc">Register unlimited locations. Each warehouse has its own inventory, staff, billing history, and analytics — all linked to a single super admin tenant.</p>
+            <span class="feat-tag" style="background:rgba(99,102,241,.15);color:var(--brand-light)">Enterprise</span>
+          </div>
+          <div class="feat-card reveal">
+            <div class="feat-icon" style="background:rgba(16,185,129,.15)">👥</div>
+            <h3 class="feat-title">5-Tier Workforce RBAC</h3>
+            <p class="feat-desc">Super Admin, Admin, Manager, Staff, and Employee tiers. Permissions cascade hierarchically — users only see data at or below their access level.</p>
+            <span class="feat-tag" style="background:rgba(16,185,129,.15);color:var(--emerald)">Security</span>
+          </div>
+          <div class="feat-card reveal">
+            <div class="feat-icon" style="background:rgba(245,158,11,.15)">🧾</div>
+            <h3 class="feat-title">Automated Invoice Billing</h3>
+            <p class="feat-desc">Generate professional invoices instantly. Supports configurable luxury and standard tax rates with automatic atomic stock decrement on every sale.</p>
+            <span class="feat-tag" style="background:rgba(245,158,11,.15);color:var(--amber)">Finance</span>
+          </div>
+          <div class="feat-card reveal">
+            <div class="feat-icon" style="background:rgba(6,182,212,.15)">📦</div>
+            <h3 class="feat-title">Real-Time Inventory Tracking</h3>
+            <p class="feat-desc">Monitor stock levels across all locations. Get low-stock alerts, manage SKU uniqueness per warehouse, and bulk import via CSV.</p>
+            <span class="feat-tag" style="background:rgba(6,182,212,.15);color:var(--cyan)">Operations</span>
+          </div>
+          <div class="feat-card reveal">
+            <div class="feat-icon" style="background:rgba(168,85,247,.15)">📋</div>
+            <h3 class="feat-title">Dynamic Custom Tables</h3>
+            <p class="feat-desc">Build custom data schemas — text, number, dropdown, date. Create maintenance logs, shipment trackers, or any operational table your team needs.</p>
+            <span class="feat-tag" style="background:rgba(168,85,247,.15);color:var(--violet)">Customizable</span>
+          </div>
+          <div class="feat-card reveal">
+            <div class="feat-icon" style="background:rgba(244,63,94,.15)">🔒</div>
+            <h3 class="feat-title">Compliance Audit Logs</h3>
+            <p class="feat-desc">Every critical action is automatically logged with user identity, timestamp, and tenant scoping. Built-in role-aware visibility controls.</p>
+            <span class="feat-tag" style="background:rgba(244,63,94,.15);color:var(--rose)">Compliance</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ INTERACTIVE DEMO ═════════════════════════ -->
+    <section id="interactive-demo" class="showcase-section" style="background:rgba(0,0,0,.15)">
+      <div class="lp-container">
+        <div class="showcase-section-header reveal">
+          <div class="demo-pill"><span class="dot"></span>Interactive Demo — No sign-in required</div>
+          <h2 class="lp-h2">Experience NexWare ERP<br><span>right here, right now</span></h2>
+          <p class="lp-sub" style="margin:0 auto">Click any sidebar item or tab below to explore the full ERP interface with realistic demo data. Everything is interactive — nothing is saved.</p>
+        </div>
+
+        <!-- Tab switcher above demo -->
+        <div class="showcase-tabs reveal">
+          <button class="showcase-tab active" data-page="dashboard"><span class="tab-icon">📊</span> Dashboard</button>
+          <button class="showcase-tab" data-page="inventory"><span class="tab-icon">📦</span> Inventory</button>
+          <button class="showcase-tab" data-page="billing"><span class="tab-icon">🧾</span> Billing</button>
+          <button class="showcase-tab" data-page="workforce"><span class="tab-icon">👥</span> Workforce</button>
+          <button class="showcase-tab" data-page="tables"><span class="tab-icon">📋</span> Tables</button>
+          <button class="showcase-tab" data-page="audit"><span class="tab-icon">🔍</span> Audit Logs</button>
+          <button class="showcase-tab" data-page="analytics"><span class="tab-icon">📈</span> Analytics</button>
+          <button class="showcase-tab" data-page="settings"><span class="tab-icon">⚙️</span> Settings</button>
+        </div>
+
+        <!-- ERP Device Frame -->
+        <div class="erp-device reveal">
+          <div class="erp-device-glow"></div>
+          <div class="erp-frame">
+
+            <!-- Demo Top Bar -->
+            <div class="demo-topbar">
+              <div class="demo-topbar-dots"><span></span><span></span><span></span></div>
+              <div class="demo-topbar-url" id="demo-url">app.nexware.io/dashboard</div>
+              <div class="demo-topbar-user">
+                <div class="demo-avatar">AM</div>
+                <span>Alex Mercer&nbsp;&nbsp;<span style="color:var(--text-muted);font-size:10px">Super Admin</span></span>
+                <div style="position:relative;margin-left:6px;cursor:pointer">🔔<span class="notif-badge">3</span></div>
+              </div>
+            </div>
+
+            <!-- App Shell -->
+            <div class="demo-shell">
+
+              <!-- ─── DEMO SIDEBAR ──────────────────────── -->
+              <nav class="demo-sidebar">
+                <div class="demo-logo">
+                  <div class="demo-logo-icon">⚡</div>
+                  <div class="demo-logo-name">NexWare</div>
+                </div>
+                <div class="demo-nav">
+                  <div class="demo-section-label">Overview</div>
+                  <div class="demo-item active" data-target="dashboard">
+                    <span class="demo-item-icon">📊</span><span>Dashboard</span>
+                  </div>
+                  <div class="demo-section-label">Operations</div>
+                  <div class="demo-item" data-target="inventory">
+                    <span class="demo-item-icon">📦</span><span>Inventory</span>
+                  </div>
+                  <div class="demo-item" data-target="workforce">
+                    <span class="demo-item-icon">👥</span><span>Workforce</span>
+                  </div>
+                  <div class="demo-item" data-target="tables">
+                    <span class="demo-item-icon">📋</span><span>Tables</span>
+                  </div>
+                  <div class="demo-section-label">Finance</div>
+                  <div class="demo-item" data-target="billing">
+                    <span class="demo-item-icon">🧾</span><span>Billing</span>
+                  </div>
+                  <div class="demo-item" data-target="analytics">
+                    <span class="demo-item-icon">📈</span><span>Analytics</span>
+                  </div>
+                  <div class="demo-section-label">System</div>
+                  <div class="demo-item" data-target="audit">
+                    <span class="demo-item-icon">🔍</span><span>Audit Logs</span>
+                  </div>
+                  <div class="demo-item" data-target="settings">
+                    <span class="demo-item-icon">⚙️</span><span>Settings</span>
+                  </div>
+                </div>
+                <div class="demo-sidebar-footer">
+                  <div class="demo-user-row">
+                    <div class="demo-user-av">AM</div>
+                    <div>
+                      <div class="demo-user-name">Alex Mercer</div>
+                      <div class="demo-user-role">Super Admin</div>
+                    </div>
+                  </div>
+                </div>
+              </nav>
+
+              <!-- ─── DEMO CONTENT ──────────────────────── -->
+              <div class="demo-content">
+
+                <!-- ── PAGE: DASHBOARD ──────────────────── -->
+                <div class="demo-page active" id="page-dashboard">
+                  <div class="d-page-header">
+                    <div>
+                      <div class="d-page-title">📊 Dashboard</div>
+                      <div class="d-page-sub">Global Overview · 4 Warehouses Active</div>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                      <button class="d-btn d-btn-secondary">Export</button>
+                      <button class="d-btn d-btn-primary">Warehouses</button>
+                    </div>
+                  </div>
+                  <!-- KPI row -->
+                  <div class="d-stat-grid">
+                    <div class="d-stat-card">
+                      <div class="d-stat-icon" style="background:rgba(99,102,241,.15)">🏭</div>
+                      <div class="d-stat-val" style="color:var(--brand-light)">4</div>
+                      <div class="d-stat-lbl">Warehouses</div>
+                      <div class="d-stat-trend trend-up">Enterprise plan</div>
+                    </div>
+                    <div class="d-stat-card">
+                      <div class="d-stat-icon" style="background:rgba(16,185,129,.15)">💰</div>
+                      <div class="d-stat-val" style="color:var(--emerald)">$124.7k</div>
+                      <div class="d-stat-lbl">Total Revenue</div>
+                      <div class="d-stat-trend trend-up">↑ Tax: $8,920</div>
+                    </div>
+                    <div class="d-stat-card">
+                      <div class="d-stat-icon" style="background:rgba(139,92,246,.15)">🧾</div>
+                      <div class="d-stat-val" style="color:var(--violet)">38</div>
+                      <div class="d-stat-lbl">Invoices</div>
+                      <div class="d-stat-trend trend-up">↑ This period</div>
+                    </div>
+                    <div class="d-stat-card">
+                      <div class="d-stat-icon" style="background:rgba(245,158,11,.15)">📦</div>
+                      <div class="d-stat-val" style="color:var(--amber)">4,280</div>
+                      <div class="d-stat-lbl">Stock Units</div>
+                      <div class="d-stat-trend trend-dn">3 low stock</div>
+                    </div>
+                  </div>
+                  <!-- Charts row -->
+                  <div class="d-grid2">
+                    <div class="d-card">
+                      <div class="d-card-hd">
+                        <div><div class="d-card-title">📈 Revenue Trend</div><div class="d-card-sub">Last 6 months</div></div>
+                        <div style="display:flex;gap:5px">
+                          <button class="d-btn d-btn-secondary d-btn-sm">6M</button>
+                          <button class="d-btn d-btn-secondary d-btn-sm">1Y</button>
+                        </div>
+                      </div>
+                      <div class="d-chart-wrap"><canvas id="demo-rev-chart"></canvas></div>
+                    </div>
+                    <div class="d-card">
+                      <div class="d-card-hd">
+                        <div class="d-card-title">⚡ Live Activity</div>
+                        <button class="d-btn d-btn-secondary d-btn-sm">All →</button>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:0">
+                        <div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                          <span class="act-dot act-green" style="margin-top:4px"></span>
+                          <div><div style="font-size:11px;color:var(--text-secondary)">Inventory item created — Steel Pipes</div><div style="font-size:10px;color:var(--text-muted)">Alex Mercer · 2 min ago</div></div>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                          <span class="act-dot act-blue" style="margin-top:4px"></span>
+                          <div><div style="font-size:11px;color:var(--text-secondary)">Invoice INV-0038 generated — $955.50</div><div style="font-size:10px;color:var(--text-muted)">Sarah Connor · 8 min ago</div></div>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                          <span class="act-dot act-amber" style="margin-top:4px"></span>
+                          <div><div style="font-size:11px;color:var(--text-secondary)">Warehouse Dallas Depot updated</div><div style="font-size:10px;color:var(--text-muted)">Alex Mercer · 22 min ago</div></div>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                          <span class="act-dot act-green" style="margin-top:4px"></span>
+                          <div><div style="font-size:11px;color:var(--text-secondary)">Staff member Kim Park added</div><div style="font-size:10px;color:var(--text-muted)">Sarah Connor · 45 min ago</div></div>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:7px 0">
+                          <span class="act-dot act-cyan" style="margin-top:4px"></span>
+                          <div><div style="font-size:11px;color:var(--text-secondary)">User logged in — Marcus Kim</div><div style="font-size:10px;color:var(--text-muted)">System · 1 hr ago</div></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Warehouse + Stock row -->
+                  <div class="d-grid2">
+                    <div class="d-card">
+                      <div class="d-card-hd">
+                        <div class="d-card-title">🏭 Warehouses</div>
+                        <button class="d-btn d-btn-primary d-btn-sm">Manage</button>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:8px">
+                        <div style="display:flex;align-items:center;gap:10px;padding:7px;background:var(--bg-input);border-radius:8px;cursor:pointer">
+                          <span style="font-size:18px">🏭</span>
+                          <div style="flex:1"><div style="font-size:12px;font-weight:600">Dallas Logistics Depot</div><div style="font-size:10px;color:var(--text-muted)">5 staff · $42,300 revenue</div></div>
+                          <span class="d-badge success">●</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;padding:7px;background:var(--bg-input);border-radius:8px;cursor:pointer">
+                          <span style="font-size:18px">🏬</span>
+                          <div style="flex:1"><div style="font-size:12px;font-weight:600">Houston HQ Distribution</div><div style="font-size:10px;color:var(--text-muted)">8 staff · $58,900 revenue</div></div>
+                          <span class="d-badge success">●</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;padding:7px;background:var(--bg-input);border-radius:8px;cursor:pointer">
+                          <span style="font-size:18px">🏗️</span>
+                          <div style="flex:1"><div style="font-size:12px;font-weight:600">Austin Depot North</div><div style="font-size:10px;color:var(--text-muted)">3 staff · $23,550 revenue</div></div>
+                          <span class="d-badge success">●</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="d-card">
+                      <div class="d-card-hd">
+                        <div class="d-card-title">⚠️ Low Stock Alerts</div>
+                        <button class="d-btn d-btn-secondary d-btn-sm">View →</button>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:0">
+                        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                          <span style="font-size:12px;color:var(--text-secondary)">Industrial Tape Roll</span>
+                          <span style="font-size:11px;font-weight:700;color:var(--rose)">4 left</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                          <span style="font-size:12px;color:var(--text-secondary)">Safety Helmets M</span>
+                          <span style="font-size:11px;font-weight:700;color:var(--rose)">7 left</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border-subtle)">
+                          <span style="font-size:12px;color:var(--text-secondary)">Forklift Chains</span>
+                          <span style="font-size:11px;font-weight:700;color:var(--amber)">14 left</span>
+                        </div>
+                      </div>
+                      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                        <button class="d-btn d-btn-secondary d-btn-sm" style="justify-content:flex-start;gap:5px">📦 Add Item</button>
+                        <button class="d-btn d-btn-secondary d-btn-sm" style="justify-content:flex-start;gap:5px">🧾 New Bill</button>
+                        <button class="d-btn d-btn-secondary d-btn-sm" style="justify-content:flex-start;gap:5px">👥 Workforce</button>
+                        <button class="d-btn d-btn-secondary d-btn-sm" style="justify-content:flex-start;gap:5px">📈 Reports</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── PAGE: INVENTORY ──────────────────── -->
+                <div class="demo-page" id="page-inventory">
+                  <div class="d-page-header">
+                    <div><div class="d-page-title">📦 Inventory Management</div><div class="d-page-sub">Track items, stock levels, and pricing across all warehouses</div></div>
+                    <div style="display:flex;gap:8px">
+                      <button class="d-btn d-btn-secondary">Import CSV</button>
+                      <button class="d-btn d-btn-primary">+ Add Item</button>
+                    </div>
+                  </div>
+                  <div class="d-stat-grid">
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(99,102,241,.15)">📦</div><div class="d-stat-val" style="color:var(--brand-light)">247</div><div class="d-stat-lbl">Total Items</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(16,185,129,.15)">📊</div><div class="d-stat-val" style="color:var(--emerald)">18,420</div><div class="d-stat-lbl">Total Stock</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(6,182,212,.15)">💎</div><div class="d-stat-val" style="color:var(--cyan)">$94.3k</div><div class="d-stat-lbl">Inventory Value</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(244,63,94,.15)">⚠️</div><div class="d-stat-val" style="color:var(--rose)">8</div><div class="d-stat-lbl">Low Stock</div></div>
+                  </div>
+                  <div class="d-card">
+                    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+                      <div class="d-search" style="max-width:200px"><span>🔍</span><input placeholder="Search items..." value="Steel"></div>
+                      <select class="d-input" style="width:auto;padding:6px 10px;font-size:12px"><option>All Categories</option><option>Tools</option><option>Electronics</option><option>Furniture</option></select>
+                      <select class="d-input" style="width:auto;padding:6px 10px;font-size:12px"><option>All Warehouses</option><option>Dallas Depot</option><option>Houston HQ</option></select>
+                    </div>
+                    <div style="overflow-x:auto">
+                      <table class="d-table">
+                        <thead><tr><th>Item</th><th>SKU</th><th>Category</th><th>Price</th><th>Stock</th><th>Tax</th><th>Warehouse</th><th>Actions</th></tr></thead>
+                        <tbody>
+                          <tr><td><div style="font-weight:600;font-size:12px">Industrial Steel Pipes</div><div style="font-size:10px;color:var(--text-muted)">Added May 28, 2026</div></td><td><code style="font-size:10px;color:var(--text-muted)">SKU-PIPE-001</code></td><td><span class="d-badge brand">Tools</span></td><td><strong>$45.50</strong></td><td><span class="d-badge success">80 pcs</span></td><td><span class="d-badge muted">Normal 5%</span></td><td><span class="d-badge cyan">Dallas</span></td><td style="white-space:nowrap"><button class="d-btn d-btn-secondary d-btn-sm">✏️</button>&nbsp;<button class="d-btn d-btn-secondary d-btn-sm">🗑️</button></td></tr>
+                          <tr><td><div style="font-weight:600;font-size:12px">Premium Electronics Kit</div><div style="font-size:10px;color:var(--text-muted)">Added May 26, 2026</div></td><td><code style="font-size:10px;color:var(--text-muted)">SKU-ELEC-002</code></td><td><span class="d-badge violet">Electronics</span></td><td><strong>$299.00</strong></td><td><span class="d-badge success">120 pcs</span></td><td><span class="d-badge violet">Luxury 15%</span></td><td><span class="d-badge cyan">Houston</span></td><td style="white-space:nowrap"><button class="d-btn d-btn-secondary d-btn-sm">✏️</button>&nbsp;<button class="d-btn d-btn-secondary d-btn-sm">🗑️</button></td></tr>
+                          <tr><td><div style="font-weight:600;font-size:12px">Safety Helmets M</div><div style="font-size:10px;color:var(--text-muted)">Added May 24, 2026</div></td><td><code style="font-size:10px;color:var(--text-muted)">SKU-SAFE-003</code></td><td><span class="d-badge brand">Tools</span></td><td><strong>$32.00</strong></td><td><span class="d-badge danger">7 pcs</span></td><td><span class="d-badge muted">Normal 5%</span></td><td><span class="d-badge brand">Austin</span></td><td style="white-space:nowrap"><button class="d-btn d-btn-secondary d-btn-sm">✏️</button>&nbsp;<button class="d-btn d-btn-secondary d-btn-sm">🗑️</button></td></tr>
+                          <tr><td><div style="font-weight:600;font-size:12px">Office Furniture Set</div><div style="font-size:10px;color:var(--text-muted)">Added May 20, 2026</div></td><td><code style="font-size:10px;color:var(--text-muted)">SKU-FURN-004</code></td><td><span class="d-badge success">Furniture</span></td><td><strong>$189.00</strong></td><td><span class="d-badge warning">35 pcs</span></td><td><span class="d-badge muted">Normal 5%</span></td><td><span class="d-badge cyan">Dallas</span></td><td style="white-space:nowrap"><button class="d-btn d-btn-secondary d-btn-sm">✏️</button>&nbsp;<button class="d-btn d-btn-secondary d-btn-sm">🗑️</button></td></tr>
+                          <tr><td><div style="font-weight:600;font-size:12px">Forklift Chains Heavy</div><div style="font-size:10px;color:var(--text-muted)">Added May 18, 2026</div></td><td><code style="font-size:10px;color:var(--text-muted)">SKU-FORK-005</code></td><td><span class="d-badge brand">Tools</span></td><td><strong>$78.00</strong></td><td><span class="d-badge warning">14 pcs</span></td><td><span class="d-badge muted">Normal 5%</span></td><td><span class="d-badge cyan">Houston</span></td><td style="white-space:nowrap"><button class="d-btn d-btn-secondary d-btn-sm">✏️</button>&nbsp;<button class="d-btn d-btn-secondary d-btn-sm">🗑️</button></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:11px;color:var(--text-muted)">
+                      <span>Showing 1–5 of 247 items</span>
+                      <div style="display:flex;gap:5px">
+                        <button class="d-btn d-btn-secondary d-btn-sm">‹</button>
+                        <button class="d-btn d-btn-primary d-btn-sm">1</button>
+                        <button class="d-btn d-btn-secondary d-btn-sm">2</button>
+                        <button class="d-btn d-btn-secondary d-btn-sm">3</button>
+                        <button class="d-btn d-btn-secondary d-btn-sm">›</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── PAGE: BILLING ───────────────────── -->
+                <div class="demo-page" id="page-billing">
+                  <div class="d-page-header">
+                    <div><div class="d-page-title">🧾 Billing & Invoices</div><div class="d-page-sub">Generate and manage invoices with automated tax calculation</div></div>
+                    <button class="d-btn d-btn-primary">+ New Invoice</button>
+                  </div>
+                  <div class="d-stat-grid">
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(16,185,129,.15)">💰</div><div class="d-stat-val" style="color:var(--emerald)">$124.7k</div><div class="d-stat-lbl">Total Revenue</div><div class="d-stat-trend trend-up">Gross earnings</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(245,158,11,.15)">🏛️</div><div class="d-stat-val" style="color:var(--amber)">$8,920</div><div class="d-stat-lbl">Total Tax</div><div class="d-stat-trend">Normal + Luxury</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(99,102,241,.15)">💵</div><div class="d-stat-val" style="color:var(--brand-light)">$115.8k</div><div class="d-stat-lbl">Net Revenue</div><div class="d-stat-trend trend-up">After tax</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(6,182,212,.15)">📋</div><div class="d-stat-val" style="color:var(--cyan)">$3,283</div><div class="d-stat-lbl">Avg Invoice</div><div class="d-stat-trend">38 total invoices</div></div>
+                  </div>
+                  <div class="d-card">
+                    <div class="d-card-hd">
+                      <div class="d-card-title">Recent Invoices</div>
+                      <div class="d-search" style="max-width:180px"><span>🔍</span><input placeholder="Search invoices..."></div>
+                    </div>
+                    <table class="d-table">
+                      <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Items</th><th>Tax</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+                      <tbody>
+                        <tr><td><code style="font-size:10px;color:var(--brand-light)">INV-0038</code></td><td style="font-weight:600;font-size:12px">Texas Ironworks Ltd.</td><td style="color:var(--text-muted);font-size:11px">May 28, 2026</td><td>3 items</td><td style="color:var(--amber)">$45.50</td><td><strong style="color:var(--emerald)">$955.50</strong></td><td><span class="d-badge success">Paid</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">👁️</button></td></tr>
+                        <tr><td><code style="font-size:10px;color:var(--brand-light)">INV-0037</code></td><td style="font-weight:600;font-size:12px">Global Parts Co.</td><td style="color:var(--text-muted);font-size:11px">May 27, 2026</td><td>7 items</td><td style="color:var(--amber)">$145.00</td><td><strong style="color:var(--emerald)">$2,340.00</strong></td><td><span class="d-badge success">Paid</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">👁️</button></td></tr>
+                        <tr><td><code style="font-size:10px;color:var(--brand-light)">INV-0036</code></td><td style="font-weight:600;font-size:12px">Apex Manufacturing</td><td style="color:var(--text-muted);font-size:11px">May 25, 2026</td><td>12 items</td><td style="color:var(--amber)">$420.00</td><td><strong style="color:var(--emerald)">$7,820.00</strong></td><td><span class="d-badge success">Paid</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">👁️</button></td></tr>
+                        <tr><td><code style="font-size:10px;color:var(--brand-light)">INV-0035</code></td><td style="font-weight:600;font-size:12px">NorthTex Logistics</td><td style="color:var(--text-muted);font-size:11px">May 24, 2026</td><td>5 items</td><td style="color:var(--amber)">$275.00</td><td><strong style="color:var(--emerald)">$5,200.00</strong></td><td><span class="d-badge warning">Pending</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">👁️</button></td></tr>
+                        <tr><td><code style="font-size:10px;color:var(--brand-light)">INV-0034</code></td><td style="font-weight:600;font-size:12px">SwiftDepot Inc.</td><td style="color:var(--text-muted);font-size:11px">May 22, 2026</td><td>2 items</td><td style="color:var(--amber)">$62.00</td><td><strong style="color:var(--emerald)">$1,490.00</strong></td><td><span class="d-badge success">Paid</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">👁️</button></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- ── PAGE: WORKFORCE ─────────────────── -->
+                <div class="demo-page" id="page-workforce">
+                  <div class="d-page-header">
+                    <div><div class="d-page-title">👥 Workforce Management</div><div class="d-page-sub">Manage team members, roles, and warehouse assignments</div></div>
+                    <button class="d-btn d-btn-primary">+ Invite Member</button>
+                  </div>
+                  <div class="d-stat-grid">
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(99,102,241,.15)">👤</div><div class="d-stat-val" style="color:var(--brand-light)">2</div><div class="d-stat-lbl">Admins</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(16,185,129,.15)">🎯</div><div class="d-stat-val" style="color:var(--emerald)">4</div><div class="d-stat-lbl">Managers</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(245,158,11,.15)">⭐</div><div class="d-stat-val" style="color:var(--amber)">8</div><div class="d-stat-lbl">Staff</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(100,116,139,.15)">👷</div><div class="d-stat-val">14</div><div class="d-stat-lbl">Employees</div></div>
+                  </div>
+                  <div class="d-card">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+                      <div class="d-tabs">
+                        <div class="d-tab active" data-demotab="all">All Members</div>
+                        <div class="d-tab" data-demotab="managers">Managers</div>
+                        <div class="d-tab" data-demotab="staff">Staff</div>
+                      </div>
+                      <div class="d-search" style="max-width:180px"><span>🔍</span><input placeholder="Search members..."></div>
+                    </div>
+                    <table class="d-table">
+                      <thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Warehouse</th><th>Status</th><th>Actions</th></tr></thead>
+                      <tbody>
+                        <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="demo-user-av" style="width:28px;height:28px;font-size:10px">SC</div><div style="font-size:12px;font-weight:600">Sarah Connor</div></div></td><td style="font-size:11px;color:var(--text-muted)">sarah@nexware.com</td><td><span class="role-mg">Manager</span></td><td><span class="d-badge cyan">Dallas Depot</span></td><td><span class="d-badge success">Active</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                        <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="demo-user-av" style="width:28px;height:28px;font-size:10px">KP</div><div style="font-size:12px;font-weight:600">Kim Park</div></div></td><td style="font-size:11px;color:var(--text-muted)">kim@nexware.com</td><td><span class="role-st">Staff</span></td><td><span class="d-badge cyan">Houston HQ</span></td><td><span class="d-badge success">Active</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                        <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="demo-user-av" style="width:28px;height:28px;font-size:10px">AT</div><div style="font-size:12px;font-weight:600">Alex Torres</div></div></td><td style="font-size:11px;color:var(--text-muted)">atorres@nexware.com</td><td><span class="role-ad">Admin</span></td><td><span class="d-badge brand">Austin Depot</span></td><td><span class="d-badge success">Active</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                        <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="demo-user-av" style="width:28px;height:28px;font-size:10px">MK</div><div style="font-size:12px;font-weight:600">Marcus Kim</div></div></td><td style="font-size:11px;color:var(--text-muted)">mkim@nexware.com</td><td><span class="role-mg">Manager</span></td><td><span class="d-badge cyan">Houston HQ</span></td><td><span class="d-badge success">Active</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                        <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="demo-user-av" style="width:28px;height:28px;font-size:10px">JR</div><div style="font-size:12px;font-weight:600">James Rodriguez</div></div></td><td style="font-size:11px;color:var(--text-muted)">jrod@nexware.com</td><td><span class="role-em">Employee</span></td><td><span class="d-badge cyan">Dallas Depot</span></td><td><span class="d-badge warning">Inactive</span></td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- ── PAGE: TABLES ─────────────────────── -->
+                <div class="demo-page" id="page-tables">
+                  <div class="d-page-header">
+                    <div><div class="d-page-title">📋 Dynamic Tables</div><div class="d-page-sub">Custom operational data schemas with typed columns</div></div>
+                    <button class="d-btn d-btn-primary">+ New Table</button>
+                  </div>
+                  <div class="d-grid3" style="margin-bottom:14px">
+                    <div class="d-card" style="cursor:pointer;border-color:var(--border-brand)">
+                      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                        <div style="width:36px;height:36px;border-radius:10px;background:rgba(99,102,241,.2);display:flex;align-items:center;justify-content:center;font-size:18px">🔧</div>
+                        <div>
+                          <div style="font-size:13px;font-weight:700">Maintenance Logs</div>
+                          <div style="font-size:10px;color:var(--text-muted)">3 columns · 42 rows</div>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <span class="d-badge brand">text</span><span class="d-badge brand">text</span><span class="d-badge violet">dropdown</span>
+                      </div>
+                    </div>
+                    <div class="d-card" style="cursor:pointer">
+                      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                        <div style="width:36px;height:36px;border-radius:10px;background:rgba(16,185,129,.2);display:flex;align-items:center;justify-content:center;font-size:18px">🚚</div>
+                        <div>
+                          <div style="font-size:13px;font-weight:700">Shipment Tracker</div>
+                          <div style="font-size:10px;color:var(--text-muted)">5 columns · 128 rows</div>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <span class="d-badge success">text</span><span class="d-badge cyan">date</span><span class="d-badge violet">dropdown</span>
+                      </div>
+                    </div>
+                    <div class="d-card" style="cursor:pointer">
+                      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                        <div style="width:36px;height:36px;border-radius:10px;background:rgba(245,158,11,.2);display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>
+                        <div>
+                          <div style="font-size:13px;font-weight:700">Returns Register</div>
+                          <div style="font-size:10px;color:var(--text-muted)">4 columns · 19 rows</div>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <span class="d-badge brand">text</span><span class="d-badge warning">number</span><span class="d-badge violet">dropdown</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="d-card">
+                    <div class="d-card-hd" style="margin-bottom:12px">
+                      <div><div class="d-card-title">🔧 Maintenance Logs</div><div class="d-card-sub">Dallas Logistics Depot · Daily forklift checkups</div></div>
+                      <div style="display:flex;gap:6px">
+                        <button class="d-btn d-btn-secondary d-btn-sm">Export</button>
+                        <button class="d-btn d-btn-primary d-btn-sm">+ Add Row</button>
+                      </div>
+                    </div>
+                    <table class="d-table">
+                      <thead><tr><th>Forklift ID</th><th>Inspector</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                      <tbody>
+                        <tr><td style="font-family:var(--font-mono);font-size:11px">FL-004</td><td>Sarah Connor</td><td><span class="d-badge success">OK</span></td><td style="font-size:11px;color:var(--text-muted)">May 28, 2026</td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                        <tr><td style="font-family:var(--font-mono);font-size:11px">FL-007</td><td>Kim Park</td><td><span class="d-badge danger">Maintenance Required</span></td><td style="font-size:11px;color:var(--text-muted)">May 27, 2026</td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                        <tr><td style="font-family:var(--font-mono);font-size:11px">FL-002</td><td>James Rodriguez</td><td><span class="d-badge success">OK</span></td><td style="font-size:11px;color:var(--text-muted)">May 27, 2026</td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                        <tr><td style="font-family:var(--font-mono);font-size:11px">FL-009</td><td>Sarah Connor</td><td><span class="d-badge warning">Under Review</span></td><td style="font-size:11px;color:var(--text-muted)">May 26, 2026</td><td><button class="d-btn d-btn-secondary d-btn-sm">✏️</button></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- ── PAGE: AUDIT LOGS ─────────────────── -->
+                <div class="demo-page" id="page-audit">
+                  <div class="d-page-header">
+                    <div><div class="d-page-title">🔍 Audit Logs</div><div class="d-page-sub">Tamper-evident record of all system events — tenant-scoped</div></div>
+                    <button class="d-btn d-btn-secondary">Export CSV</button>
+                  </div>
+                  <div class="d-card" style="margin-bottom:14px">
+                    <div style="display:flex;gap:10px;flex-wrap:wrap">
+                      <div class="d-search" style="max-width:200px"><span>🔍</span><input placeholder="Search logs..."></div>
+                      <select class="d-input" style="width:auto;padding:6px 10px;font-size:12px"><option>All Actions</option><option>Login</option><option>Create</option><option>Update</option><option>Delete</option></select>
+                      <select class="d-input" style="width:auto;padding:6px 10px;font-size:12px"><option>All Warehouses</option><option>Dallas Depot</option><option>Houston HQ</option></select>
+                    </div>
+                  </div>
+                  <div class="d-card">
+                    <table class="d-table">
+                      <thead><tr><th>Action</th><th>Description</th><th>User</th><th>Warehouse</th><th>Timestamp</th></tr></thead>
+                      <tbody>
+                        <tr><td><span class="d-badge success">item_create</span></td><td style="font-size:11px;color:var(--text-secondary)">Created inventory item: Industrial Steel Pipes (SKU-PIPE-001)</td><td style="font-size:11px">Alex Mercer</td><td style="font-size:11px;color:var(--text-muted)">Dallas Depot</td><td style="font-size:10px;color:var(--text-muted)">May 28 · 14:32</td></tr>
+                        <tr><td><span class="d-badge brand">login</span></td><td style="font-size:11px;color:var(--text-secondary)">User logged in successfully: sarah@nexware.com</td><td style="font-size:11px">Sarah Connor</td><td style="font-size:11px;color:var(--text-muted)">Dallas Depot</td><td style="font-size:10px;color:var(--text-muted)">May 28 · 14:18</td></tr>
+                        <tr><td><span class="d-badge cyan">bill_create</span></td><td style="font-size:11px;color:var(--text-secondary)">Invoice INV-0038 created — Total: $955.50 (Tax: $45.50)</td><td style="font-size:11px">Sarah Connor</td><td style="font-size:11px;color:var(--text-muted)">Dallas Depot</td><td style="font-size:10px;color:var(--text-muted)">May 28 · 13:55</td></tr>
+                        <tr><td><span class="d-badge warning">warehouse_update</span></td><td style="font-size:11px;color:var(--text-secondary)">Warehouse settings updated: Dallas Logistics Depot</td><td style="font-size:11px">Alex Mercer</td><td style="font-size:11px;color:var(--text-muted)">Dallas Depot</td><td style="font-size:10px;color:var(--text-muted)">May 28 · 11:20</td></tr>
+                        <tr><td><span class="d-badge success">workforce_create</span></td><td style="font-size:11px;color:var(--text-secondary)">New workforce member added: Kim Park (Staff)</td><td style="font-size:11px">Alex Mercer</td><td style="font-size:11px;color:var(--text-muted)">Houston HQ</td><td style="font-size:10px;color:var(--text-muted)">May 27 · 16:45</td></tr>
+                        <tr><td><span class="d-badge brand">signup</span></td><td style="font-size:11px;color:var(--text-secondary)">New Super Admin registered: alex@nexware.com (Tenant provisioned)</td><td style="font-size:11px">Alex Mercer</td><td style="font-size:11px;color:var(--text-muted)">—</td><td style="font-size:10px;color:var(--text-muted)">May 26 · 09:00</td></tr>
+                        <tr><td><span class="d-badge danger">logout</span></td><td style="font-size:11px;color:var(--text-secondary)">User logged out: marcus@nexware.com</td><td style="font-size:11px">Marcus Kim</td><td style="font-size:11px;color:var(--text-muted)">Houston HQ</td><td style="font-size:10px;color:var(--text-muted)">May 25 · 18:10</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- ── PAGE: ANALYTICS ─────────────────── -->
+                <div class="demo-page" id="page-analytics">
+                  <div class="d-page-header">
+                    <div><div class="d-page-title">📈 Analytics & Reports</div><div class="d-page-sub">Global revenue, inventory, and workforce insights</div></div>
+                    <button class="d-btn d-btn-secondary">Export PDF</button>
+                  </div>
+                  <div class="d-stat-grid">
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(16,185,129,.15)">📈</div><div class="d-stat-val" style="color:var(--emerald)">+18%</div><div class="d-stat-lbl">Revenue Growth</div><div class="d-stat-trend trend-up">vs last month</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(99,102,241,.15)">🔄</div><div class="d-stat-val" style="color:var(--brand-light)">94%</div><div class="d-stat-lbl">Stock Health</div><div class="d-stat-trend trend-up">All locations</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(6,182,212,.15)">⚡</div><div class="d-stat-val" style="color:var(--cyan)">38</div><div class="d-stat-lbl">Invoices This Month</div><div class="d-stat-trend trend-up">↑ 12 from last</div></div>
+                    <div class="d-stat-card"><div class="d-stat-icon" style="background:rgba(245,158,11,.15)">👥</div><div class="d-stat-val" style="color:var(--amber)">28</div><div class="d-stat-lbl">Active Team Members</div><div class="d-stat-trend">Across 4 warehouses</div></div>
+                  </div>
+                  <div class="d-grid2">
+                    <div class="d-card">
+                      <div class="d-card-hd"><div class="d-card-title">📊 Monthly Revenue Breakdown</div></div>
+                      <div class="d-chart-wrap" style="height:160px"><canvas id="demo-analytics-chart"></canvas></div>
+                    </div>
+                    <div class="d-card">
+                      <div class="d-card-hd"><div class="d-card-title">🏭 Revenue by Warehouse</div></div>
+                      <div class="d-chart-wrap" style="height:160px"><canvas id="demo-wh-pie-chart"></canvas></div>
+                    </div>
+                  </div>
+                  <div class="d-card">
+                    <div class="d-card-hd"><div class="d-card-title">📦 Revenue Summary by Warehouse</div></div>
+                    <table class="d-table">
+                      <thead><tr><th>Warehouse</th><th>Items</th><th>Invoices</th><th>Revenue</th><th>% Share</th><th>Growth</th></tr></thead>
+                      <tbody>
+                        <tr><td style="font-weight:600">Houston HQ Distribution</td><td>98</td><td>16</td><td style="color:var(--emerald);font-weight:700">$58,900</td><td><span class="d-badge success">47%</span></td><td class="trend-up">+22%</td></tr>
+                        <tr><td style="font-weight:600">Dallas Logistics Depot</td><td>74</td><td>12</td><td style="color:var(--emerald);font-weight:700">$42,300</td><td><span class="d-badge brand">34%</span></td><td class="trend-up">+14%</td></tr>
+                        <tr><td style="font-weight:600">Austin Depot North</td><td>52</td><td>7</td><td style="color:var(--emerald);font-weight:700">$23,550</td><td><span class="d-badge muted">19%</span></td><td class="trend-up">+8%</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- ── PAGE: SETTINGS ──────────────────── -->
+                <div class="demo-page" id="page-settings">
+                  <div class="d-page-header">
+                    <div><div class="d-page-title">⚙️ System Settings</div><div class="d-page-sub">Manage account, security, tax config, and notification preferences</div></div>
+                  </div>
+                  <div class="d-tabs" style="margin-bottom:16px">
+                    <div class="d-tab active">Profile</div>
+                    <div class="d-tab">Tax Config</div>
+                    <div class="d-tab">Notifications</div>
+                    <div class="d-tab">Security</div>
+                  </div>
+                  <div class="d-grid2">
+                    <div class="d-card">
+                      <div class="d-card-title" style="margin-bottom:16px">Account Profile</div>
+                      <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+                        <div class="demo-user-av" style="width:52px;height:52px;font-size:18px">AM</div>
+                        <div>
+                          <div style="font-size:15px;font-weight:700">Alex Mercer</div>
+                          <div style="font-size:12px;color:var(--text-muted)">alex@nexware.com</div>
+                          <span class="role-sa" style="margin-top:5px;display:inline-flex">Super Admin</span>
+                        </div>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:10px">
+                        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Full Name</label><input class="d-input" value="Alex Mercer"></div>
+                        <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Email Address</label><input class="d-input" value="alex@nexware.com"></div>
+                        <button class="d-btn d-btn-primary" style="margin-top:4px">Save Changes</button>
+                      </div>
+                    </div>
+                    <div class="d-card">
+                      <div class="d-card-title" style="margin-bottom:16px">Tax Configuration</div>
+                      <div style="display:flex;flex-direction:column;gap:12px">
+                        <div>
+                          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><label style="font-size:12px;color:var(--text-secondary)">Normal Tax Rate</label><strong style="color:var(--emerald)">5%</strong></div>
+                          <div class="d-progress"><div class="d-progress-fill" style="width:5%;background:var(--emerald)"></div></div>
+                          <input type="range" min="0" max="30" value="5" style="width:100%;margin-top:6px;accent-color:var(--emerald)">
+                        </div>
+                        <div>
+                          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><label style="font-size:12px;color:var(--text-secondary)">Luxury Tax Rate</label><strong style="color:var(--violet)">15%</strong></div>
+                          <div class="d-progress"><div class="d-progress-fill" style="width:15%;background:var(--violet)"></div></div>
+                          <input type="range" min="0" max="30" value="15" style="width:100%;margin-top:6px;accent-color:var(--violet)">
+                        </div>
+                        <div style="padding:10px;background:rgba(99,102,241,.07);border-radius:8px;font-size:12px;color:var(--text-secondary)">
+                          💡 Tax rates apply to all new invoices. Historical invoices retain their original snapshot.
+                        </div>
+                        <button class="d-btn d-btn-primary">Update Tax Config</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div><!-- /demo-content -->
+            </div><!-- /demo-shell -->
+          </div><!-- /erp-frame -->
+        </div><!-- /erp-device -->
+
+        <div class="demo-hint">
+          <span class="kbd">Click</span> any sidebar item or tab above to switch views
+          &nbsp;·&nbsp; <span class="kbd">Scroll</span> inside the demo to see more data
+          &nbsp;·&nbsp; All interactions are <strong style="color:var(--emerald)">read-only</strong> — nothing is saved
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ WORKFLOW ══════════════════════════════════ -->
+    <section id="workflow" class="lp-section">
+      <div class="lp-container">
+        <div class="text-center reveal">
+          <div class="lp-label">🔄 How It Works</div>
+          <h2 class="lp-h2">Up and running in<br><span>under 5 minutes</span></h2>
+          <p class="lp-sub">From zero to a fully operational multi-warehouse ERP with one streamlined onboarding flow.</p>
+        </div>
+        <div class="workflow-grid">
+          <div class="wf-step reveal"><div class="wf-num">👤</div><h3 class="wf-title">Create Account</h3><p class="wf-desc">Sign up as a Super Admin. Your private isolated tenant is provisioned instantly with Argon2id-secured credentials.</p></div>
+          <div class="wf-step reveal"><div class="wf-num">🏭</div><h3 class="wf-title">Register Warehouses</h3><p class="wf-desc">Add unlimited warehouse locations with contact details, tax preferences, and branding.</p></div>
+          <div class="wf-step reveal"><div class="wf-num">👥</div><h3 class="wf-title">Invite Your Team</h3><p class="wf-desc">Send email invitations to managers, staff, and employees. Assign roles and warehouse access instantly.</p></div>
+          <div class="wf-step reveal"><div class="wf-num">🚀</div><h3 class="wf-title">Start Operating</h3><p class="wf-desc">Add inventory, create invoices, build custom tables — real-time sync keeps every user updated instantly.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ ALL FEATURES ══════════════════════════════ -->
+    <section class="lp-section" style="background:rgba(0,0,0,.15)">
+      <div class="lp-container">
+        <div class="text-center reveal">
+          <div class="lp-label">🛠 Full Feature Set</div>
+          <h2 class="lp-h2">Built for serious<br><span>enterprise operations</span></h2>
+        </div>
+        <div class="af-grid">
+          <div class="af-cell reveal"><div class="af-icon">🔐</div><div class="af-title">JWT Auth + Refresh Tokens</div><div class="af-desc">15-min access tokens with 7-day rotating refresh tokens and database-backed session revocation.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">📡</div><div class="af-title">Real-Time WebSocket Sync</div><div class="af-desc">Live updates pushed via WebSocket connections backed by MongoDB Change Streams. Every tab stays synchronized.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">📥</div><div class="af-title">CSV Bulk Import & Export</div><div class="af-desc">Import thousands of inventory items at once. Export any table, bill list, or audit log to CSV or PDF.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">📋</div><div class="af-title">Dynamic Table Builder</div><div class="af-desc">Design custom data schemas with typed columns: text, number, dropdown, date. Build any operational table.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">🌐</div><div class="af-title">Multi-Tenant Isolation</div><div class="af-desc">Every tenant's data is triple-isolated at the token, service, and repository layer — architecturally impossible to cross.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">📈</div><div class="af-title">Analytics & Revenue Charts</div><div class="af-desc">Interactive Chart.js visualizations: 6-month revenue trend, warehouse distribution, and projected growth.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">🔔</div><div class="af-title">Smart Notifications</div><div class="af-desc">Role-aware in-app notifications with granular per-user preference controls for billing, stock, and system events.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">⚡</div><div class="af-title">Rate Limiting & Security</div><div class="af-desc">Production-grade sliding-window rate limiter (Redis + in-memory fallback), full CORS policy, Argon2id hashing.</div></div>
+          <div class="af-cell reveal"><div class="af-icon">🏥</div><div class="af-title">Health & Monitoring</div><div class="af-desc">Live system health checks for database, cache, and realtime services at /health endpoints for ops teams.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ TESTIMONIALS ══════════════════════════════ -->
+    <section class="lp-section">
+      <div class="lp-container">
+        <div class="text-center reveal">
+          <div class="lp-label">💬 What Teams Say</div>
+          <h2 class="lp-h2">Built for real<br><span>logistics teams</span></h2>
+        </div>
+        <div class="t-grid">
+          <div class="t-card reveal">
+            <div class="t-stars">★★★★★</div>
+            <p class="t-quote">"NexWare replaced three separate tools we were using. The audit log alone saves us hours of compliance reporting every month. Real-time sync between warehouses is a game changer."</p>
+            <div class="t-author"><div class="t-av">JR</div><div><div class="t-name">James Rodriguez</div><div class="t-role">VP Operations, DallasFlex</div></div></div>
+          </div>
+          <div class="t-card reveal">
+            <div class="t-stars">★★★★★</div>
+            <p class="t-quote">"The dynamic table builder is genius. We built a custom forklift maintenance log in 5 minutes. The role-based visibility means managers see exactly what they need — nothing more."</p>
+            <div class="t-author"><div class="t-av">SC</div><div><div class="t-name">Sarah Chen</div><div class="t-role">Warehouse Manager, Apex Mfg.</div></div></div>
+          </div>
+          <div class="t-card reveal">
+            <div class="t-stars">★★★★★</div>
+            <p class="t-quote">"Tax snapshots on every invoice means our historical reports never change. Our accounting team signed off immediately. The billing system is exactly what we needed."</p>
+            <div class="t-author"><div class="t-av">MK</div><div><div class="t-name">Marcus Kim</div><div class="t-role">CFO, GlobalParts Co.</div></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ PRICING ════════════════════════════════════ -->
+    <section id="pricing" class="lp-section" style="background:rgba(0,0,0,.15)">
+      <div class="lp-container">
+        <div class="text-center reveal">
+          <div class="lp-label">💳 Pricing</div>
+          <h2 class="lp-h2">Simple, honest pricing.<br><span>No surprises.</span></h2>
+          <p class="lp-sub">Choose the plan that matches your operation scale. Upgrade anytime.</p>
+        </div>
+        <div class="pricing-grid">
+          <div class="p-card reveal">
+            <div class="p-plan-lbl">Starter</div>
+            <div class="p-price"><span class="amount">$49</span><span class="per">/month</span></div>
+            <p class="p-tagline">Perfect for small businesses starting with digital inventory management.</p>
+            <ul class="p-feats">
+              <li><span class="tick">✓</span> 1 Warehouse Location</li>
+              <li><span class="tick">✓</span> Up to 10 Team Members</li>
+              <li><span class="tick">✓</span> Full Inventory Management</li>
+              <li><span class="tick">✓</span> Invoice Billing with Tax</li>
+              <li><span class="tick">✓</span> Basic Audit Logging</li>
+              <li><span class="tick">✓</span> CSV Import / Export</li>
+              <li><span class="tick">✓</span> Email Support</li>
+            </ul>
+            <a href="#/signup" class="p-cta p-cta-ghost">Get Started</a>
+          </div>
+          <div class="p-card popular reveal">
+            <div class="p-pop-tag">MOST POPULAR</div>
+            <div class="p-plan-lbl">Enterprise</div>
+            <div class="p-price"><span class="amount">$199</span><span class="per">/month</span></div>
+            <p class="p-tagline">For scaling operations needing multi-location sync, advanced controls, and compliance.</p>
+            <ul class="p-feats">
+              <li><span class="tick">✓</span> Unlimited Warehouses</li>
+              <li><span class="tick">✓</span> Unlimited Team Members</li>
+              <li><span class="tick">✓</span> 5-Tier RBAC System</li>
+              <li><span class="tick">✓</span> Dynamic Custom Table Builder</li>
+              <li><span class="tick">✓</span> Full Compliance Audit Logs</li>
+              <li><span class="tick">✓</span> Advanced Analytics & Charts</li>
+              <li><span class="tick">✓</span> Real-Time WebSocket Sync</li>
+              <li><span class="tick">✓</span> Priority 24/7 Support</li>
+            </ul>
+            <a href="#/signup" class="p-cta p-cta-brand">Start Enterprise Trial →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ CTA ════════════════════════════════════════ -->
+    <section class="lp-section">
+      <div class="lp-container">
+        <div class="cta-box reveal">
+          <h2>Ready to transform your<br><span>warehouse operations?</span></h2>
+          <p>Join modern logistics teams already running on NexWare ERP.<br>Setup takes minutes, not months.</p>
+          <div class="cta-actions">
+            <a href="#/signup" class="lp-btn lp-btn-primary lp-btn-lg">🚀 Create Free Account</a>
+            <a href="#interactive-demo" class="lp-btn lp-btn-ghost lp-btn-lg">🖥 Try Demo First</a>
+          </div>
+          <p class="cta-note">No credit card required · Free trial · Cancel anytime</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ FOOTER ════════════════════════════════════ -->
+    <footer>
+      <div class="lp-container">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <a href="#/" class="lp-logo"><div class="lp-logo-icon">🏭</div><span>Nex<em>Ware</em></span></a>
+            <p>Enterprise warehouse management platform built for modern logistics. Unify inventory, billing, workforce, and compliance in one powerful system.</p>
+            <div style="margin-top:14px"><span class="footer-badge">● System Operational</span></div>
+          </div>
+          <div class="footer-col">
+            <h4>Platform</h4>
+            <a href="#features">Features</a>
+            <a href="#interactive-demo">Live Demo</a>
+            <a href="#workflow">How It Works</a>
+            <a href="#pricing">Pricing</a>
+          </div>
+          <div class="footer-col">
+            <h4>Product</h4>
+            <a href="#/signup">Get Started</a>
+            <a href="#/login">Log In</a>
+            <a href="#/dashboard">Dashboard</a>
+            <a href="#/items">Inventory</a>
+          </div>
+          <div class="footer-col">
+            <h4>Technology</h4>
+            <a href="#">FastAPI Backend</a>
+            <a href="#">MongoDB Atlas</a>
+            <a href="#">WebSocket Realtime</a>
+            <a href="#">Argon2id Security</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span>© 2026 NexWare ERP. Built for enterprise efficiency. · <a href="#/privacy" style="text-decoration:underline;color:var(--text-secondary)">Privacy Policy</a> · <a href="#/terms" style="text-decoration:underline;color:var(--text-secondary)">Terms & Conditions</a></span>
+          <span>FastAPI · MongoDB · Vanilla JS · JWT Auth</span>
+        </div>
+      </div>
+    </footer>
+  `;
+
+  // ── NAV TOGGLE ──────────────────────────────────────────
+  const mobBtn = document.getElementById('mobBtn');
+  const mobMenu = document.getElementById('mobMenu');
+  if (mobBtn && mobMenu) {
+    mobBtn.addEventListener('click', () => {
+      mobMenu.classList.toggle('open');
+      mobBtn.textContent = mobMenu.classList.contains('open') ? '✕' : '☰';
+    });
+    mobMenu.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+      mobMenu.classList.remove('open');
+      mobBtn.textContent = '☰';
+    }));
+  }
+
+  // ── SCROLL NAVBAR EFFECT ────────────────────────────────
+  const onScroll = () => {
+    const navEl = document.getElementById('lp-nav');
+    if (navEl) {
+      navEl.style.background = window.scrollY > 40 ? 'rgba(10,11,26,.97)' : 'rgba(10,11,26,.85)';
+    }
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // ── SMOOTH SCROLL LOCAL ANCHORS ────────────────────────
+  appEl.querySelectorAll('a[href^="#"]').forEach(a => {
+    const href = a.getAttribute('href');
+    if (href.startsWith('#/')) return; // Ignore SPA routes
+    
+    a.addEventListener('click', e => {
+      const targetEl = document.querySelector(href);
+      if (targetEl) {
+        e.preventDefault();
+        window.scrollTo({ top: targetEl.offsetTop - 76, behavior: 'smooth' });
+      }
+    });
+  });
+
+  // ── SCROLL REVEAL ──────────────────────────────────────
+  const revObs = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        setTimeout(() => entry.target.classList.add('visible'), i * 55);
+        revObs.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -30px 0px' });
+  appEl.querySelectorAll('.reveal').forEach(el => revObs.observe(el));
+
+  // ── INTERACTIVE DEMO PAGE CONTROLLER ────────────────────
+  const urlMap = {
+    dashboard: 'app.nexware.io/dashboard',
+    inventory: 'app.nexware.io/inventory',
+    billing: 'app.nexware.io/billing',
+    workforce: 'app.nexware.io/workforce',
+    tables: 'app.nexware.io/tables',
+    audit: 'app.nexware.io/audit',
+    analytics: 'app.nexware.io/analytics',
+    settings: 'app.nexware.io/settings'
+  };
+
+  const demoCharts = {};
+  const CHART_DEFAULTS = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a1d3a', titleColor: '#f1f5f9',
+        bodyColor: '#94a3b8', borderColor: '#2a2d4a', borderWidth: 1
+      }
+    }
+  };
+
+  function destroyChart(id) {
+    if (demoCharts[id]) { demoCharts[id].destroy(); delete demoCharts[id]; }
+  }
+
+  function initDemoCharts(page) {
+    if (page === 'dashboard') {
+      const rc = document.getElementById('demo-rev-chart');
+      if (rc && window.Chart) {
+        destroyChart('rev');
+        demoCharts['rev'] = new window.Chart(rc, {
+          type: 'bar',
+          data: {
+            labels: ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'],
+            datasets: [{
+              label: 'Revenue',
+              data: [18200, 24500, 19800, 31200, 28600, 35400],
+              backgroundColor: ['rgba(99,102,241,.35)','rgba(99,102,241,.35)','rgba(99,102,241,.35)','rgba(99,102,241,.35)','rgba(99,102,241,.35)','rgba(99,102,241,.85)'],
+              borderColor: '#6366f1', borderWidth: 1, borderRadius: 5
+            }]
+          },
+          options: {
+            ...CHART_DEFAULTS,
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
+              y: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#64748b', font: { size: 10 }, callback: v => '$' + (v/1000).toFixed(0) + 'k' }, border: { display: false } }
+            }
+          }
+        });
+      }
+    }
+
+    if (page === 'analytics') {
+      const ac = document.getElementById('demo-analytics-chart');
+      if (ac && window.Chart) {
+        destroyChart('analytics');
+        demoCharts['analytics'] = new window.Chart(ac, {
+          type: 'line',
+          data: {
+            labels: ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'],
+            datasets: [{
+              label: 'Revenue',
+              data: [18200, 24500, 19800, 31200, 28600, 35400],
+              borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.12)',
+              fill: true, tension: 0.4, pointRadius: 4,
+              pointBackgroundColor: '#6366f1'
+            }]
+          },
+          options: {
+            ...CHART_DEFAULTS,
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
+              y: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#64748b', font: { size: 10 }, callback: v => '$' + (v/1000).toFixed(0) + 'k' }, border: { display: false } }
+            }
+          }
+        });
+      }
+      const pc = document.getElementById('demo-wh-pie-chart');
+      if (pc && window.Chart) {
+        destroyChart('whpie');
+        demoCharts['whpie'] = new window.Chart(pc, {
+          type: 'doughnut',
+          data: {
+            labels: ['Houston HQ', 'Dallas Depot', 'Austin Depot'],
+            datasets: [{
+              data: [58900, 42300, 23550],
+              backgroundColor: ['rgba(99,102,241,.85)', 'rgba(16,185,129,.85)', 'rgba(6,182,212,.85)'],
+              borderColor: '#0f1029', borderWidth: 2
+            }]
+          },
+          options: {
+            ...CHART_DEFAULTS,
+            plugins: {
+              ...CHART_DEFAULTS.plugins,
+              legend: { display: true, position: 'right', labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 10, padding: 12 } }
+            },
+            cutout: '65%'
+          }
+        });
+      }
+    }
+  }
+
+  function switchDemoPage(page) {
+    appEl.querySelectorAll('.demo-page').forEach(p => p.classList.remove('active'));
+    appEl.querySelectorAll('.demo-item').forEach(i => i.classList.remove('active'));
+    appEl.querySelectorAll('.showcase-tab').forEach(t => t.classList.remove('active'));
+
+    const target = document.getElementById('page-' + page);
+    if (target) target.classList.add('active');
+
+    const sideItem = appEl.querySelector(`.demo-item[data-target="${page}"]`);
+    if (sideItem) sideItem.classList.add('active');
+
+    const sTab = appEl.querySelector(`.showcase-tab[data-page="${page}"]`);
+    if (sTab) sTab.classList.add('active');
+
+    const urlEl = document.getElementById('demo-url');
+    if (urlEl) urlEl.textContent = urlMap[page] || 'app.nexware.io/' + page;
+
+    requestAnimationFrame(() => initDemoCharts(page));
+  }
+
+  appEl.querySelectorAll('.demo-item[data-target]').forEach(item => {
+    item.addEventListener('click', () => switchDemoPage(item.dataset.target));
+  });
+
+  appEl.querySelectorAll('.showcase-tab[data-page]').forEach(tab => {
+    tab.addEventListener('click', () => switchDemoPage(tab.dataset.page));
+  });
+
+  appEl.querySelectorAll('.d-tab[data-demotab]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const parent = tab.closest('.d-tabs');
+      if (parent) {
+        parent.querySelectorAll('.d-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+      }
+    });
+  });
+
+  appEl.querySelectorAll('.d-tab:not([data-demotab])').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const parent = tab.closest('.d-tabs');
+      if (parent) {
+        parent.querySelectorAll('.d-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+      }
+    });
+  });
+
+  // ── TAX RANGE SLIDERS ──────────────────────────────────
+  appEl.querySelectorAll('input[type="range"]').forEach(slider => {
+    slider.addEventListener('input', function() {
+      const label = this.parentElement.querySelector('strong');
+      if (label) label.textContent = this.value + '%';
+      const fill = this.parentElement.querySelector('.d-progress-fill');
+      if (fill) fill.style.width = this.value + '%';
+    });
+  });
+
+  // Clean scroll listener on hash change
+  const onHashChange = () => {
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('hashchange', onHashChange);
+  };
+  window.addEventListener('hashchange', onHashChange);
+
+  // Trigger default demo dashboard charts
+  initDemoCharts('dashboard');
+}
+
 // ===== pages/legal.js =====
 /**
  * Legal/Compliance Pages — Privacy Policy & Terms of Service
@@ -2804,7 +4132,7 @@ function renderPrivacy() {
       <div class="auth-bg-grid"></div>
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
-          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.href='landing.html'">
+          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
             <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>
@@ -2852,7 +4180,7 @@ function renderTerms() {
       <div class="auth-bg-grid"></div>
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
-          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.href='landing.html'">
+          <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
             <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>
@@ -2905,6 +4233,10 @@ const _dashboardCharts = {};
  */
 function renderDashboard() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const whs = getWarehouses();
   const users = getAllUsers();
   const items = getItems();
@@ -2948,15 +4280,15 @@ function renderDashboard() {
 
       <!-- Welcome Banner -->
       <div style="background:var(--gradient-card);border:1px solid var(--border-brand);border-radius:var(--radius-xl);padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <div style="width:48px;height:48px;background:var(--gradient-brand);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:var(--shadow-brand);flex-shrink:0">👋</div>
+        <div style="width:48px;height:48px;background:var(--gradient-brand);border-radius:14px;display:flex;align-items:center;justify-content:center;color:white;box-shadow:var(--shadow-brand);flex-shrink:0">${getSvgIcon('dashboard', 22)}</div>
         <div style="flex:1;min-width:0">
           <h2 style="font-size:20px;font-weight:800;margin-bottom:2px">Welcome back, ${user.name.split(' ')[0]}!</h2>
           <p style="color:var(--text-muted);font-size:13px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})} · ${roleLabel}</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${isSA ? `<button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'">🏭 Warehouses</button>
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/billing'">🧾 New Bill</button>` : ''}
-          ${!isSA ? `<button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'">🧾 New Bill</button>` : ''}
+          ${isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/warehouses'">${getSvgIcon('warehouses', 14)} Warehouses</button>
+          <button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
+          ${!isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
         </div>
       </div>
 
@@ -3058,7 +4390,7 @@ function renderDashboard() {
           <div style="display:flex;flex-direction:column;gap:8px">
             ${whs.slice(0,4).map(wh=>`
               <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-input);border-radius:8px;cursor:pointer" onclick="location.hash='#/warehouses/${wh.id}'">
-                <div style="font-size:20px">${wh.logo||'🏭'}</div>
+                <div style="display:flex;align-items:center">${wh.logo ? `<span style="font-size:20px">${wh.logo}</span>` : getSvgIcon('warehouses', 20)}</div>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wh.name}</div>
                   <div style="font-size:11px;color:var(--text-muted)">${wh.staffCount||0} staff · ${formatCurrency(wh.revenue||0)}</div>
@@ -3074,7 +4406,7 @@ function renderDashboard() {
           </div>
           ${myWh ? `
           <div style="text-align:center;padding:8px 0">
-            <div style="font-size:40px;margin-bottom:8px">${myWh.logo||'🏭'}</div>
+            <div style="display:flex;justify-content:center;margin-bottom:8px">${myWh.logo ? `<span style="font-size:40px">${myWh.logo}</span>` : getSvgIcon('warehouses', 40)}</div>
             <div style="font-size:16px;font-weight:700;color:var(--text-primary)">${myWh.name}</div>
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${myWh.businessName}</div>
             <div style="display:flex;justify-content:center;gap:20px">
@@ -3149,18 +4481,18 @@ function renderDashboard() {
         <div class="chart-card col-5">
           <div class="chart-card-header">
             <div>
-              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Smart Restock</div>
-              <div class="chart-card-subtitle">AI-prioritized inventory needs</div>
+              <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Restock Recommender</div>
+              <div class="chart-card-subtitle">Priority inventory reorder requirements</div>
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px">
             ${restockSuggestions.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text-muted)">Stock levels optimal</div>' :
               restockSuggestions.map(s => `
-                <div style="background:rgba(99,102,241,0.05);padding:12px;border-radius:10px;border:1px solid rgba(99,102,241,0.1);display:flex;align-items:center;gap:12px">
+                <div style="background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;border:1px solid var(--border-default);display:flex;align-items:center;gap:12px">
                   <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0">${getSvgIcon('items', 18)}</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:700;color:var(--text-primary)">${s.name}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} sold recently · Priority: ${s.priority > 30 ? 'High 🔥' : 'Medium'}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} units sold · Priority: ${s.priority > 30 ? 'High' : 'Normal'}</div>
                   </div>
                   <div style="text-align:right">
                     <div style="font-size:14px;font-weight:800;color:${s.stock < 10 ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
@@ -3176,25 +4508,18 @@ function renderDashboard() {
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Summary</div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Gross Revenue</div>
-              <div style="font-size:18px;font-weight:800;color:var(--accent-emerald)">${formatCurrency(totalRevenue).split('.')[0]}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;height:calc(100% - 48px);align-content:center">
+            <div style="padding:18px 12px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:12px;text-align:center;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Gross Revenue</div>
+              <div style="font-size:20px;font-weight:800;color:var(--accent-emerald)">${formatCurrency(totalRevenue).split('.')[0]}</div>
             </div>
-            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Total Tax</div>
-              <div style="font-size:18px;font-weight:800;color:var(--accent-amber)">${formatCurrency(totalTax).split('.')[0]}</div>
+            <div style="padding:18px 12px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:12px;text-align:center;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Total Tax</div>
+              <div style="font-size:20px;font-weight:800;color:var(--accent-amber)">${formatCurrency(totalTax).split('.')[0]}</div>
             </div>
-            <div style="padding:15px;background:var(--bg-input);border-radius:12px;text-align:center">
-              <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">Net Earnings</div>
-              <div style="font-size:18px;font-weight:800;color:var(--text-brand)">${formatCurrency(totalRevenue-totalTax).split('.')[0]}</div>
-            </div>
-          </div>
-          <div style="margin-top:15px;padding:15px;background:linear-gradient(90deg, rgba(99,102,241,0.1), transparent);border-radius:12px;display:flex;align-items:center;gap:12px">
-            <div style="display:flex;align-items:center;color:var(--accent-emerald)">${getSvgIcon('analytics', 24)}</div>
-            <div>
-              <div style="font-size:13px;font-weight:700">Projected Growth</div>
-              <div style="font-size:11px;color:var(--text-muted)">Expected +12% increase based on current month volume</div>
+            <div style="padding:18px 12px;background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:12px;text-align:center;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Net Earnings</div>
+              <div style="font-size:20px;font-weight:800;color:var(--text-brand)">${formatCurrency(totalRevenue-totalTax).split('.')[0]}</div>
             </div>
           </div>
         </div>
@@ -3211,11 +4536,15 @@ function renderDashboard() {
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
             ${['admin','manager','staff','employee'].map(r=>{
               const count = users.filter(u=>u.role===r).length;
-              const icons={admin:'🔵',manager:'🟢',staff:'🟡',employee:'⚫'};
-              return `<div style="text-align:center;padding:10px;background:var(--bg-input);border-radius:8px">
-                <div style="font-size:16px;margin-bottom:4px">${icons[r]}</div>
-                <div style="font-size:18px;font-weight:800;color:var(--text-primary)">${count}</div>
-                <div style="font-size:10px;color:var(--text-muted);text-transform:capitalize">${r}</div>
+              const badges={
+                admin: `<span class="badge role-admin" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Admin</span>`,
+                manager: `<span class="badge role-manager" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Manager</span>`,
+                staff: `<span class="badge role-staff" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Staff</span>`,
+                employee: `<span class="badge role-employee" style="font-size:9px;padding:2px 4px;margin-top:4px;display:inline-block">Employee</span>`
+              };
+              return `<div style="text-align:center;padding:10px 4px;background:var(--bg-input);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+                <div style="font-size:18px;font-weight:800;color:var(--text-primary);line-height:1">${count}</div>
+                ${badges[r]}
               </div>`;
             }).join('')}
           </div>
@@ -3391,20 +4720,19 @@ function refreshShell() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">🏭 Warehouse Management</h1>
+          <h1 class="page-title">Warehouse Management</h1>
           <p class="page-subtitle">Centralized control for all warehouse locations · <span style="color:var(--text-brand);font-weight:600">${planLabel}</span></p>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" id="view-toggle">☰ Table</button>
+          <button class="btn btn-secondary btn-sm" id="view-toggle" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('tables', 14)} Table View</button>
           <button class="btn btn-primary" id="create-wh-btn" ${atLimit ? 'disabled title="Warehouse limit reached for your plan"' : ''}>
-            + New Warehouse ${atLimit ? '🔒' : ''}
+            + New Warehouse ${atLimit ? '(Limit Reached)' : ''}
           </button>
         </div>
       </div>
-
       ${atLimit ? `
       <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
-        <span style="font-size:20px">⚠️</span>
+        <span style="color:var(--accent-amber);display:flex;align-items:center">${getSvgIcon('warning', 20)}</span>
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--text-primary)">Warehouse Limit Reached</div>
           <div style="font-size:12px;color:var(--text-muted)">Your <strong>Starter plan</strong> allows only 1 warehouse. <a href="#/subscription" style="color:var(--text-brand)">Upgrade to Enterprise</a> for unlimited warehouses.</div>
@@ -3414,27 +4742,27 @@ function refreshShell() {
       <!-- Summary Stat Cards -->
       <div class="stat-grid">
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">🏭</div>
+          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);color:var(--text-brand);display:flex;align-items:center;justify-content:center">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value" id="wh-count">${whs.length}</div>
           <div class="stat-card-label">Total Warehouses</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">✅</div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);color:var(--accent-emerald);display:flex;align-items:center;justify-content:center">${getSvgIcon('check', 20)}</div>
           <div class="stat-card-value">${whs.filter(w=>w.status==='active').length}</div>
           <div class="stat-card-label">Active</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">👥</div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15);color:var(--text-primary);display:flex;align-items:center;justify-content:center">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${allUsers.length}</div>
           <div class="stat-card-label">Total Staff</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">💰</div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);color:var(--accent-amber);display:flex;align-items:center;justify-content:center">${getSvgIcon('revenue', 20)}</div>
           <div class="stat-card-value">${formatCurrency(whs.reduce((s,w)=>s+(w.revenue||0),0))}</div>
           <div class="stat-card-label">Combined Revenue</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15)">📊</div>
+          <div class="stat-card-icon" style="background:rgba(168,85,247,0.15);color:var(--text-primary);display:flex;align-items:center;justify-content:center">${getSvgIcon('analytics', 20)}</div>
           <div class="stat-card-value">${limit < 0 ? '∞' : limit}</div>
           <div class="stat-card-label">Plan Limit</div>
         </div>
@@ -3443,7 +4771,7 @@ function refreshShell() {
       <!-- Search + Filter -->
       <div class="table-toolbar" style="margin-bottom:20px">
         <div class="table-search" style="max-width:400px;flex:none">
-          <span>🔍</span>
+          <span>${getSvgIcon('search', 14)}</span>
           <input type="text" id="wh-search" placeholder="Search warehouses..." />
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
@@ -3479,7 +4807,10 @@ function refreshShell() {
   document.getElementById('wh-status-filter')?.addEventListener('change', refreshList);
   document.getElementById('view-toggle')?.addEventListener('click', (e) => {
     wh_currentView = wh_currentView === 'grid' ? 'table' : 'grid';
-    e.target.textContent = wh_currentView === 'grid' ? '☰ Table' : '⊞ Grid';
+    const btn = e.currentTarget;
+    btn.innerHTML = wh_currentView === 'grid' 
+      ? `${getSvgIcon('tables', 14)} Table View` 
+      : `${getSvgIcon('dashboard', 14)} Grid View`;
     refreshList();
   });
 
@@ -3506,7 +4837,7 @@ function refreshList() {
 function renderWarehouseGrid(whs, allUsers) {
   if (whs.length === 0) return `
     <div class="card" style="text-align:center;padding:64px">
-      <div style="font-size:48px;margin-bottom:16px;opacity:0.4">🏭</div>
+      <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('warehouses', 48)}</div>
       <h3 style="color:var(--text-secondary);margin-bottom:8px">No warehouses found</h3>
       <p style="color:var(--text-muted);font-size:14px;margin-bottom:24px">Create your first warehouse to get started</p>
       <button class="btn btn-primary" onclick="document.getElementById('create-wh-btn').click()">+ Create Warehouse</button>
@@ -3519,19 +4850,23 @@ function renderWarehouseGrid(whs, allUsers) {
       return `
       <div class="warehouse-card animate-slideUp" data-wh-id="${wh.id}" style="cursor:pointer" title="Click to view warehouse dashboard">
         <div class="warehouse-card-top">
-          <div class="warehouse-avatar">${wh.logo || '🏭'}</div>
+          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0">${renderWarehouseLogo(wh.logo, 24)}</div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             <span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'} badge-dot"> ${wh.status}</span>
             <div style="display:flex;gap:4px">
-              <button class="action-btn edit" data-id="${wh.id}" title="Edit" onclick="event.stopPropagation()">✏️</button>
-              <button class="action-btn delete" data-id="${wh.id}" title="Delete" onclick="event.stopPropagation()">🗑️</button>
+              <button class="action-btn edit" data-id="${wh.id}" title="Edit" onclick="event.stopPropagation()">${getSvgIcon('edit', 14)}</button>
+              <button class="action-btn delete" data-id="${wh.id}" title="Delete" onclick="event.stopPropagation()">${getSvgIcon('trash', 14)}</button>
             </div>
           </div>
         </div>
         <div class="warehouse-name">${wh.name}</div>
         <div class="warehouse-biz">${wh.businessName}</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">📍 ${wh.address}</div>
-        <div style="font-size:12px;color:var(--text-muted)">📧 ${wh.email} · 📞 ${wh.contact}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;display:flex;align-items:center;gap:6px">${getSvgIcon('location', 12)} ${wh.address}</div>
+        <div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px">
+          <span style="display:inline-flex;align-items:center;gap:4px">${getSvgIcon('mail', 12)} ${wh.email}</span>
+          <span>·</span>
+          <span style="display:inline-flex;align-items:center;gap:4px">${getSvgIcon('phone', 12)} ${wh.contact}</span>
+        </div>
         <div class="warehouse-stats">
           <div><div class="warehouse-stat-val">${staff}</div><div class="warehouse-stat-lbl">Staff</div></div>
           <div><div class="warehouse-stat-val">${wh.items || 0}</div><div class="warehouse-stat-lbl">Items</div></div>
@@ -3549,7 +4884,7 @@ function renderWarehouseGrid(whs, allUsers) {
 function renderWarehouseTable(whs, allUsers) {
   if (whs.length === 0) return `
     <div class="card" style="text-align:center;padding:64px">
-      <div style="font-size:48px;margin-bottom:16px;opacity:0.4">🏭</div>
+      <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('warehouses', 48)}</div>
       <h3 style="color:var(--text-secondary);margin-bottom:8px">No warehouses found</h3>
       <p style="color:var(--text-muted);font-size:14px;margin-bottom:24px">Create your first warehouse to get started</p>
       <button class="btn btn-primary" onclick="document.getElementById('create-wh-btn').click()">+ Create Warehouse</button>
@@ -3578,15 +4913,15 @@ function renderWarehouseTable(whs, allUsers) {
               const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
               return `
                 <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
-                  <td data-label="Logo"><div style="font-size:24px">${wh.logo || '🏭'}</div></td>
+                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:6px;width:32px;height:32px;overflow:hidden">${renderWarehouseLogo(wh.logo, 20)}</div></td>
                   <td data-label="Name">
                     <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">📍 ${wh.address}</div>
+                    <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('location', 11)} ${wh.address}</div>
                   </td>
                   <td data-label="Business Name">${wh.businessName}</td>
                   <td data-label="Contact Info">
-                    <div style="font-size:12px">${wh.email}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">📞 ${wh.contact}</div>
+                    <div style="font-size:12px;display:inline-flex;align-items:center;gap:4px">${getSvgIcon('mail', 11)} ${wh.email}</div>
+                    <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px;margin-top:2px">${getSvgIcon('phone', 11)} ${wh.contact}</div>
                   </td>
                   <td data-label="Staff"><span class="badge badge-brand">${staff}</span></td>
                   <td data-label="Items"><span class="badge badge-info">${wh.items || 0}</span></td>
@@ -3594,8 +4929,8 @@ function renderWarehouseTable(whs, allUsers) {
                   <td data-label="Status"><span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'}">${wh.status}</span></td>
                   <td data-label="Actions" style="text-align:right" onclick="event.stopPropagation()">
                     <div style="display:inline-flex;gap:4px">
-                      <button class="action-btn edit" data-id="${wh.id}" title="Edit">✏️</button>
-                      <button class="action-btn delete" data-id="${wh.id}" title="Delete">🗑️</button>
+                      <button class="action-btn edit" data-id="${wh.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                      <button class="action-btn delete" data-id="${wh.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                     </div>
                   </td>
                 </tr>
@@ -3654,6 +4989,8 @@ function showWarehouseModal(wh) {
     }
   }
 
+  let selectedLogo = wh?.logo || 'icon:industrial';
+
   const body = `
     <form id="wh-modal-form">
       <div class="form-row">
@@ -3690,10 +5027,46 @@ function showWarehouseModal(wh) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Logo</label>
-          <select id="m-wh-logo" class="form-control">
-            ${['🏭','🏗️','🏢','⚙️','🚛','📦','🏢','🏬'].map(l=>`<option value="${l}" ${wh?.logo===l?'selected':''}>${l} ${l}</option>`).join('')}
-          </select>
+          <label class="form-label">Warehouse Logo / Branding Icon</label>
+          <div class="wh-branding-selector" style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px;">
+            <!-- Professional Icon Grid -->
+            <div class="wh-icon-grid" style="display:grid;grid-template-columns:repeat(5, 1fr);gap:8px;">
+              <div class="wh-icon-option ${wh?.logo === 'icon:industrial' || (!wh?.logo || (!wh.logo.startsWith('data:') && !['icon:distribution','icon:retail','icon:office','icon:tech'].includes(wh?.logo))) ? 'selected' : ''}" data-icon="icon:industrial" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Industrial">
+                ${renderWarehouseLogo('icon:industrial', 24)}
+                <span style="font-size:10px;margin-top:4px;">Industrial</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:distribution' ? 'selected' : ''}" data-icon="icon:distribution" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Distribution">
+                ${renderWarehouseLogo('icon:distribution', 24)}
+                <span style="font-size:10px;margin-top:4px;">Distribution</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:retail' ? 'selected' : ''}" data-icon="icon:retail" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Retail">
+                ${renderWarehouseLogo('icon:retail', 24)}
+                <span style="font-size:10px;margin-top:4px;">Retail</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:office' ? 'selected' : ''}" data-icon="icon:office" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Office Hub">
+                ${renderWarehouseLogo('icon:office', 24)}
+                <span style="font-size:10px;margin-top:4px;">Office Hub</span>
+              </div>
+              <div class="wh-icon-option ${wh?.logo === 'icon:tech' ? 'selected' : ''}" data-icon="icon:tech" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);cursor:pointer;background:var(--bg-card);color:var(--text-primary);transition:all 0.2s;" title="Tech Hub">
+                ${renderWarehouseLogo('icon:tech', 24)}
+                <span style="font-size:10px;margin-top:4px;">Tech Hub</span>
+              </div>
+            </div>
+            
+            <!-- Custom Logo Uploader -->
+            <div class="wh-logo-uploader" style="display:flex;align-items:center;gap:12px;padding:12px;border:1px dashed var(--border-default);border-radius:var(--radius-md);background:var(--bg-card);">
+              <div class="wh-logo-preview" id="m-wh-logo-preview" style="width:48px;height:48px;border-radius:var(--radius-sm);border:1px solid var(--border-default);background:var(--bg-elevated);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                ${renderWarehouseLogo(selectedLogo, 32)}
+              </div>
+              <div style="flex-grow:1;">
+                <div style="font-size:var(--text-sm);font-weight:500;color:var(--text-primary);">Custom Brand Logo</div>
+                <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:6px;">Upload image (Max 2MB, png/jpg/svg)</div>
+                <button type="button" class="btn btn-secondary btn-sm" id="wh-logo-upload-btn">Choose File</button>
+                <input type="file" id="wh-logo-file-input" accept="image/*" style="display:none;" />
+                <button type="button" class="btn btn-ghost btn-sm" id="wh-logo-remove-btn" style="color:var(--accent-red);padding:0 8px;margin-left:8px;${selectedLogo.startsWith('data:') ? 'display:inline-block;' : 'display:none;'}">Reset</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="form-row">
@@ -3724,10 +5097,65 @@ function showWarehouseModal(wh) {
 
   const footer = `
     <button class="btn btn-secondary" id="m-cancel">Cancel</button>
-    <button class="btn btn-primary" id="m-save">${isEdit ? '✓ Update' : '+ Create'} Warehouse</button>
+    <button class="btn btn-primary" id="m-save">${isEdit ? 'Update' : 'Create'} Warehouse</button>
   `;
 
-  const modal = createModal({ title: isEdit ? '✏️ Edit Warehouse' : '🏭 New Warehouse', body, footer });
+  const modal = createModal({ title: isEdit ? 'Edit Warehouse' : 'New Warehouse', body, footer });
+
+  // Attach branding grid events
+  const iconOptions = modal.el.querySelectorAll('.wh-icon-option');
+  const previewEl = modal.el.querySelector('#m-wh-logo-preview');
+  const fileInput = modal.el.querySelector('#wh-logo-file-input');
+  const uploadBtn = modal.el.querySelector('#wh-logo-upload-btn');
+  const removeBtn = modal.el.querySelector('#wh-logo-remove-btn');
+
+  iconOptions.forEach(opt => {
+    opt.addEventListener('click', () => {
+      iconOptions.forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      selectedLogo = opt.dataset.icon;
+      if (previewEl) {
+        previewEl.innerHTML = renderWarehouseLogo(selectedLogo, 32);
+      }
+      if (removeBtn) removeBtn.style.display = 'none';
+      if (fileInput) fileInput.value = '';
+    });
+  });
+
+  uploadBtn?.addEventListener('click', () => fileInput?.click());
+
+  fileInput?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('File too large', 'Image size must be less than 2MB', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target.result;
+      selectedLogo = base64;
+      iconOptions.forEach(o => o.classList.remove('selected'));
+      if (previewEl) {
+        previewEl.innerHTML = `<img src="${base64}" style="width:32px;height:32px;object-fit:contain;border-radius:6px;" />`;
+      }
+      if (removeBtn) removeBtn.style.display = 'inline-block';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  removeBtn?.addEventListener('click', () => {
+    selectedLogo = 'icon:industrial';
+    iconOptions.forEach(o => o.classList.remove('selected'));
+    modal.el.querySelector('.wh-icon-option[data-icon="icon:industrial"]')?.classList.add('selected');
+    if (previewEl) {
+      previewEl.innerHTML = renderWarehouseLogo(selectedLogo, 32);
+    }
+    if (removeBtn) removeBtn.style.display = 'none';
+    if (fileInput) fileInput.value = '';
+  });
 
   modal.el.querySelector('#m-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#m-save')?.addEventListener('click', () => {
@@ -3754,7 +5182,7 @@ function showWarehouseModal(wh) {
     const data = {
       name, businessName, address, contact, email,
       taxPreference: document.getElementById('m-wh-tax')?.value || 'standard',
-      logo: document.getElementById('m-wh-logo')?.value || '🏭',
+      logo: selectedLogo,
       currency: document.getElementById('m-wh-currency')?.value || '',
       ...(isEdit ? { status: document.getElementById('m-wh-status')?.value } : {})
     };
@@ -3821,7 +5249,7 @@ function renderWarehouseDetail(whId) {
       <div class="page-header">
         <div class="page-header-left">
           <div style="display:flex;align-items:center;gap:14px">
-            <div style="font-size:44px;line-height:1">${wh.logo||'🏭'}</div>
+            <div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 36)}</div>
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
                 <h1 class="page-title" style="margin:0">${wh.name}</h1>
@@ -3831,23 +5259,29 @@ function renderWarehouseDetail(whId) {
             </div>
           </div>
         </div>
-        <div class="page-header-actions">
+        <div class="page-header-actions" style="align-items:center">
+          ${wh.barcode ? `
+          <div style="display:flex;align-items:center;gap:8px;background:white;padding:4px 8px;border:1px solid var(--border-default);border-radius:6px;margin-right:12px;box-shadow:var(--shadow-sm)">
+            <img src="http://localhost:8000/api/v1/registry/barcode?code=${wh.barcode}" style="height:28px" />
+            <div style="font-family:var(--font-mono);font-size:9px;color:#1f2937;font-weight:700">${wh.barcode}</div>
+          </div>
+          ` : ''}
           ${isSA?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/warehouses'">← Warehouses</button>`:''}
-          ${isSA?`<button class="btn btn-secondary btn-sm" id="wd-edit-btn">✏️ Edit</button>`:''}
-          <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'">🧾 New Invoice</button>
+          ${isSA?`<button class="btn btn-secondary btn-sm" id="wd-edit-btn" style="display:inline-flex;align-items:center;gap:4px">${getSvgIcon('edit', 14)} Edit</button>`:''}
+          <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'">${getSvgIcon('plus', 14)} New Invoice</button>
         </div>
       </div>
 
       <div class="dashboard-grid">
         ${[
-          {icon:'💰',val:formatCurrency(revenue), label:'Revenue',       color:'var(--accent-emerald)',glow:'#10b981'},
-          {icon:'💵',val:formatCurrency(netRev),  label:'Net Revenue',   color:'var(--accent-cyan)',   glow:'#06b6d4'},
-          {icon:'🏛️',val:formatCurrency(tax),     label:'Tax Collected', color:'var(--accent-amber)',  glow:'#f59e0b'},
-          {icon:'🧾',val:bills.length,            label:'Invoices',      color:'var(--text-brand)',    glow:'#6366f1'},
-          {icon:'👥',val:staff.length,            label:'Team Members',  color:'var(--accent-violet)', glow:'#8b5cf6'},
-          {icon:'📦',val:totalStock.toLocaleString(),label:'Stock Units',color:'var(--text-primary)',  glow:'#64748b'},
-          {icon:'💎',val:formatCurrency(invValue),label:'Inv. Value',    color:'var(--accent-rose)',   glow:'#f43f5e'},
-          {icon:'⚠️',val:lowStock.length,         label:'Low Stock',     color:lowStock.length>0?'var(--accent-rose)':'var(--accent-emerald)',glow:'#f59e0b'},
+          {icon:getSvgIcon('revenue'),val:formatCurrency(revenue), label:'Revenue',       color:'var(--accent-emerald)',glow:'#10b981'},
+          {icon:getSvgIcon('revenue'),val:formatCurrency(netRev),  label:'Net Revenue',   color:'var(--accent-cyan)',   glow:'#06b6d4'},
+          {icon:getSvgIcon('settings'),val:formatCurrency(tax),     label:'Tax Collected', color:'var(--accent-amber)',  glow:'#f59e0b'},
+          {icon:getSvgIcon('billing'),val:bills.length,            label:'Invoices',      color:'var(--text-brand)',    glow:'#6366f1'},
+          {icon:getSvgIcon('workforce'),val:staff.length,            label:'Team Members',  color:'var(--accent-violet)', glow:'#8b5cf6'},
+          {icon:getSvgIcon('items'),val:totalStock.toLocaleString(),label:'Stock Units',color:'var(--text-primary)',  glow:'#64748b'},
+          {icon:getSvgIcon('palette'),val:formatCurrency(invValue),label:'Inv. Value',    color:'var(--accent-rose)',   glow:'#f43f5e'},
+          {icon:getSvgIcon('warning'),val:lowStock.length,         label:'Low Stock',     color:lowStock.length>0?'var(--accent-rose)':'var(--accent-emerald)',glow:'#f59e0b'},
         ].map(s=>`
           <div class="stat-card">
             <div class="stat-card-glow" style="background:${s.glow}"></div>
@@ -3861,7 +5295,7 @@ function renderWarehouseDetail(whId) {
       <div class="dashboard-grid">
         <div class="card col-8">
           <div class="card-header">
-            <div class="card-title">📈 Revenue Trend (Last 6 Months)</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 16)} Revenue Trend (Last 6 Months)</div>
             <div style="font-size:12px;color:var(--text-muted)">Total: ${formatCurrency(revenue)}</div>
           </div>
           <div style="display:flex;align-items:flex-end;gap:6px;height:100px;padding:0 4px">
@@ -3877,7 +5311,7 @@ function renderWarehouseDetail(whId) {
           </div>
         </div>
         <div class="card col-4">
-          <div class="card-header"><div class="card-title">💰 Billing Summary</div></div>
+          <div class="card-header"><div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('revenue', 16)} Billing Summary</div></div>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${[
               {label:'Total Revenue',val:formatCurrency(revenue),color:'var(--accent-emerald)'},
@@ -3901,7 +5335,7 @@ function renderWarehouseDetail(whId) {
       <div class="dashboard-grid">
         <div class="card col-6">
           <div class="card-header">
-            <div class="card-title">👥 Team (${staff.length})</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 16)} Team (${staff.length})</div>
             ${isAdmin?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
           </div>
           ${staff.length===0
@@ -3929,7 +5363,7 @@ function renderWarehouseDetail(whId) {
 
         <div class="card col-6">
           <div class="card-header">
-            <div class="card-title">🧾 Recent Invoices</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 16)} Recent Invoices</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">+ New</button>
           </div>
           ${bills.length===0
@@ -3951,7 +5385,7 @@ function renderWarehouseDetail(whId) {
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
           <div>
-            <div class="card-title">📦 Inventory (${items.length} items · ${totalStock.toLocaleString()} units)</div>
+            <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('items', 16)} Inventory (${items.length} items · ${totalStock.toLocaleString()} units)</div>
             <div class="card-subtitle">Inventory value: ${formatCurrency(invValue)}</div>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/items'" style="font-size:11px">Manage →</button>
@@ -4001,7 +5435,7 @@ function renderWarehouseDetail(whId) {
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">🏢 Warehouse Information</div></div>
+        <div class="card-header"><div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 16)} Warehouse Information</div></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;font-size:13px">
           ${[
             {label:'Business Name',  val:wh.businessName},
@@ -4049,12 +5483,12 @@ function renderWorkforce() {
 
   renderShell('Workforce', 'Manage users, roles, and warehouse assignments', `
     <div class="animate-slideUp">
-      <div class="wf_page-header">
-        <div class="wf_page-header-left">
-          <h1 class="wf_page-title">👥 Workforce Management</h1>
-          <p class="wf_page-subtitle">Centralized user and role management across all warehouses</p>
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Workforce Management</h1>
+          <p class="page-subtitle">Centralized user and role management across all warehouses</p>
         </div>
-        <div class="wf_page-header-actions">
+        <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
@@ -4066,7 +5500,7 @@ function renderWorkforce() {
       <!-- Table Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
           <input type="text" id="wf-search" placeholder="Search by name, email..." />
         </div>
         <div class="table-filter">
@@ -4114,14 +5548,19 @@ function renderWorkforceStats() {
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">👤</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">${getSvgIcon('user', 20)}</div>
         <div class="stat-card-value">${users.length}</div>
         <div class="stat-card-label">Total Users</div>
       </div>
       ${roles.map(r => {
         const count = users.filter(u=>u.role===r).length;
         const colors = {admin:'rgba(6,182,212,0.15)',manager:'rgba(16,185,129,0.15)',staff:'rgba(245,158,11,0.15)',employee:'rgba(100,116,139,0.15)'};
-        const icons = {admin:'🏭',manager:'👔',staff:'🧾',employee:'👨‍💼'};
+        const icons = {
+          admin: getSvgIcon('warehouses', 20),
+          manager: getSvgIcon('workforce', 20),
+          staff: getSvgIcon('billing', 20),
+          employee: getSvgIcon('user', 20)
+        };
         return `<div class="stat-card"><div class="stat-card-icon" style="background:${colors[r]}">${icons[r]}</div><div class="stat-card-value">${count}</div><div class="stat-card-label">${capitalize(r)}s</div></div>`;
       }).join('')}
     </div>
@@ -4145,7 +5584,7 @@ function renderWorkforceTable() {
   if (!container) return;
 
   if (users.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">👤</div><h3 style="color:var(--text-secondary)">No users found</h3></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('user', 40)}</div><h3 style="color:var(--text-secondary)">No users found</h3></div>`;
     document.getElementById('workforce-pagination').innerHTML = '';
     return;
   }
@@ -4168,7 +5607,7 @@ function renderWorkforceTable() {
             return `<tr>
               <td data-label="Name">
                 <div style="display:flex;align-items:center;gap:10px">
-                  <div style="width:32px;height:32px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0">${u.avatar}</div>
+                  <div style="width:32px;height:32px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0;overflow:hidden">${renderAvatar(u.avatar)}</div>
                   <div>
                     <div class="primary-cell">${u.name}</div>
                     <div class="sub-cell">ID: ${u.id.slice(0,8)}</div>
@@ -4182,10 +5621,10 @@ function renderWorkforceTable() {
               <td data-label="Assigned">${formatDate(u.assignedAt || u.createdAt)}</td>
               <td data-label="Actions">
                 ${['super_admin', 'admin'].includes(currentUser.role) ? `
-                <div class="table-actions">
-                  <button class="action-btn edit" data-uid="${u.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-uid="${u.id}" title="Delete">🗑️</button>
-                </div>` : '—'}
+                 <div class="table-actions">
+                   <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                   <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                 </div>` : '—'}
               </td>
             </tr>`;
           }).join('')}
@@ -4239,8 +5678,30 @@ function showUserModal(u) {
     ? ['admin','manager','staff','employee']
     : ['manager','staff','employee'];
 
+  let m_avatar = u?.avatar || '';
+  const barcodeUrl = u?.barcode ? `http://localhost:8000/api/v1/registry/barcode?code=${u.barcode}` : '';
+
   const body = `
     <form id="user-modal-form">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border-subtle)">
+        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
+          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}
+        </div>
+        <div style="flex:1">
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary btn-xs" id="m-u-upload-photo-btn" type="button" style="padding:4px 8px;font-size:11px">Upload Photo</button>
+            <button class="btn btn-ghost btn-xs" id="m-u-remove-photo-btn" type="button" style="padding:4px 8px;font-size:11px;color:var(--text-danger)">Remove</button>
+          </div>
+          <input type="file" id="m-u-photo-input" accept="image/*" style="display:none" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Upload profile photo (max 2MB)</div>
+        </div>
+        ${u?.barcode ? `
+        <div style="text-align:right">
+          <img src="${barcodeUrl}" style="height:36px;background:white;padding:2px;border:1px solid var(--border-default);border-radius:4px;display:block" />
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);margin-top:2px;text-align:center">${u.barcode}</div>
+        </div>
+        ` : ''}
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Full Name <span class="req">*</span></label>
@@ -4287,26 +5748,66 @@ function showUserModal(u) {
 
   const footer = `
     <button class="btn btn-secondary" id="m-u-cancel">Cancel</button>
-    <button class="btn btn-primary" id="m-u-save">${isEdit ? '✓ Update' : '+ Add'} User</button>
+    <button class="btn btn-primary" id="m-u-save">${isEdit ? 'Update' : 'Add'} User</button>
   `;
 
-  const modal = createModal({ title: isEdit ? '✏️ Edit User' : '👤 Add New User', body, footer });
+  const modal = createModal({ title: isEdit ? 'Edit User' : 'Add New User', body, footer });
   modal.el.querySelector('#m-u-cancel')?.addEventListener('click', modal.close);
+
+  modal.el.querySelector('#m-u-upload-photo-btn')?.addEventListener('click', () => {
+    modal.el.querySelector('#m-u-photo-input')?.click();
+  });
+
+  modal.el.querySelector('#m-u-photo-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('File too large', 'Please upload an image smaller than 2MB', 'warning');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target.result;
+      m_avatar = base64;
+      const preview = modal.el.querySelector('#m-u-avatar-preview');
+      if (preview) {
+        preview.innerHTML = `<img src="${base64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`;
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  modal.el.querySelector('#m-u-remove-photo-btn')?.addEventListener('click', () => {
+    const name = document.getElementById('m-u-name').value.trim() || 'US';
+    const fallbackInitials = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+    m_avatar = fallbackInitials;
+    const preview = modal.el.querySelector('#m-u-avatar-preview');
+    if (preview) {
+      preview.innerHTML = fallbackInitials;
+    }
+  });
+
   modal.el.querySelector('#m-u-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-u-name').value.trim();
     const email = document.getElementById('m-u-email').value.trim();
     const role = document.getElementById('m-u-role').value;
     const warehouseId = document.getElementById('m-u-wh').value;
     if (!name || !email || !role || !warehouseId) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
+    
+    // Set avatar fallback if empty
+    if (!m_avatar) {
+      m_avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+    }
+
     if (isEdit) {
-      const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value };
+      const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value, avatar: m_avatar };
       const result = await updateUser(u.id, data);
       if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User updated', `${name}'s details updated`, 'success');
     } else {
       const password = document.getElementById('m-u-password').value;
       if (!password || password.length < 8) { showToast('Validation', 'Password must be at least 8 characters', 'warning'); return; }
-      const result = await createUser({ name, email, password, role, warehouseId });
+      const result = await createUser({ name, email, password, role, warehouseId, avatar: m_avatar });
       if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User created', `${name} added as ${role}`, 'success');
     }
@@ -4332,30 +5833,27 @@ let it_page = 1;
 const it_PER_PAGE = 10;
 
 const CATEGORIES = ['Electronics','Furniture','Apparel','Food & Beverage','Tools','Medical','Automotive','Books','Sports','Other'];
-function getTaxCats() {
-  const cfg = getTaxConfig();
-  return [
-    { val: 'normal', label: `Normal (${cfg.normal}%)` },
-    { val: 'luxury', label: `Luxury (${cfg.luxury}%)` }
-  ];
-}
 
 function renderItems() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const whs = getWarehouses();
   const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   renderShell('Inventory', 'Manage items, stock, and categories', `
     <div class="animate-slideUp">
-      <div class="it_page-header">
-        <div class="it_page-header-left">
-          <h1 class="it_page-title">📦 Inventory Management</h1>
-          <p class="it_page-subtitle">Track items, stock levels, and pricing</p>
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Inventory Management</h1>
+          <p class="page-subtitle">Track items, stock levels, and pricing</p>
         </div>
-        <div class="it_page-header-actions">
+        <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="import-csv-btn">📥 Import CSV</button>
+            <button class="btn btn-secondary btn-sm" id="import-csv-btn">Import CSV</button>
             <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
         </div>
@@ -4367,7 +5865,7 @@ function renderItems() {
       <!-- Toolbar -->
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
           <input type="text" id="item-search" placeholder="Search items..." />
         </div>
         <div class="table-filter">
@@ -4404,6 +5902,10 @@ function renderItems() {
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
 
   window._showItemModal = (item) => showItemModal(item);
+  
+  // Realtime WebSocket auto-refresh for inventory
+  window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
+  window.addEventListener('wareops_ws_event', _handleInventoryWsEvent);
 }
 
 function renderItemStats() {
@@ -4415,10 +5917,10 @@ function renderItemStats() {
   const lowStock = items.filter(i=>(i.stock||0)<20).length;
   el.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">📦</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">📊</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">💎</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
-      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">⚠️</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center;color:#6366f1">${getSvgIcon('items', 18)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;color:#10b981">${getSvgIcon('analytics', 18)}</div><div class="stat-card-value">${totalStock.toLocaleString()}</div><div class="stat-card-label">Total Stock</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center;color:#06b6d4">${getSvgIcon('revenue', 18)}</div><div class="stat-card-value">${formatCurrency(totalValue)}</div><div class="stat-card-label">Inventory Value</div></div>
+      <div class="stat-card"><div class="stat-card-icon" style="background:rgba(244,63,94,0.15);display:flex;align-items:center;justify-content:center;color:#f43f5e">${getSvgIcon('warning', 18)}</div><div class="stat-card-value">${lowStock}</div><div class="stat-card-label">Low Stock Items</div></div>
     </div>
   `;
 }
@@ -4441,7 +5943,7 @@ function renderItemsTable() {
   if (!container) return;
 
   if (items.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">📦</div><h3 style="color:var(--text-secondary)">No items found</h3></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="color:var(--text-muted);margin-bottom:16px">${getSvgIcon('items', 40)}</div><h3 style="color:var(--text-secondary)">No items found</h3></div>`;
     return;
   }
 
@@ -4450,7 +5952,7 @@ function renderItemsTable() {
       <table>
         <thead><tr>
           <th>Item</th><th>SKU</th><th>Category</th><th>Price</th>
-          <th>Stock</th><th>Tax</th><th>Warehouse</th>
+          <th>Stock</th><th>Warehouse</th>
           ${canEdit ? '<th>Actions</th>' : ''}
         </tr></thead>
         <tbody>
@@ -4459,19 +5961,18 @@ function renderItemsTable() {
             const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
             return `<tr>
               <td data-label="Item">
-                <div class="primary-cell">${item.name}</div>
+                <div class="primary-cell clickable-item-name" data-iid="${item.id}" style="cursor:pointer;color:var(--text-brand);text-decoration:underline;text-underline-offset:4px;" title="View Product Card">${item.name}</div>
                 <div class="sub-cell">Added ${formatDate(item.createdAt)}</div>
               </td>
               <td data-label="SKU"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">${item.sku||'—'}</span></td>
               <td data-label="Category"><span class="badge badge-brand">${item.category}</span></td>
               <td data-label="Price"><strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong></td>
               <td data-label="Stock"><span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span></td>
-              <td data-label="Tax"><span class="badge ${item.taxCategory==='luxury'?'badge-purple':'badge-info'}">${item.taxCategory==='luxury' ? getTaxConfig(item.warehouseId).luxury+'%' : getTaxConfig(item.warehouseId).normal+'%'}</span></td>
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">✏️</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">🗑️</button>
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
               </td>` : ''}
             </tr>`;
@@ -4496,10 +5997,25 @@ function renderItemsTable() {
     container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
-        if (ok) { deleteItem(btn.dataset.iid); showToast('Item deleted','','success'); renderItemStats(); renderItemsTable(); }
+        if (ok) {
+          const res = await deleteItem(btn.dataset.iid);
+          if (res && res.error) {
+            showToast('Delete failed', res.error, 'error');
+            return;
+          }
+          showToast('Item deleted','','success');
+          renderItemStats();
+          renderItemsTable();
+        }
       });
     });
   }
+  container.querySelectorAll('.clickable-item-name[data-iid]').forEach(el => {
+    el.addEventListener('click', () => {
+      const item = getItems().find(i => i.id === el.dataset.iid);
+      if (item) showItemCardModal(item);
+    });
+  });
   container.querySelectorAll('.it_page-btn[data-pg]').forEach(btn => { btn.addEventListener('click', () => { it_page=parseInt(btn.dataset.pg); renderItemsTable(); }); });
   container.querySelector('#ip-prev')?.addEventListener('click', () => { if(it_page>1){it_page--;renderItemsTable();} });
   container.querySelector('#ip-next')?.addEventListener('click', () => { if(it_page<it_pages){it_page++;renderItemsTable();} });
@@ -4528,12 +6044,6 @@ function showItemModal(item) {
             ${CATEGORIES.map(c=>`<option value="${c}" ${item?.category===c?'selected':''}>${c}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Tax Category</label>
-          <select id="m-i-tax" class="form-control">
-            ${getTaxCats().map(t=>`<option value="${t.val}" ${item?.taxCategory===t.val?'selected':''}>${t.label}</option>`).join('')}
-          </select>
-        </div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -4558,26 +6068,156 @@ function showItemModal(item) {
           ${whs.map(w=>`<option value="${w.id}" ${item?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
         </select>
       </div>
+      
+      <!-- Product Media Gallery -->
+      <div class="form-group" style="margin-top: 16px;">
+        <label class="form-label">Product Media Gallery</label>
+        <div class="item-media-gallery-container" style="border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 12px; background: var(--bg-card);">
+          <!-- Thumbnail Grid -->
+          <div class="item-media-grid" id="m-item-media-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-bottom: 12px;">
+            <!-- Rendered thumbnails will go here -->
+          </div>
+          
+          <!-- Dropzone/Upload Button -->
+          <div class="item-media-dropzone" style="border: 1.5px dashed var(--border-default); border-radius: var(--radius-sm); padding: 16px; text-align: center; cursor: pointer; background: var(--bg-elevated); transition: all 0.2s;" id="item-media-upload-trigger">
+            <span style="color: var(--brand-500); display: block; margin-bottom: 4px;">${getSvgIcon('upload', 20)}</span>
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Upload Product Images</span>
+            <span style="font-size: 10px; color: var(--text-secondary); display: block; margin-top: 2px;">PNG, JPG, WebP up to 2MB (multiple allowed)</span>
+            <input type="file" id="m-item-file-input" accept="image/*" multiple style="display:none;" />
+          </div>
+        </div>
+      </div>
     </form>
   `;
 
   const footer = `
     <button class="btn btn-secondary" id="m-i-cancel">Cancel</button>
-    <button class="btn btn-primary" id="m-i-save">${isEdit?'✓ Update':'+ Create'} Item</button>
+    <button class="btn btn-primary" id="m-i-save">${isEdit?'Update':'Create'} Item</button>
   `;
 
-  const modal = createModal({ title: isEdit ? '✏️ Edit Item' : '📦 Add New Item', body, footer });
+  let selectedImages = item?.images ? [...item.images] : [];
+
+  const modal = createModal({ title: isEdit ? 'Edit Item' : 'Add New Item', body, footer });
+
+  function renderThumbnails() {
+    const grid = modal.el.querySelector('#m-item-media-grid');
+    if (!grid) return;
+    if (selectedImages.length === 0) {
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 16px; color: var(--text-muted); font-size: 11px;">No product images uploaded yet</div>`;
+      return;
+    }
+    
+    grid.innerHTML = selectedImages.map((img, index) => {
+      return `
+        <div class="item-media-thumb" style="position: relative; width: 80px; height: 80px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); overflow: hidden; background: var(--bg-elevated); display: flex; align-items: center; justify-content: center;" data-index="${index}">
+          <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" />
+          
+          <div class="item-media-overlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; gap: 4px; opacity: 0; transition: opacity 0.15s; z-index: 2;">
+            <button type="button" class="action-btn-sm move-left-btn" style="background: rgba(255,255,255,0.2); border: none; border-radius: 4px; color: white; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;" title="Move Left" ${index === 0 ? 'disabled style="opacity:0.3;pointer-events:none;"' : ''}>←</button>
+            <button type="button" class="action-btn-sm delete-thumb-btn" style="background: rgba(239,68,68,0.8); border: none; border-radius: 4px; color: white; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;" title="Remove">×</button>
+            <button type="button" class="action-btn-sm move-right-btn" style="background: rgba(255,255,255,0.2); border: none; border-radius: 4px; color: white; width: 20px; height: 20px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;" title="Move Right" ${index === selectedImages.length - 1 ? 'disabled style="opacity:0.3;pointer-events:none;"' : ''}>→</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const thumbs = grid.querySelectorAll('.item-media-thumb');
+    thumbs.forEach(thumb => {
+      thumb.addEventListener('mouseenter', () => {
+        const overlay = thumb.querySelector('.item-media-overlay');
+        if (overlay) overlay.style.opacity = '1';
+      });
+      thumb.addEventListener('mouseleave', () => {
+        const overlay = thumb.querySelector('.item-media-overlay');
+        if (overlay) overlay.style.opacity = '0';
+      });
+
+      const index = parseInt(thumb.dataset.index);
+      thumb.querySelector('.delete-thumb-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedImages.splice(index, 1);
+        renderThumbnails();
+      });
+      thumb.querySelector('.move-left-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (index > 0) {
+          const temp = selectedImages[index];
+          selectedImages[index] = selectedImages[index - 1];
+          selectedImages[index - 1] = temp;
+          renderThumbnails();
+        }
+      });
+      thumb.querySelector('.move-right-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (index < selectedImages.length - 1) {
+          const temp = selectedImages[index];
+          selectedImages[index] = selectedImages[index + 1];
+          selectedImages[index + 1] = temp;
+          renderThumbnails();
+        }
+      });
+    });
+  }
+
+  // Initial render
+  renderThumbnails();
+
+  const trigger = modal.el.querySelector('#item-media-upload-trigger');
+  const fileInput = modal.el.querySelector('#m-item-file-input');
+  
+  trigger?.addEventListener('click', () => fileInput?.click());
+  
+  fileInput?.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    let processedCount = 0;
+    if (files.length === 0) return;
+
+    files.forEach(file => {
+      if (file.size > 2 * 1024 * 1024) {
+        showToast('File too large', `Image "${file.name}" exceeds 2MB limit`, 'warning');
+        processedCount++;
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        selectedImages.push(event.target.result);
+        processedCount++;
+        if (processedCount === files.length) {
+          renderThumbnails();
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
     const name = document.getElementById('m-i-name').value.trim();
     const category = document.getElementById('m-i-cat').value;
     const price = parseFloat(document.getElementById('m-i-price').value);
     const stock = parseInt(document.getElementById('m-i-stock').value);
     const warehouseId = document.getElementById('m-i-wh').value;
     if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
-    const data = { name, category, price, stock, warehouseId, sku: document.getElementById('m-i-sku').value||`SKU-${Date.now()}`, unit: document.getElementById('m-i-unit').value, taxCategory: document.getElementById('m-i-tax').value };
-    if (isEdit) { updateItem(item.id, data); showToast('Item updated',`${name} updated`,'success'); }
-    else { createItem(data); showToast('Item added',`${name} added to inventory`,'success'); }
+    
+    const data = {
+      name, category, price, stock, warehouseId,
+      sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
+      unit: document.getElementById('m-i-unit').value,
+      taxCategory: 'normal',
+      images: selectedImages
+    };
+    
+    let res;
+    if (isEdit) {
+      res = await updateItem(item.id, data);
+      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+      showToast('Item updated',`${name} updated`,'success');
+    } else {
+      res = await createItem(data);
+      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+      showToast('Item added',`${name} added to inventory`,'success');
+    }
     modal.close();
     renderItemStats();
     renderItemsTable();
@@ -4587,8 +6227,8 @@ function showItemModal(item) {
 function showImportModal() {
   const body = `
     <div style="padding:16px">
-      <div id="drag-drop-zone" style="border:2px dashed var(--border-default);border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:rgba(99,102,241,0.02);transition:all 0.2s">
-        <div style="font-size:36px;margin-bottom:12px">📥</div>
+      <div id="drag-drop-zone" style="border:2px dashed var(--border-default);border-radius:12px;padding:32px;text-align:center;cursor:pointer;background:rgba(99,102,241,0.02);transition:all 0.2s;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="color:var(--brand-500);margin-bottom:12px">${getSvgIcon('upload', 36)}</div>
         <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:4px">Drag & Drop CSV File here</div>
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px">or click to browse from your computer</div>
         <input type="file" id="csv-file-input" accept=".csv" style="display:none" />
@@ -4604,21 +6244,22 @@ function showImportModal() {
         </div>
       </div>
       <div id="import-errors-container" style="margin-top:20px;display:none;background:rgba(244,63,94,0.06);border:1px solid rgba(244,63,94,0.15);border-radius:10px;padding:12px;max-height:160px;overflow-y:auto">
-        <div style="font-size:12px;font-weight:700;color:var(--accent-rose);margin-bottom:8px">⚠️ Import Warnings/Errors:</div>
+        <div style="font-size:12px;font-weight:700;color:var(--accent-rose);margin-bottom:8px;display:flex;align-items:center;gap:6px">${getSvgIcon('warning', 14)} Import Warnings/Errors:</div>
         <ul id="import-errors-list" style="font-size:11px;color:var(--text-muted);margin:0;padding-left:16px;line-height:1.6"></ul>
       </div>
-      <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:11px;color:var(--text-muted)">
-        ℹ️ <strong>Expected columns:</strong> <code>name</code>, <code>sku</code>, <code>category</code>, <code>price</code>, <code>stock</code> (and optional <code>warehouseId</code>).
+      <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:11px;color:var(--text-muted);display:flex;align-items:flex-start;gap:6px">
+        <span style="color:var(--brand-500);flex-shrink:0;margin-top:1px">${getSvgIcon('info', 14)}</span>
+        <span><strong>Expected columns:</strong> <code>name</code>, <code>sku</code>, <code>category</code>, <code>price</code>, <code>stock</code> (and optional <code>warehouseId</code>).</span>
       </div>
     </div>
   `;
 
   const footer = `
     <button class="btn btn-secondary" id="import-cancel">Cancel</button>
-    <button class="btn btn-primary" id="import-start-btn" disabled>✓ Upload & Import</button>
+    <button class="btn btn-primary" id="import-start-btn" disabled style="display:flex;align-items:center;gap:6px">${getSvgIcon('check', 14)} Upload & Import</button>
   `;
 
-  const modal = createModal({ title: '📥 Bulk Import Inventory', body, footer });
+  const modal = createModal({ title: 'Bulk Import Inventory', body, footer });
   const fileInput = modal.el.querySelector('#csv-file-input');
   const zone = modal.el.querySelector('#drag-drop-zone');
   const startBtn = modal.el.querySelector('#import-start-btn');
@@ -4660,7 +6301,7 @@ function showImportModal() {
       return;
     }
     selectedFile = file;
-    zone.querySelector('div:nth-child(2)').textContent = `📄 Selected: ${file.name}`;
+    zone.querySelector('div:nth-child(2)').textContent = `Selected: ${file.name}`;
     zone.querySelector('div:nth-child(3)').textContent = `Size: ${(file.size/1024).toFixed(1)} KB`;
     startBtn.removeAttribute('disabled');
   }
@@ -4732,7 +6373,7 @@ function showImportModal() {
           cancelBtn.addEventListener('click', () => {
             modal.close();
             // trigger parallel frontend sync
-            import('../modules/store.js').then(m => m.syncWithBackend()).then(() => {
+            syncWithBackend().then(() => {
               renderItemStats();
               renderItemsTable();
             });
@@ -4740,7 +6381,7 @@ function showImportModal() {
         } else {
           modal.close();
           // trigger parallel frontend sync
-          import('../modules/store.js').then(m => m.syncWithBackend()).then(() => {
+          syncWithBackend().then(() => {
             renderItemStats();
             renderItemsTable();
           });
@@ -4758,6 +6399,174 @@ function showImportModal() {
       cancelBtn.removeAttribute('disabled');
     }
   });
+}
+
+function _handleInventoryWsEvent(e) {
+  const user = getCurrentUser();
+  if (!user) {
+    window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
+    return;
+  }
+  const payload = e.detail;
+  const evType = payload?.type || payload?.event_type;
+  if (evType === 'inventory_change') {
+    renderItemStats();
+    renderItemsTable();
+  }
+}
+
+function showItemCardModal(item) {
+  const whs = getWarehouses();
+  const wh = whs.find(w => w.id === item.warehouseId);
+  const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+  const statusLabel = (item.stock||0) === 0 ? 'Out of Stock' : (item.stock||0) < 20 ? 'Low Stock' : 'In Stock';
+  
+  const images = item.images && item.images.length > 0 ? item.images : [];
+  
+  // Custom Sliding Carousel HTML
+  let carouselHTML = '';
+  if (images.length === 0) {
+    carouselHTML = `
+      <div style="width:100%;height:220px;border-radius:var(--radius-lg);background:var(--bg-elevated);border:1px solid var(--border-default);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-muted);">
+        ${getSvgIcon('items', 48)}
+        <span style="font-size:12px;margin-top:8px;">No product media available</span>
+      </div>
+    `;
+  } else {
+    carouselHTML = `
+      <div class="item-carousel" style="position:relative;width:100%;height:220px;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border-default);background:black;">
+        <!-- Slides -->
+        <div class="carousel-slides" style="display:flex;width:100%;height:100%;transition:transform 0.3s ease-in-out;">
+          ${images.map((img, i) => `
+            <div class="carousel-slide" style="min-width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+              <img src="${img}" style="width:100%;height:100%;object-fit:contain;" />
+            </div>
+          `).join('')}
+        </div>
+        
+        <!-- Chevron Controls (if >1 image) -->
+        ${images.length > 1 ? `
+          <button type="button" class="carousel-prev" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);border:none;border-radius:50%;color:white;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:bold;z-index:3;">‹</button>
+          <button type="button" class="carousel-next" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);border:none;border-radius:50%;color:white;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:bold;z-index:3;">›</button>
+          
+          <!-- Indicator Dots -->
+          <div class="carousel-dots" style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:3;">
+            ${images.map((_, i) => `
+              <div class="carousel-dot ${i===0?'active':''}" data-slide="${i}" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.4);cursor:pointer;transition:all 0.2s;"></div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  const barcodeStr = item.barcode || item.sku || `ITEM-${item.id.slice(-6)}`;
+
+  const body = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:8px;" class="item-card-grid">
+      <!-- Media/Gallery Slide Column -->
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        ${carouselHTML}
+        <!-- Specs Highlights -->
+        <div style="padding:12px;background:var(--bg-input);border-radius:var(--radius-md);border:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <span style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;font-weight:700;">Status</span>
+            <span class="badge ${stockClass}" style="display:block;margin-top:4px;">${statusLabel}</span>
+          </div>
+          <div style="text-align:right;">
+            <span style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;font-weight:700;">Stock Valuation</span>
+            <strong style="display:block;font-size:14px;color:var(--text-primary);margin-top:4px;">${formatCurrency((item.price||0)*(item.stock||0))}</strong>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Specifications & Details Column -->
+      <div style="display:flex;flex-direction:column;gap:16px;justify-content:space-between;">
+        <div>
+          <h2 style="font-size:20px;font-weight:800;color:var(--text-primary);margin:0 0 4px 0;">${item.name}</h2>
+          <span style="font-size:12px;color:var(--text-brand);font-weight:600;display:inline-block;margin-bottom:12px;">Category: ${item.category}</span>
+          
+          <div style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--border-default);padding-top:12px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">SKU Code</span>
+              <strong style="color:var(--text-primary);font-family:var(--font-mono);">${item.sku || '—'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Unit Value</span>
+              <strong style="color:var(--text-primary);">${formatCurrency(item.price||0)} / ${item.unit||'pcs'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Total Qty</span>
+              <strong style="color:var(--text-primary);">${item.stock||0} ${item.unit||'pcs'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Assigned Hub</span>
+              <strong style="color:var(--text-primary);">${wh?.name || '—'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Created Date</span>
+              <strong style="color:var(--text-primary);">${formatDate(item.createdAt)}</strong>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Live Scannable Barcode SVG Block -->
+        <div style="padding:12px;background:white;border-radius:var(--radius-md);border:1px solid var(--border-default);display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:12px;">
+          <img src="http://localhost:8000/api/v1/registry/barcode?code=${barcodeStr}" style="height:45px;max-width:100%;mix-blend-mode:multiply;" title="Item Barcode" />
+          <span style="font-family:var(--font-mono);font-size:10px;color:#555;margin-top:4px;letter-spacing:1.5px;">${barcodeStr}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const footer = `<button class="btn btn-secondary" id="item-card-close" style="width:100%">Close Card</button>`;
+
+  const modal = createModal({ title: 'Inventory Item Card', body, footer, size: 'medium' });
+  modal.el.querySelector('#item-card-close')?.addEventListener('click', modal.close);
+
+  // Wire up sliding carousel events
+  if (images.length > 1) {
+    const slides = modal.el.querySelector('.carousel-slides');
+    const dots = modal.el.querySelectorAll('.carousel-dot');
+    let currentIdx = 0;
+
+    const updateCarousel = (idx) => {
+      currentIdx = idx;
+      slides.style.transform = `translateX(-${currentIdx * 100}%)`;
+      dots.forEach((dot, dIdx) => {
+        if (dIdx === currentIdx) {
+          dot.style.background = 'white';
+          dot.style.transform = 'scale(1.2)';
+        } else {
+          dot.style.background = 'rgba(255,255,255,0.4)';
+          dot.style.transform = 'scale(1)';
+        }
+      });
+    };
+
+    modal.el.querySelector('.carousel-prev')?.addEventListener('click', () => {
+      let idx = currentIdx - 1;
+      if (idx < 0) idx = images.length - 1;
+      updateCarousel(idx);
+    });
+
+    modal.el.querySelector('.carousel-next')?.addEventListener('click', () => {
+      let idx = currentIdx + 1;
+      if (idx >= images.length) idx = 0;
+      updateCarousel(idx);
+    });
+
+    dots.forEach((dot, idx) => {
+      dot.addEventListener('click', () => {
+        updateCarousel(idx);
+      });
+      // Initial style positioning
+      if (idx === 0) {
+        dot.style.background = 'white';
+        dot.style.transform = 'scale(1.2)';
+      }
+    });
+  }
 }
 
 // ===== pages/tables.js =====
@@ -4790,6 +6599,10 @@ let _debounceSavers  = new Map();       // rowIndex → debounced save fn
 // ─── Entry point ──────────────────────────────────────────────────────────────
 async function renderTables() {
   const user     = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const whs      = getWarehouses();
   const canManage = ['super_admin','admin'].includes(user.role);
 
@@ -4806,13 +6619,22 @@ async function renderTables() {
 async function _renderTableList(user, whs, canManage) {
   // Fetch schemas from backend
   const res = await apiFetch('/dynamic-tables/');
-  const schemas = (res?.success && Array.isArray(res.data)) ? res.data : [];
+  let schemas = (res?.success && Array.isArray(res.data)) ? res.data : [];
+
+  // Role-based schema filtering: non-admins only see tables assigned to their role
+  if (!canManage) {
+    schemas = schemas.filter(t => {
+      if (!t.roles || t.roles.length === 0) return true; // no restriction = visible to all
+      return t.roles.includes(user.role);
+    });
+  }
+
 
   renderShell('Tables', 'Dynamic table builder and spreadsheet workspace', `
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">📋 Table Builder</h1>
+          <h1 class="page-title">Table Builder</h1>
           <p class="page-subtitle">Airtable-style inline spreadsheet workspaces</p>
         </div>
         <div class="page-header-actions">
@@ -4823,14 +6645,14 @@ async function _renderTableList(user, whs, canManage) {
 
       ${schemas.length === 0 ? `
         <div class="card" style="text-align:center;padding:80px 40px">
-          <div style="font-size:56px;margin-bottom:20px;opacity:0.4">📋</div>
+          <div style="font-size:48px;margin-bottom:20px;opacity:0.4;display:flex;justify-content:center;color:var(--text-muted)">${getSvgIcon('tables', 48)}</div>
           <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
           <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Create your first table and start tracking data like a spreadsheet</p>
           ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create First Table</button>` : ''}
         </div>
       ` : `
         <div class="table-toolbar" style="margin-bottom:16px">
-          <div class="table-search"><span>🔍</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
+          <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span><input type="text" id="tbl-search" placeholder="Search tables..." /></div>
         </div>
         <div class="table-wrap">
           <table>
@@ -4858,9 +6680,9 @@ async function _renderTableList(user, whs, canManage) {
                   <td>${formatDate(t.createdAt)}</td>
                   <td>
                     <div class="table-actions">
-                      <button class="action-btn view" data-tid="${t.id}" title="Open Spreadsheet">📊</button>
-                      ${canManage ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">✏️</button>` : ''}
-                      ${canManage ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">🗑️</button>` : ''}
+                      <button class="action-btn view" data-tid="${t.id}" title="Open Spreadsheet">${getSvgIcon('analytics', 14)}</button>
+                      ${canManage ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">${getSvgIcon('edit', 14)}</button>` : ''}
+                      ${canManage ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                     </div>
                   </td>
                 </tr>`;
@@ -4918,6 +6740,17 @@ async function _openSpreadsheet(user, canManage) {
     return;
   }
 
+  // Enforce role-based access on schema open
+  if (!canManage && _schema.roles && _schema.roles.length > 0) {
+    if (!_schema.roles.includes(user.role)) {
+      showToast('Access Denied', `You don't have permission to access this table`, 'error');
+      _activeTableId = null;
+      await renderTables();
+      return;
+    }
+  }
+
+
   const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
 
@@ -4932,8 +6765,8 @@ async function _openSpreadsheet(user, canManage) {
       <div class="ss-toolbar">
         <div class="ss-toolbar-left">
           <button class="btn btn-secondary btn-sm" id="ss-back">← All Tables</button>
-          <div class="ss-table-badge" style="background:${headerColor}22;border-color:${headerColor}44">
-            <span style="color:${headerColor}">📊</span>
+          <div class="ss-table-badge" style="background:${headerColor}22;border-color:${headerColor}44;display:inline-flex;align-items:center;gap:6px">
+            <span style="color:${headerColor};display:flex;align-items:center">${getSvgIcon('tables', 14)}</span>
             <span style="font-weight:700;color:var(--text-primary)">${_schema.name}</span>
             <span class="badge badge-muted" style="font-size:11px">${_schema.category}</span>
           </div>
@@ -4944,10 +6777,10 @@ async function _openSpreadsheet(user, canManage) {
             <span class="ss-save-spinner">⟳</span> Saving…
           </div>
           ${canImport ? `
-            <button class="btn btn-secondary btn-sm" id="ss-import-btn">📥 Import CSV</button>
-            <button class="btn btn-secondary btn-sm" id="ss-export-btn">📤 Export CSV</button>
+            <button class="btn btn-secondary btn-sm" id="ss-import-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('upload', 14)} Import CSV</button>
+            <button class="btn btn-secondary btn-sm" id="ss-export-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('export', 14)} Export CSV</button>
           ` : ''}
-          ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn">⚙️ Edit Schema</button>` : ''}
+          ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('settings', 14)} Edit Schema</button>` : ''}
           ${canEdit ? `<button class="btn btn-primary btn-sm" id="ss-add-row-btn">+ Add Row</button>` : ''}
         </div>
       </div>
@@ -5030,7 +6863,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
       data-row-id="${row.id}" data-row-idx="${idx}">
     <td class="ss-td ss-td-row-num">
       ${isLockedByOther
-        ? `<span class="ss-lock-indicator" title="${lockInfo.userName} is editing">✏️</span>`
+        ? `<span class="ss-lock-indicator" style="display:inline-flex;align-items:center;color:var(--brand-500)" title="${lockInfo.userName} is editing">${getSvgIcon('edit', 12)}</span>`
         : `<span class="ss-row-num">${idx + 1}</span>`
       }
     </td>
@@ -5045,7 +6878,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
     `).join('')}
     ${canEdit ? `
       <td class="ss-td ss-td-actions">
-        <button class="ss-action-btn ss-del-row" data-row-id="${row.id}" data-row-idx="${idx}" title="Delete row">🗑️</button>
+        <button class="ss-action-btn ss-del-row" data-row-id="${row.id}" data-row-idx="${idx}" title="Delete row">${getSvgIcon('trash', 12)}</button>
       </td>
     ` : ''}
   </tr>`;
@@ -5113,7 +6946,9 @@ function _buildReadonlyCell(value, col) {
   const v = value ?? '';
   if (v === '' || v === null || v === undefined) return '<span style="color:var(--text-disabled)">—</span>';
   switch (col.type) {
-    case 'checkbox': return v ? '✅' : '☐';
+    case 'checkbox': return v 
+      ? `<span style="color:var(--accent-emerald);font-weight:700;display:inline-flex;align-items:center">${getSvgIcon('check', 12)}</span>` 
+      : `<span style="color:var(--text-disabled);font-size:14px;font-family:sans-serif;user-select:none">☐</span>`;
     case 'price':    return `<strong>$${Number(v).toFixed(2)}</strong>`;
     case 'date':     return `<span style="font-size:12px;font-family:var(--font-mono)">${v}</span>`;
     case 'tags':     return String(v).split(',').map(t => `<span class="badge badge-purple" style="margin-right:2px">${t.trim()}</span>`).join('');
@@ -5172,6 +7007,36 @@ function _attachGridEvents(cols, canEdit, user) {
     const rowIdx = parseInt(btn.dataset.rowIdx);
     _deleteRow(rowId, rowIdx, cols, canEdit, user);
   });
+
+  // Emit row_lock over WebSocket on focusin
+  tbody.addEventListener('focusin', e => {
+    const inp = e.target.closest('.ss-input');
+    if (!inp) return;
+    const rowId = inp.dataset.rowId;
+    if (!rowId || inp.dataset.virtual === 'true') return;
+
+    sendWebSocketMessage({
+      event: 'row_lock',
+      tableId: _activeTableId,
+      rowId: rowId,
+      userName: user.name
+    });
+  });
+
+  // Emit row_unlock over WebSocket on focusout
+  tbody.addEventListener('focusout', e => {
+    const inp = e.target.closest('.ss-input');
+    if (!inp) return;
+    const rowId = inp.dataset.rowId;
+    if (!rowId || inp.dataset.virtual === 'true') return;
+
+    sendWebSocketMessage({
+      event: 'row_unlock',
+      tableId: _activeTableId,
+      rowId: rowId,
+      userName: user.name
+    });
+  });
 }
 
 // ─── VIRTUAL ROW ACTIVATION ───────────────────────────────────────────────────
@@ -5193,8 +7058,7 @@ function _activateVirtualRow(tr, cols, canEdit, user) {
   // Replace actions cell
   const actionsTd = tr.querySelector('.ss-td-actions');
   if (actionsTd && canEdit) {
-    actionsTd.innerHTML = `<button class="ss-action-btn ss-save-new-row" title="Save new row">💾</button>`;
-    actionsTd.querySelector('.ss-save-new-row')?.addEventListener('click', () => _saveNewVirtualRow(tr, cols, canEdit, user));
+    actionsTd.innerHTML = '';
   }
 
   // Auto-focus first input
@@ -5288,26 +7152,10 @@ function _collectRowData(tr, cols) {
 function _appendVirtualRow(cols, canEdit, user) {
   const tbody = document.getElementById('ss-tbody');
   if (!tbody) return;
-  const idx = _rows.length + tbody.querySelectorAll('tr.ss-row:not(.ss-row-virtual)').length;
-  const tr = document.createElement('tr');
-  tr.className = 'ss-row';
-  tr.dataset.rowIdx = idx;
-  tr.innerHTML = `
-    <td class="ss-td ss-td-row-num"><span class="ss-row-num">${idx + 1}</span></td>
-    ${cols.map(col => `<td class="ss-td ss-cell" data-col="${col.id}" data-type="${col.type}">
-      ${_buildEditableCell('', col, `__new_${Date.now()}__`, idx)}
-    </td>`).join('')}
-    <td class="ss-td ss-td-actions">
-      <button class="ss-action-btn ss-save-new-row" title="Save new row">💾</button>
-    </td>
-  `;
-  // Insert before first virtual row
   const firstVirtual = tbody.querySelector('tr.ss-row-virtual');
-  if (firstVirtual) tbody.insertBefore(tr, firstVirtual);
-  else tbody.appendChild(tr);
-
-  tr.querySelector('.ss-save-new-row')?.addEventListener('click', () => _saveNewVirtualRow(tr, cols, canEdit, user));
-  tr.querySelector('.ss-input')?.focus();
+  if (firstVirtual) {
+    _activateVirtualRow(firstVirtual, cols, canEdit, user);
+  }
 }
 
 // ─── DELETE ROW ───────────────────────────────────────────────────────────────
@@ -5353,14 +7201,18 @@ function _subscribeToTableEvents() {
 }
 
 function _handleWsEvent(e) {
+  const user = getCurrentUser();
+  if (!user) {
+    window.removeEventListener('wareops_ws_event', _handleWsEvent);
+    return;
+  }
   const payload = e.detail;
   if (!payload || !payload.type || !_activeTableId) return;
 
   const { type, data } = payload;
   if (!data?.tableId || data.tableId !== _activeTableId) return;
 
-  const user = getCurrentUser();
-  const userId = String(user?.id || user?._id || '');
+  const userId = String(user.id || user._id || '');
 
   switch (type) {
     case 'table_row_created': {
@@ -5382,6 +7234,20 @@ function _handleWsEvent(e) {
       if (data.actorId !== userId && data.rowId) {
         _applyRemoteRowDelete(data.rowId);
         _showCollabToast(`${data.actorName} deleted a row`);
+      }
+      break;
+    }
+    case 'row_lock': {
+      if (data.userId !== userId) {
+        _lockedRows.set(data.rowId, { userId: data.userId, userName: data.userName });
+        _applyRowLockStatus(data.rowId, true, data.userName);
+      }
+      break;
+    }
+    case 'row_unlock': {
+      if (data.userId !== userId) {
+        _lockedRows.delete(data.rowId);
+        _applyRowLockStatus(data.rowId, false);
       }
       break;
     }
@@ -5455,8 +7321,104 @@ function _applyRemoteRowDelete(rowId) {
   _updateRowCount();
 }
 
+function _applyRowLockStatus(rowId, isLocked, userName = '') {
+  const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
+  if (!tr) return;
+
+  if (isLocked) {
+    tr.classList.add('ss-row-locked');
+    const rowNumTd = tr.querySelector('.ss-td-row-num');
+    if (rowNumTd) {
+      rowNumTd.innerHTML = `<span class="ss-lock-indicator" style="cursor:help;display:inline-flex;align-items:center;color:var(--brand-500)" title="${userName} is editing">${getSvgIcon('edit', 12)}</span>`;
+    }
+    // Set all cells to readonly for other users
+    tr.querySelectorAll('.ss-cell').forEach(cell => {
+      cell.dataset.readonly = 'true';
+      const inp = cell.querySelector('.ss-input');
+      if (inp) {
+        inp.disabled = true;
+      }
+    });
+  } else {
+    tr.classList.remove('ss-row-locked');
+    const rowIdx = parseInt(tr.dataset.rowIdx);
+    const rowNumTd = tr.querySelector('.ss-td-row-num');
+    if (rowNumTd) {
+      rowNumTd.innerHTML = `<span class="ss-row-num">${rowIdx + 1}</span>`;
+    }
+    // Set cells back to editable if canEdit
+    const user = getCurrentUser();
+    const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+    tr.querySelectorAll('.ss-cell').forEach(cell => {
+      if (canEdit) {
+        delete cell.dataset.readonly;
+        const inp = cell.querySelector('.ss-input');
+        if (inp) {
+          inp.disabled = false;
+        }
+      }
+    });
+  }
+}
+
+async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) {
+  const rowData = _collectRowData(tr, cols);
+  const isBlank = Object.values(rowData).every(v => v === '' || v === null || v === undefined);
+  if (isBlank) return;
+
+  _showSavingIndicator(true);
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`, {
+    method: 'POST',
+    body: JSON.stringify(rowData)
+  });
+  _showSavingIndicator(false);
+
+  if (res?.success && res.data) {
+    _rows.push(res.data);
+    const idx = _rows.length - 1;
+    
+    // Replace virtual row with real row in DOM
+    const newTrHtml = _buildRow(res.data, idx, cols, canEdit, user, true);
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = `<table><tbody>${newTrHtml}</tbody></table>`;
+    const newTr = tempDiv.querySelector('tr');
+    tr.replaceWith(newTr);
+    
+    _updateRowCount();
+    
+    // Broadcast creation event to other collaborators
+    sendWebSocketMessage({
+      event: 'table_row_created',
+      tableId: _activeTableId,
+      rowId: res.data.id
+    });
+    
+    // Re-attach grid events
+    _attachGridEvents(cols, canEdit, user);
+    
+    // Restore focus to the edited cell in the new real row
+    if (changedInput) {
+      const colId = changedInput.dataset.colId;
+      const targetInput = newTr.querySelector(`[data-col-id="${colId}"]`);
+      if (targetInput) {
+        targetInput.focus();
+        if (targetInput.type === 'text') {
+          const val = targetInput.value;
+          targetInput.value = '';
+          targetInput.value = val;
+        }
+      }
+    }
+    showToast('Row created', '', 'success');
+  } else {
+    showToast('Save failed', res?.error || 'Check field values', 'error');
+  }
+}
+
 function _handleVirtualCellChange(inp, cols, canEdit, user) {
-  // No-op: handled via virtual row click activation
+  const tr = inp.closest('tr');
+  if (!tr) return;
+  _promoteAndSaveVirtualRow(tr, cols, canEdit, user, inp);
 }
 
 // ─── CSV EXPORT ────────────────────────────────────────────────────────────────
@@ -5489,6 +7451,10 @@ function _exportCSV() {
   URL.revokeObjectURL(a.href);
 
   showToast('Export complete', `${_rows.length} rows exported as CSV`, 'success');
+  const user = getCurrentUser();
+  if (user) {
+    addAuditLog('export', `Exported spreadsheet table '${_schema.name}' as CSV (${_rows.length} rows)`, user.id);
+  }
 }
 
 // ─── CSV IMPORT ────────────────────────────────────────────────────────────────
@@ -5607,10 +7573,15 @@ function _showSchemaModal(schema, whs) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Access Roles <span style="font-size:11px;color:var(--text-muted)">(hold Ctrl/Cmd for multi)</span></label>
-          <select id="t-roles" class="form-control" multiple style="height:80px">
-            ${['admin','manager','staff','employee'].map(r=>`<option value="${r}" ${(schema?.roles||[]).includes(r)?'selected':''}>${capitalize(r)}</option>`).join('')}
-          </select>
+          <label class="form-label">Access Roles</label>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px 14px;align-items:center;height:44px">
+            ${['admin','manager','staff','employee'].map(r=>`
+              <label class="checkbox-group" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0">
+                <input type="checkbox" class="role-checkbox" value="${r}" ${(schema?.roles||[]).includes(r)?'checked':''} />
+                <span style="font-size:13px">${capitalize(r)}</span>
+              </label>
+            `).join('')}
+          </div>
         </div>
       </div>
 
@@ -5655,32 +7626,32 @@ function _showSchemaModal(schema, whs) {
 
   const footer = `
     <button class="btn btn-secondary" id="t-cancel">Cancel</button>
-    <button class="btn btn-primary" id="t-save">${isEdit?'✓ Update':'+ Create'} Table</button>
+    <button class="btn btn-primary" id="t-save">${isEdit?'Update':'Create'} Table</button>
   `;
 
-  const modal = createModal({ title: isEdit?'✏️ Edit Table':'📋 Build New Table', body, footer, size: 'lg' });
+  const modal = createModal({ title: isEdit?'Edit Table':'Build New Table', body, footer, size: 'lg' });
   modal.el.querySelector('#t-cancel')?.addEventListener('click', modal.close);
   modal.el.querySelector('#t-save')?.addEventListener('click', async () => {
     const name = document.getElementById('t-name').value.trim();
     if (!name) { showToast('Validation', 'Table name is required', 'warning'); return; }
 
     const colEls = body.querySelectorAll('.col-row');
-    const cols   = Array.from(colEls).map((row, i) => {
+    const cols   = Array.from(colEls).map((row) => {
+      const colId     = row.dataset.colId;
       const typeEl    = row.querySelector('.col-type');
       const optEl     = row.querySelector('.col-options');
       const rawOpts   = optEl?.value || '';
-      // Normalize options: trim each, remove empties
       const normOpts  = rawOpts.split(',').map(o => o.trim()).filter(Boolean).join(',');
       return {
-        id:       columns[i]?.id || 'c' + Date.now() + i,
-        name:     row.querySelector('.col-name').value.trim() || `Column ${i+1}`,
+        id:       colId || 'c' + Date.now(),
+        name:     row.querySelector('.col-name').value.trim() || 'Column',
         type:     typeEl?.value || 'text',
         required: row.querySelector('.col-req').checked,
         options:  normOpts
       };
     }).filter(c => c.name);
 
-    const roles = Array.from(document.getElementById('t-roles').selectedOptions).map(o => o.value);
+    const roles = Array.from(body.querySelectorAll('.role-checkbox:checked')).map(cb => cb.value);
     const data  = {
       name,
       category:    document.getElementById('t-cat').value,
@@ -5716,7 +7687,7 @@ function _showSchemaModal(schema, whs) {
 function _renderColumnRow(col, i) {
   const isDropdown = col.type === 'dropdown';
   return `
-    <div class="col-row" style="display:grid;grid-template-columns:1fr 140px auto auto auto;gap:8px;align-items:start;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px">
+    <div class="col-row" data-col-id="${col.id}" style="display:grid;grid-template-columns:1fr 140px auto auto auto;gap:8px;align-items:start;background:var(--bg-input);border:1px solid var(--border-default);border-radius:8px;padding:10px">
       <input type="text" class="col-name form-control" value="${col.name||''}" placeholder="Column name" style="margin:0" />
       <select class="col-type form-control" style="margin:0">
         ${COLUMN_TYPES.map(t=>`<option value="${t}" ${col.type===t?'selected':''}>${capitalize(t)}</option>`).join('')}
@@ -5725,7 +7696,7 @@ function _renderColumnRow(col, i) {
         <input type="checkbox" class="col-req" ${col.required?'checked':''} />
         <label style="font-size:12px">Req.</label>
       </label>
-      <button type="button" class="action-btn delete" title="Remove" onclick="this.closest('.col-row').remove()">🗑️</button>
+      <button type="button" class="action-btn delete" title="Remove" onclick="this.closest('.col-row').remove()">${getSvgIcon('trash', 12)}</button>
       <div class="col-options-wrap" style="grid-column:1/-1;display:${isDropdown?'block':'none'}">
         <input type="text" class="col-options form-control" value="${col.options||''}"
           placeholder="Dropdown options (comma separated: Yes, No, Pending)" style="margin-top:6px" />
@@ -5752,10 +7723,16 @@ function _parseOptions(rawOpts) {
 
 function _colTypeIcon(type) {
   const icons = {
-    text: '𝐓', number: '#', price: '$', date: '📅',
-    checkbox: '☑', dropdown: '▾', status: '●', tags: '🏷'
+    text: `<span style="font-family:serif;font-weight:bold;font-size:12px">T</span>`, 
+    number: '<span style="font-weight:bold;font-size:11px">#</span>', 
+    price: '<span style="font-weight:bold;font-size:12px">$</span>', 
+    date: getSvgIcon('clock', 12),
+    checkbox: getSvgIcon('check', 12), 
+    dropdown: getSvgIcon('chevron_down', 12), 
+    status: getSvgIcon('info', 12), 
+    tags: getSvgIcon('palette', 12)
   };
-  return icons[type] || '𝐓';
+  return icons[type] || `<span style="font-family:serif;font-weight:bold;font-size:12px">T</span>`;
 }
 
 // ===== pages/billing.js =====
@@ -5773,6 +7750,10 @@ const bl_PER_PAGE = 10;
 
 function renderBilling() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const allowed = ['super_admin','admin','manager','staff'];
   if (!allowed.includes(user.role)) { navigate('/dashboard'); return; }
 
@@ -5785,7 +7766,7 @@ function renderBilling() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">💰 Billing & Taxation</h1>
+          <h1 class="page-title">Billing & Taxation</h1>
           <p class="page-subtitle">Automated bill generation with tax computation</p>
         </div>
         <div class="page-header-actions">
@@ -5795,10 +7776,18 @@ function renderBilling() {
       </div>
 
       <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <span style="font-size:20px">⚙️</span>
+        <span style="color:var(--accent-amber);display:flex;align-items:center">${getSvgIcon('settings', 20)}</span>
         <div>
-          <div style="font-size:13px;font-weight:700;color:var(--text-primary)">Active Tax Rules</div>
-          <div style="font-size:12px;color:var(--text-muted)">Normal items: ${getTaxConfig().normal}% GST &nbsp;|&nbsp; Luxury items: ${getTaxConfig().luxury}% GST</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text-primary)">Enterprise Tax Engine</div>
+          <div style="font-size:12px;color:var(--text-muted)">
+            ${(() => {
+              const cfg = getTaxConfig();
+              if (cfg.taxes && cfg.taxes.length > 0) {
+                return cfg.taxes.map(t => `${t.name}: ${t.taxType === 'percentage' ? t.rate + '%' : '$' + t.rate} (${t.taxType})`).join(' &nbsp;|&nbsp; ');
+              }
+              return `Normal: ${cfg.normal || 5}% &nbsp;|&nbsp; Luxury: ${cfg.luxury || 15}%`;
+            })()}
+          </div>
         </div>
         <div style="margin-left:auto;display:flex;gap:20px;flex-wrap:wrap">
           <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:var(--accent-emerald)">${formatCurrency(totalRev)}</div><div style="font-size:11px;color:var(--text-muted)">Total Revenue</div></div>
@@ -5808,7 +7797,7 @@ function renderBilling() {
       </div>
 
       <div class="table-toolbar">
-        <div class="table-search"><span>🔍</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
+        <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
         <div class="table-filter">
           ${user.role === 'super_admin' ? `
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="bill-wh-filter">
@@ -5823,6 +7812,10 @@ function renderBilling() {
 
   renderBillsTable();
   document.getElementById('new-bill-btn')?.addEventListener('click', () => showBillModal());
+  
+  // Realtime WebSocket auto-refresh for invoices
+  window.removeEventListener('wareops_ws_event', _handleBillingWsEvent);
+  window.addEventListener('wareops_ws_event', _handleBillingWsEvent);
   const debouncedSearch = debounce(q => {
     bl_searchQ = q;
     bl_page = 1;
@@ -5857,7 +7850,7 @@ function renderBillsTable() {
   if (!container) return;
 
   if (bills.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">🧾</div><h3 style="color:var(--text-secondary)">No bills found</h3><p style="color:var(--text-muted);margin-bottom:20px">Generate your first invoice</p><button class="btn btn-primary" onclick="document.getElementById('new-bill-btn').click()">+ New Bill</button></div>`;
+    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4;display:flex;justify-content:center;color:var(--text-muted)">${getSvgIcon('billing', 42)}</div><h3 style="color:var(--text-secondary)">No bills found</h3><p style="color:var(--text-muted);margin-bottom:20px">Generate your first invoice</p><button class="btn btn-primary" onclick="document.getElementById('new-bill-btn').click()">+ New Bill</button></div>`;
     return;
   }
 
@@ -5883,8 +7876,8 @@ function renderBillsTable() {
               <td data-label="Date" style="font-size:12px;color:var(--text-muted)">${formatDate(b.createdAt)}</td>
               <td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn view" data-bid="${b.id}" title="View Bill">👁️</button>
-                  <button class="action-btn" data-print="${b.id}" title="Print Invoice" style="font-size:15px">🖨️</button>
+                  <button class="action-btn view" data-bid="${b.id}" title="View Bill" style="display:inline-flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                  <button class="action-btn" data-print="${b.id}" title="Print Invoice" style="display:inline-flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></button>
                 </div>
               </td>
             </tr>`;
@@ -5916,8 +7909,13 @@ function renderBillsTable() {
 function showBillModal() {
   billItems = [];
   const whs = getWarehouses();
-  const items = getItems();
   const body = document.createElement('div');
+  body.style.width = '100%';
+
+  let selectedCategory = '';
+  let highlightedIndex = -1;
+  let filteredItems = [];
+  let searchTimeout = null;
 
   function renderBillBody() {
     const savedCustomer = body.querySelector('#bill-customer')?.value || '';
@@ -5925,138 +7923,629 @@ function showBillModal() {
     const warehouseId = savedWh || whs[0]?.id;
     const wh = whs.find(w => w.id === warehouseId);
     
+    const whEmail = wh?.email || '';
+    const whContact = wh?.contact || '';
+    const gstinFallback = whEmail ? `27${whEmail.toUpperCase().slice(0,3)}C${whContact.slice(-4) || '1234'}F1Z5` : '27AAPCW1234F1Z5';
+
+    // Retrieve input values to preserve them across redrawing
+    const savedSellerAddress = body.querySelector('#bill-seller-address')?.value || wh?.address || 'Primary Logistics Hub';
+    const savedSellerContact = body.querySelector('#bill-seller-contact')?.value || wh?.contact || 'Contact Office';
+    const savedSellerTax = body.querySelector('#bill-seller-tax')?.value || wh?.taxNumber || wh?.gstin || gstinFallback;
+    const savedBuyerBilling = body.querySelector('#bill-buyer-billing')?.value || '';
+    const savedBuyerShipping = body.querySelector('#bill-buyer-shipping')?.value || '';
+    const savedPhone = body.querySelector('#bill-customer-phone')?.value || '';
+    const savedEmail = body.querySelector('#bill-customer-email')?.value || '';
+
     // Check if custom tax preference is unconfigured
     const isCustomUnconfigured = wh && wh.taxPreference === 'custom' && (!wh.taxConfig || Object.keys(wh.taxConfig).length === 0);
-    const TAX_RATES = getTaxRates(warehouseId);
+    const items = getItems(warehouseId);
     
-    const subtotal = billItems.reduce((s,i)=>s+(i.qty*(i.price||0)),0);
-    const tax = billItems.reduce((s,i)=>s+(i.qty*(i.price||0)*(TAX_RATES[i.taxCategory]||TAX_RATES.normal)),0);
-    const total = subtotal + tax;
+    // Calculate totals using dynamic tax engine
+    const calculation = calculateTaxesFrontend(billItems, warehouseId);
+
+    // Track stock validation
+    let hasStockError = false;
 
     body.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-        <div class="form-group" style="margin:0">
-          <label class="form-label">Customer Name <span class="req">*</span></label>
-          <input type="text" id="bill-customer" class="form-control" placeholder="Customer or company name" value="${savedCustomer}" />
-        </div>
-        <div class="form-group" style="margin:0">
-          <label class="form-label">Warehouse</label>
-          <select id="bill-wh" class="form-control">
-            ${whs.map(w=>`<option value="${w.id}" ${warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div style="background:var(--bg-input);border-radius:10px;padding:16px;margin-bottom:16px">
-        <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text-secondary)">📦 Add Items</div>
-        ${isCustomUnconfigured ? `
-          <div style="color:var(--accent-rose);font-size:12px;font-weight:600;padding:10px;background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.2);border-radius:8px">
-            ⚠️ Custom Tax Config Required: Please configure tax rates in settings for this warehouse before creating invoices.
+      <div style="display:flex; gap:24px; min-height:550px; flex-wrap:wrap; width:100%;">
+        <!-- Left Column: Interactive Checkout Desk -->
+        <div style="flex:1.2; min-width:320px; display:flex; flex-direction:column; gap:16px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600;">Customer Name <span class="req">*</span></label>
+              <input type="text" id="bill-customer" class="form-control" placeholder="Customer name" value="${savedCustomer}" />
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600;">Warehouse Hub</label>
+              <select id="bill-wh" class="form-control">
+                ${whs.map(w=>`<option value="${w.id}" ${warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+              </select>
+            </div>
           </div>
-        ` : `
-        <div style="display:grid;grid-template-columns:2fr 1fr auto;gap:8px;align-items:end">
-          <div>
-            <label class="form-label" style="font-size:11px">Item</label>
-            <select id="item-select" class="form-control">
-              <option value="">Select item...</option>
-              ${items.map(i=>`<option value="${i.id}" data-price="${i.price}" data-tax="${i.taxCategory}" data-name="${i.name}">${i.name} — ${formatCurrency(i.price)} (${i.taxCategory})</option>`).join('')}
-            </select>
+
+          <!-- Seller and Buyer Information Grid -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; background:var(--bg-input); border-radius:12px; padding:16px; border:1px solid var(--border-default);">
+            <div style="grid-column: span 2; font-size:12px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid var(--border-subtle); padding-bottom:4px; display:flex; align-items:center; gap:6px;">${getSvgIcon('warehouses', 14)} Seller (Issuer) Details</div>
+            <div class="form-group" style="margin:0; grid-column: span 2;">
+              <label class="form-label" style="font-weight:600; font-size:11px;">Seller Address</label>
+              <input type="text" id="bill-seller-address" class="form-control" style="font-size:12px; padding:6px 10px;" placeholder="Seller address" value="${savedSellerAddress}" />
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600; font-size:11px;">Seller Contact</label>
+              <input type="text" id="bill-seller-contact" class="form-control" style="font-size:12px; padding:6px 10px;" placeholder="Seller contact" value="${savedSellerContact}" />
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600; font-size:11px;">Seller GST/VAT Number</label>
+              <input type="text" id="bill-seller-tax" class="form-control" style="font-size:12px; padding:6px 10px;" placeholder="GSTIN / VAT ID" value="${savedSellerTax}" />
+            </div>
+
+            <div style="grid-column: span 2; font-size:12px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid var(--border-subtle); padding-bottom:4px; margin-top:8px; display:flex; align-items:center; gap:6px;">${getSvgIcon('user', 14)} Buyer Billing & Contact</div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600; font-size:11px;">Customer Phone</label>
+              <input type="text" id="bill-customer-phone" class="form-control" style="font-size:12px; padding:6px 10px;" placeholder="Phone" value="${savedPhone}" />
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600; font-size:11px;">Customer Email</label>
+              <input type="email" id="bill-customer-email" class="form-control" style="font-size:12px; padding:6px 10px;" placeholder="Email" value="${savedEmail}" />
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600; font-size:11px;">Buyer Billing Address</label>
+              <textarea id="bill-buyer-billing" class="form-control" style="font-size:12px; padding:6px 10px; height:50px; resize:none;" placeholder="Billing Address">${savedBuyerBilling}</textarea>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600; font-size:11px;">Buyer Shipping Address</label>
+              <textarea id="bill-buyer-shipping" class="form-control" style="font-size:12px; padding:6px 10px; height:50px; resize:none;" placeholder="Shipping Address">${savedBuyerShipping}</textarea>
+            </div>
           </div>
-          <div>
-            <label class="form-label" style="font-size:11px">Quantity</label>
-            <input type="number" id="item-qty" class="form-control" value="1" min="1" />
+
+          <div style="background:var(--bg-input); border-radius:12px; padding:16px; border:1px solid var(--border-default);">
+            <div style="font-size:13px; font-weight:700; margin-bottom:12px; color:var(--text-secondary); display:flex; justify-content:space-between; align-items:center;">
+              <span style="display:flex;align-items:center;gap:6px">${getSvgIcon('items', 14)} Add Items Catalog</span>
+              <span style="font-size:11px; color:var(--text-muted);">Barcode Ready</span>
+            </div>
+            
+            ${isCustomUnconfigured ? `
+              <div style="color:var(--accent-rose); font-size:12px; font-weight:600; padding:10px; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.2); border-radius:8px; display:flex; align-items:flex-start; gap:8px">
+                <span style="color:var(--accent-rose); flex-shrink:0; margin-top:2px">${getSvgIcon('warning', 16)}</span>
+                <span>Custom Tax Config Required: Please configure tax rates in settings for this warehouse before creating invoices.</span>
+              </div>
+            ` : `
+              <div style="position:relative;">
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <div style="position:relative; flex-grow:1;">
+                    <input type="text" id="sku-search-input" class="form-control" placeholder="Search name, SKU or scan barcode..." autocomplete="off" style="width:100%; padding-left:36px;" />
+                    <span style="position:absolute; left:12px; top:12px; color:var(--text-muted); display:flex; align-items:center;">${getSvgIcon('search', 14)}</span>
+                    
+                    <!-- Floating Dropdown list -->
+                    <div id="sku-dropdown-list" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--bg-card); border:1px solid var(--border-default); border-radius:8px; max-height:220px; overflow-y:auto; z-index:1000; box-shadow:var(--shadow-lg); margin-top:4px;"></div>
+                  </div>
+                  <div style="width:80px;">
+                    <input type="number" id="item-qty" class="form-control" value="1" min="1" placeholder="Qty" />
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="add-item-btn" style="height:40px; padding:0 16px;">+ Add</button>
+                </div>
+                
+                <!-- Category filtering pills -->
+                <div id="category-filter-pills" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;"></div>
+              </div>
+            `}
           </div>
-          <button class="btn btn-secondary btn-sm" id="add-item-btn" style="height:40px">+ Add</button>
+
+          <!-- Added Items Table -->
+          <div id="bill-items-list" style="flex-grow:1; min-height:180px;">
+            ${calculation.items.length === 0 ? `
+              <div style="text-align:center; padding:40px 20px; color:var(--text-muted); font-size:13px; background:var(--bg-input); border-radius:12px; border:1px dashed var(--border-default); display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                <div style="margin-bottom:8px; color:var(--text-muted)">${getSvgIcon('billing', 28)}</div>
+                <div>No items added to the workspace yet</div>
+              </div>
+            ` : `
+              <div style="overflow-x:auto; border:1px solid var(--border-default); border-radius:10px;">
+                <table style="width:100%; border-collapse:collapse; background:var(--bg-card);">
+                  <thead>
+                    <tr style="background:var(--bg-input); border-bottom:1px solid var(--border-default);">
+                      <th style="padding:10px 8px; text-align:left; font-size:11px; color:var(--text-muted); font-weight:700;">ITEM</th>
+                      <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-muted); font-weight:700; width:90px;">QTY</th>
+                      <th style="padding:10px 8px; text-align:right; font-size:11px; color:var(--text-muted); font-weight:700;">UNIT</th>
+                      <th style="padding:10px 8px; text-align:right; font-size:11px; color:var(--text-muted); font-weight:700;">TAX RATE</th>
+                      <th style="padding:10px 8px; text-align:right; font-size:11px; color:var(--text-muted); font-weight:700;">TOTAL</th>
+                      <th style="width:36px; padding:8px;"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${calculation.items.map((bi, i) => {
+                      const catalogItem = items.find(item => item.id === bi.id);
+                      const availableStock = catalogItem ? catalogItem.stock : 0;
+                      const isOverStock = bi.qty > availableStock;
+                      
+                      if (isOverStock) hasStockError = true;
+                      
+                      const taxRateText = bi.taxes ? bi.taxes.map(t => `${t.name}: ${t.taxType === 'percentage' ? (t.rate * 100).toFixed(0) + '%' : '$' + t.rate}`).join(', ') : (bi.taxRate * 100).toFixed(0) + '%';
+                      
+                      return `
+                        <tr style="border-bottom:1px solid var(--border-subtle); background:${isOverStock ? 'rgba(244,63,94,0.03)' : 'transparent'};">
+                          <td style="padding:10px 8px; font-size:13px;">
+                            <div style="font-weight:700;">${bi.name}</div>
+                            <div style="font-size:10px; color:${isOverStock ? 'var(--accent-rose)' : 'var(--text-muted)'}; margin-top:2px;">
+                              ${isOverStock ? `<span style="display:inline-flex;align-items:center;gap:4px;color:var(--accent-rose)">${getSvgIcon('warning', 12)} Out of Stock (Available: ${availableStock})</span>` : `Available Stock: ${availableStock}`}
+                            </div>
+                          </td>
+                          <td style="padding:8px; text-align:center;">
+                            <input type="number" class="form-control item-qty-edit-input" data-index="${i}" value="${bi.qty}" min="1" style="width:100%; text-align:center; padding:4px; font-size:13px; font-weight:600; border-color:${isOverStock ? 'var(--accent-rose)' : 'var(--border-default)'};" />
+                          </td>
+                          <td style="padding:10px 8px; text-align:right; font-size:13px;">${formatCurrency(bi.price)}</td>
+                          <td style="padding:10px 8px; text-align:right; font-size:11px; color:var(--accent-amber); font-weight:500;">${taxRateText}</td>
+                          <td style="padding:10px 8px; text-align:right; font-size:13px; font-weight:700;">${formatCurrency(bi.total)}</td>
+                          <td style="padding:4px; text-align:center;">
+                            <button class="action-btn delete" onclick="window._removeBillItem(${i})" style="padding:4px 8px;">${getSvgIcon('trash', 14)}</button>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+
+          <!-- Workspace Totals Summary -->
+          <div style="background:var(--bg-input); border-radius:12px; padding:16px; border:1px solid var(--border-default);">
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px;">
+              <span style="color:var(--text-muted)">Subtotal</span>
+              <span style="font-weight:600;">${formatCurrency(calculation.subtotal)}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px;">
+              <span style="color:var(--accent-amber)">Total Tax</span>
+              <span style="color:var(--accent-amber); font-weight:600; text-align:right;">
+                ${formatCurrency(calculation.tax)}
+                ${calculation.taxDetails && calculation.taxDetails.length > 0 ? `
+                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
+                    (${calculation.taxDetails.map(t => `${t.name}: ${formatCurrency(t.amount)}`).join(', ')})
+                  </div>
+                ` : ''}
+              </span>
+            </div>
+            <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border-default); padding-top:10px; margin-top:4px;">
+              <span style="font-weight:700; font-size:15px;">Grand Total</span>
+              <span style="font-weight:800; font-size:17px; color:var(--text-brand)">${formatCurrency(calculation.total)}</span>
+            </div>
+          </div>
         </div>
-        `}
-      </div>
-      <div id="bill-items-list" style="margin-bottom:16px">
-        ${billItems.length === 0 ? `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">No items added yet</div>` : `
-          <table style="width:100%;border-collapse:collapse">
-            <thead><tr style="background:rgba(255,255,255,0.03)">
-              <th style="padding:8px;text-align:left;font-size:11px;color:var(--text-muted)">ITEM</th>
-              <th style="padding:8px;text-align:center;font-size:11px;color:var(--text-muted)">QTY</th>
-              <th style="padding:8px;text-align:right;font-size:11px;color:var(--text-muted)">UNIT</th>
-              <th style="padding:8px;text-align:right;font-size:11px;color:var(--text-muted)">TAX%</th>
-              <th style="padding:8px;text-align:right;font-size:11px;color:var(--text-muted)">TAX AMT</th>
-              <th style="padding:8px;text-align:right;font-size:11px;color:var(--text-muted)">TOTAL</th>
-              <th style="width:30px"></th>
-            </tr></thead>
-            <tbody>
-              ${billItems.map((bi,i)=>{
-                const lineTotal = bi.qty * bi.price;
-                const taxRate = TAX_RATES[bi.taxCategory] || TAX_RATES.normal;
-                const lineTax = lineTotal * taxRate;
-                return `<tr style="border-bottom:1px solid var(--border-subtle)">
-                  <td style="padding:8px;font-size:13px"><strong>${bi.name}</strong></td>
-                  <td style="padding:8px;text-align:center;font-size:13px">${bi.qty}</td>
-                  <td style="padding:8px;text-align:right;font-size:13px">${formatCurrency(bi.price)}</td>
-                  <td style="padding:8px;text-align:right;font-size:13px;color:var(--accent-amber)">${(taxRate*100).toFixed(0)}%</td>
-                  <td style="padding:8px;text-align:right;font-size:13px;color:var(--accent-amber)">${formatCurrency(lineTax)}</td>
-                  <td style="padding:8px;text-align:right;font-size:13px;font-weight:700">${formatCurrency(lineTotal+lineTax)}</td>
-                  <td style="padding:4px"><button class="action-btn delete" onclick="window._removeBillItem(${i})">🗑️</button></td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        `}
-      </div>
-      <div style="background:var(--bg-input);border-radius:10px;padding:16px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--text-muted)">Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--accent-amber)">Total Tax</span><span style="color:var(--accent-amber)">${formatCurrency(tax)}</span></div>
-        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-default);padding-top:10px;margin-top:4px"><span style="font-weight:700;font-size:16px">Grand Total</span><span style="font-weight:800;font-size:18px;color:var(--text-brand)">${formatCurrency(total)}</span></div>
+
+        <!-- Right Column: Live print preview canvas -->
+        <div style="flex:1; min-width:320px; border-left:1px solid var(--border-default); padding-left:24px; display:flex; flex-direction:column;">
+          <div style="font-size:13px; font-weight:700; color:var(--text-secondary); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="display:flex;align-items:center;gap:6px">${getSvgIcon('view', 14)} Live Invoice Canvas</span>
+            <span class="badge badge-brand" style="font-size:10px;">A4 Format</span>
+          </div>
+          
+          <div id="live-invoice-preview-container" style="background:var(--bg-card); border:1px solid var(--border-default); border-radius:12px; padding:16px; flex-grow:1; overflow-y:auto; max-height:580px; box-shadow:var(--shadow-sm);">
+            <!-- Invoice preview rendered dynamically -->
+          </div>
+        </div>
       </div>
     `;
 
-    // Bind dynamic warehouse selector switch to modal re-rendering
-    setTimeout(() => {
-      body.querySelector('#bill-wh')?.addEventListener('change', () => {
-        renderBillBody();
-      });
-    }, 0);
+    // Render category filters
+    renderCategoryPills(items, body.querySelector('#sku-search-input'));
 
-    body.querySelector('#add-item-btn')?.addEventListener('click', () => {
-      const sel = body.querySelector('#item-select');
-      const opt = sel.selectedOptions[0];
-      if (!opt || !opt.value) { showToast('Select an item','','warning'); return; }
-      const qty = parseInt(body.querySelector('#item-qty').value) || 1;
-      const rate = TAX_RATES[opt.dataset.tax] || TAX_RATES.normal;
-      billItems.push({ id: opt.value, name: opt.dataset.name, price: parseFloat(opt.dataset.price), taxCategory: opt.dataset.tax, taxRate: rate, qty });
+    // Bind event selectors immediately
+    bindEvents(warehouseId, items, hasStockError, calculation);
+
+    // Render live preview on the right side
+    renderLiveInvoicePreview(calculation, warehouseId, wh);
+  }
+
+  function renderSKUDropdown(searchTerm, items) {
+    const listContainer = body.querySelector('#sku-dropdown-list');
+    if (!listContainer) return;
+
+    if (!searchTerm.trim() && !selectedCategory) {
+      listContainer.style.display = 'none';
+      return;
+    }
+
+    filteredItems = items.filter(i => {
+      const matchSearch = !searchTerm.trim() || 
+        i.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        i.category.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchCat = !selectedCategory || i.category === selectedCategory;
+      return matchSearch && matchCat;
+    });
+
+    if (filteredItems.length === 0) {
+      listContainer.innerHTML = `
+        <div style="padding:12px; text-align:center; color:var(--text-muted); font-size:12px;">
+          No matching catalog items found
+        </div>
+      `;
+      listContainer.style.display = 'block';
+      highlightedIndex = -1;
+      return;
+    }
+
+    listContainer.innerHTML = filteredItems.map((i, idx) => {
+      const isLowStock = i.stock < 20;
+      const isHighlighted = idx === highlightedIndex;
+      return `
+        <div class="sku-dropdown-item" data-id="${i.id}" data-index="${idx}" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; transition:background 0.15s; background:${isHighlighted ? 'rgba(99,102,241,0.08)' : 'transparent'};">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="color:var(--text-secondary);display:flex;align-items:center">${getSvgIcon('items', 18)}</span>
+            <div>
+              <div style="font-size:13px; font-weight:700; color:var(--text-primary);">${i.name}</div>
+              <div style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">SKU: ${i.sku} · Cat: ${i.category}</div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:13px; font-weight:700; color:var(--text-brand);">${formatCurrency(i.price)}</div>
+            <div style="font-size:11px; color:${isLowStock ? 'var(--accent-rose)' : 'var(--accent-emerald)'}; font-weight:600;">
+              ${isLowStock ? `<span style="display:inline-flex;align-items:center;gap:3px;color:var(--accent-rose)">${getSvgIcon('warning', 10)} Low Stock: </span>` : 'Stock: '}${i.stock} units
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    listContainer.style.display = 'block';
+
+    // Add click listeners to items
+    listContainer.querySelectorAll('.sku-dropdown-item').forEach(itemEl => {
+      itemEl.addEventListener('click', (e) => {
+        const itemIdx = parseInt(itemEl.dataset.index);
+        selectSKUItem(filteredItems[itemIdx]);
+      });
+      // Mouseover to update highlight
+      itemEl.addEventListener('mouseenter', () => {
+        highlightedIndex = parseInt(itemEl.dataset.index);
+        updateDropdownHighlight();
+      });
+    });
+  }
+
+  function selectSKUItem(item) {
+    const qty = parseInt(body.querySelector('#item-qty')?.value) || 1;
+    addItemToBill(item, qty);
+    
+    // Reset search box
+    const searchInput = body.querySelector('#sku-search-input');
+    if (searchInput) searchInput.value = '';
+    
+    hideSKUDropdown();
+  }
+
+  function addItemToBill(item, qty) {
+    // Check if item is already added to billItems. If so, increment the quantity!
+    const existing = billItems.find(i => i.id === item.id);
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      billItems.push({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        taxCategory: item.taxCategory || 'normal',
+        qty
+      });
+    }
+    renderBillBody();
+  }
+
+  function updateDropdownHighlight() {
+    const listContainer = body.querySelector('#sku-dropdown-list');
+    if (!listContainer) return;
+    
+    listContainer.querySelectorAll('.sku-dropdown-item').forEach((el, idx) => {
+      if (idx === highlightedIndex) {
+        el.style.background = 'rgba(99, 102, 241, 0.08)';
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } else {
+        el.style.background = 'transparent';
+      }
+    });
+  }
+
+  function renderCategoryPills(items, searchInput) {
+    const pillsContainer = body.querySelector('#category-filter-pills');
+    if (!pillsContainer) return;
+
+    const uniqueCategories = [...new Set(items.map(i => i.category))];
+    pillsContainer.innerHTML = `
+      <span class="badge ${selectedCategory === '' ? 'badge-brand' : 'badge-secondary'}" data-cat="" style="cursor:pointer; padding:6px 12px; font-size:11px; font-weight:600; border-radius:12px; transition:all 0.15s;">All</span>
+      ${uniqueCategories.map(c => `
+        <span class="badge ${selectedCategory === c ? 'badge-brand' : 'badge-secondary'}" data-cat="${c}" style="cursor:pointer; padding:6px 12px; font-size:11px; font-weight:600; border-radius:12px; transition:all 0.15s;">${c}</span>
+      `).join('')}
+    `;
+
+    pillsContainer.querySelectorAll('.badge').forEach(pill => {
+      pill.addEventListener('click', (e) => {
+        selectedCategory = e.target.dataset.cat;
+        renderCategoryPills(items, searchInput);
+        renderSKUDropdown(searchInput?.value || '', items);
+      });
+    });
+  }
+
+  function renderLiveInvoicePreview(calculation, warehouseId, wh) {
+    const previewContainer = body.querySelector('#live-invoice-preview-container');
+    if (!previewContainer) return;
+
+    const customerName = body.querySelector('#bill-customer')?.value.trim() || 'Valued Client';
+    
+    // Retrieve latest values from workspace form fields
+    const sellerAddress = body.querySelector('#bill-seller-address')?.value || wh?.address || 'Primary Logistics Hub';
+    const sellerContact = body.querySelector('#bill-seller-contact')?.value || wh?.contact || 'Contact Office';
+    const sellerTax = body.querySelector('#bill-seller-tax')?.value || wh?.taxNumber || wh?.gstin || '';
+    const buyerBilling = body.querySelector('#bill-buyer-billing')?.value || '';
+    const buyerShipping = body.querySelector('#bill-buyer-shipping')?.value || '';
+    const customerPhone = body.querySelector('#bill-customer-phone')?.value || '';
+    const customerEmail = body.querySelector('#bill-customer-email')?.value || '';
+
+    const mockBill = {
+      billNo: "INV-DRAFT",
+      customer: customerName,
+      warehouseId: warehouseId,
+      items: calculation.items.map(i => ({
+        id: i.id,
+        name: i.name,
+        qty: i.qty,
+        price: i.price,
+        taxCategory: i.taxCategory || 'normal',
+        taxRate: i.taxRate,
+        taxes: i.taxes
+      })),
+      subtotal: calculation.subtotal,
+      tax: calculation.tax,
+      total: calculation.total,
+      taxConfigSnapshot: getTaxConfig(warehouseId),
+      taxDetails: calculation.taxDetails,
+      createdAt: new Date().toISOString(),
+      
+      // Extended fields
+      sellerAddress,
+      sellerContact,
+      sellerTaxNumber: sellerTax,
+      buyerBillingAddress: buyerBilling,
+      buyerShippingAddress: buyerShipping,
+      customerPhone,
+      customerEmail,
+      employeeName: getCurrentUser()?.name || "System Creator",
+      employeeRole: getCurrentUser()?.role || "Staff"
+    };
+
+    previewContainer.innerHTML = buildInvoiceHTML(mockBill, wh, 'modal');
+  }
+
+  function bindEvents(warehouseId, items, hasStockError, calculation) {
+    // Warehouse Selector Switch
+    body.querySelector('#bill-wh')?.addEventListener('change', () => {
+      billItems = []; // Clear current items on warehouse switch to prevent mismatch
       renderBillBody();
     });
-    window._removeBillItem = (i) => { billItems.splice(i,1); renderBillBody(); };
+
+    // Form Inputs - Live preview refresh on any change
+    ['#bill-customer', '#bill-seller-address', '#bill-seller-contact', '#bill-seller-tax', '#bill-customer-phone', '#bill-customer-email', '#bill-buyer-billing', '#bill-buyer-shipping'].forEach(sel => {
+      body.querySelector(sel)?.addEventListener('input', () => {
+        const wh = whs.find(w => w.id === warehouseId);
+        const calculationLive = calculateTaxesFrontend(billItems, warehouseId);
+        renderLiveInvoicePreview(calculationLive, warehouseId, wh);
+      });
+    });
+
+    // Search Input listeners
+    const searchInput = body.querySelector('#sku-search-input');
+    
+    searchInput?.addEventListener('focus', () => {
+      renderSKUDropdown(searchInput.value, items);
+    });
+
+    searchInput?.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      
+      // Barcode support: exact SKU match
+      const exactMatch = items.find(i => i.sku.toLowerCase() === val.toLowerCase());
+      if (exactMatch) {
+        const qty = parseInt(body.querySelector('#item-qty')?.value) || 1;
+        addItemToBill(exactMatch, qty);
+        e.target.value = '';
+        hideSKUDropdown();
+        showToast('SKU Scanned', `${exactMatch.name} added to bill`, 'success');
+        return;
+      }
+
+      // Debounced dynamic search dropdown
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        highlightedIndex = -1;
+        renderSKUDropdown(val, items);
+      }, 150);
+    });
+
+    // Key navigation
+    searchInput?.addEventListener('keydown', (e) => {
+      const listContainer = body.querySelector('#sku-dropdown-list');
+      if (!listContainer || listContainer.style.display === 'none' || filteredItems.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlightedIndex = (highlightedIndex + 1) % filteredItems.length;
+        updateDropdownHighlight();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlightedIndex = (highlightedIndex - 1 + filteredItems.length) % filteredItems.length;
+        updateDropdownHighlight();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filteredItems.length) {
+          selectSKUItem(filteredItems[highlightedIndex]);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        hideSKUDropdown();
+      }
+    });
+
+    // Added items inline quantity edit listener
+    body.querySelectorAll('.item-qty-edit-input').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(input.dataset.index);
+        const newQty = parseInt(e.target.value) || 1;
+        billItems[idx].qty = newQty;
+        renderBillBody();
+      });
+      
+      input.addEventListener('input', (e) => {
+        const idx = parseInt(input.dataset.index);
+        const newQty = parseInt(e.target.value) || 1;
+        billItems[idx].qty = newQty;
+        // Fast live refresh on keypress
+        const calculationLive = calculateTaxesFrontend(billItems, warehouseId);
+        const wh = whs.find(w => w.id === warehouseId);
+        renderLiveInvoicePreview(calculationLive, warehouseId, wh);
+      });
+    });
+
+    // Add Item Manual Button click
+    body.querySelector('#add-item-btn')?.addEventListener('click', () => {
+      if (highlightedIndex >= 0 && highlightedIndex < filteredItems.length) {
+        selectSKUItem(filteredItems[highlightedIndex]);
+      } else if (filteredItems.length > 0) {
+        selectSKUItem(filteredItems[0]);
+      } else {
+        showToast('Selection Empty', 'Please type a keyword or select an item from the list', 'warning');
+      }
+    });
+
+    // Close dropdown on click outside
+    document.addEventListener('click', closeDropdownHandler);
+  }
+
+  function closeDropdownHandler(e) {
+    const dropdown = body.querySelector('#sku-dropdown-list');
+    const searchInput = body.querySelector('#sku-search-input');
+    if (dropdown && !dropdown.contains(e.target) && e.target !== searchInput) {
+      hideSKUDropdown();
+    }
+  }
+
+  function hideSKUDropdown() {
+    const dropdown = body.querySelector('#sku-dropdown-list');
+    if (dropdown) dropdown.style.display = 'none';
+    highlightedIndex = -1;
   }
 
   renderBillBody();
 
   const footer = `
     <button class="btn btn-secondary" id="bill-cancel">Cancel</button>
-    <button class="btn btn-primary" id="bill-save">🧾 Generate Bill</button>
+    <button class="btn btn-primary" id="bill-save" style="display:flex;align-items:center;gap:6px">${getSvgIcon('billing', 14)} Generate Bill</button>
   `;
 
-  const modal = createModal({ title: '🧾 New Invoice', body, footer, size: 'lg' });
+  // Wide Split-screen modal layout configuration
+  const modal = createModal({ title: 'Enterprise Checkout Desk', body, footer, size: 'xl' });
+  
+  // Safe listener cleanups
+  const origClose = modal.close;
+  modal.close = () => {
+    document.removeEventListener('click', closeDropdownHandler);
+    origClose();
+  };
+
   modal.el.querySelector('#bill-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#bill-save')?.addEventListener('click', () => {
+  modal.el.querySelector('#bill-save')?.addEventListener('click', async () => {
     const customer = document.getElementById('bill-customer')?.value.trim();
     if (!customer) { showToast('Validation','Customer name required','warning'); return; }
     if (billItems.length === 0) { showToast('Validation','Add at least one item','warning'); return; }
-    const warehouseId = document.getElementById('bill-wh')?.value || getWarehouses()[0]?.id;
+    const warehouseId = document.getElementById('bill-wh')?.value || whs[0]?.id;
     
     // Custom tax configuration safeguard
-    const wh = getWarehouses().find(w => w.id === warehouseId);
+    const wh = whs.find(w => w.id === warehouseId);
     if (wh && wh.taxPreference === 'custom' && (!wh.taxConfig || Object.keys(wh.taxConfig).length === 0)) {
       showToast('Tax Configuration Required', 'This warehouse is flagged with "Custom Tax Setup". Please configure regional tax rules in settings before generating invoices.', 'error');
       return;
     }
 
-    const TAX_RATES = getTaxRates(warehouseId);
-    const subtotal = billItems.reduce((s,i)=>s+(i.qty*i.price),0);
-    const tax = billItems.reduce((s,i)=>s+(i.qty*i.price*(TAX_RATES[i.taxCategory]||TAX_RATES.normal)),0);
-    const total = subtotal + tax;
-    const bill = createBill({ customer, warehouseId, items: billItems.map(i=>({...i})), subtotal, tax, total });
-    showToast('Bill generated!', `${bill.billNo} — ${formatCurrency(total)}`, 'success');
+    const calculation = calculateTaxesFrontend(billItems, warehouseId);
+    
+    // Validation to prevent overselling on the client side
+    let validationPassed = true;
+    const items = getItems(warehouseId);
+    calculation.items.forEach(bi => {
+      const catalogItem = items.find(item => item.id === bi.id);
+      const availableStock = catalogItem ? catalogItem.stock : 0;
+      if (bi.qty > availableStock) {
+        validationPassed = false;
+        showToast('Stock Threshold Alert', `Insufficient stock for ${bi.name}. Maximum: ${availableStock}`, 'error');
+      }
+    });
+
+    if (!validationPassed) return;
+
+    const sellerAddress = document.getElementById('bill-seller-address')?.value.trim() || '';
+    const sellerContact = document.getElementById('bill-seller-contact')?.value.trim() || '';
+    const sellerTaxNumber = document.getElementById('bill-seller-tax')?.value.trim() || '';
+    const buyerBillingAddress = document.getElementById('bill-buyer-billing')?.value.trim() || '';
+    const buyerShippingAddress = document.getElementById('bill-buyer-shipping')?.value.trim() || '';
+    const customerPhone = document.getElementById('bill-customer-phone')?.value.trim() || '';
+    const customerEmail = document.getElementById('bill-customer-email')?.value.trim() || '';
+
+    // Field validations
+    if (customerEmail && (!customerEmail.includes('@') || !customerEmail.includes('.'))) {
+      showToast('Validation', 'Invalid customer email address format', 'warning');
+      return;
+    }
+    if (customerPhone && customerPhone.length < 5) {
+      showToast('Validation', 'Invalid customer phone number', 'warning');
+      return;
+    }
+
+    const payload = {
+      customer,
+      warehouseId,
+      items: calculation.items.map(i => ({
+        id: i.id,
+        name: i.name,
+        price: i.price,
+        taxCategory: i.taxCategory || 'normal',
+        taxRate: i.taxRate,
+        qty: i.qty,
+        taxes: i.taxes ? i.taxes.map(t => ({
+          name: t.name,
+          taxType: t.taxType,
+          rate: t.rate,
+          amount: t.amount
+        })) : null
+      })),
+      subtotal: calculation.subtotal,
+      tax: calculation.tax,
+      total: calculation.total,
+      taxDetails: calculation.taxDetails ? calculation.taxDetails.map(t => ({
+        name: t.name,
+        taxType: t.taxType,
+        rate: t.rate,
+        amount: t.amount
+      })) : null,
+      
+      // Extended fields
+      sellerAddress,
+      sellerContact,
+      sellerTaxNumber,
+      buyerBillingAddress,
+      buyerShippingAddress,
+      customerPhone,
+      customerEmail
+    };
+    
+    const res = await createBill(payload);
+    if (res && res.error) {
+      showToast('Generation failed', res.error, 'error');
+      return;
+    }
+    
+    showToast('Bill generated!', `${res.billNo || 'Invoice'} — ${formatCurrency(calculation.total)}`, 'success');
     billItems = [];
     modal.close();
-    navigate(getCurrentPath());
+    renderBilling();
   });
 }
 
@@ -6068,7 +8557,7 @@ function showBillPreview(bill) {
   const body = buildInvoiceHTML(bill, wh, 'modal');
   const footer = `
     <button class="btn btn-secondary" id="prev-close">Close</button>
-    <button class="btn btn-primary" id="prev-print">🖨️ Print Invoice</button>
+    <button class="btn btn-primary" id="prev-print" style="display:flex;align-items:center;gap:6px">${getSvgIcon('download', 14)} Print / Export PDF</button>
   `;
   const modal = createModal({ title: `Invoice — ${bill.billNo}`, body, footer, size: 'lg' });
   modal.el.querySelector('#prev-close')?.addEventListener('click', modal.close);
@@ -6077,96 +8566,171 @@ function showBillPreview(bill) {
 
 function buildInvoiceHTML(bill, wh, mode) {
   const cfg = bill.taxConfigSnapshot || getTaxConfig();
-  const taxRateLabel = { luxury: `${cfg.luxury}%`, normal: `${cfg.normal}%` };
+  
+  // Warehouse-aware currency: use warehouse currency if set, else global
+  const currency = wh?.currency || getActiveCurrency();
+  const fmt = (v) => formatCurrency(v, currency);
+
+  const sellerAddress = bill.sellerAddress || wh?.address || 'Primary Logistics Hub';
+  const sellerContact = bill.sellerContact || wh?.contact || 'Contact Office';
+  const sellerTax = bill.sellerTaxNumber || wh?.taxNumber || wh?.gstin || (wh?.email ? `GSTIN: 27${wh.email.toUpperCase().slice(0,3)}C${wh.contact?.slice(-4) || '1234'}F1Z5` : 'GSTIN: 27AAPCW1234F1Z5');
+  
+  const buyerBilling = bill.buyerBillingAddress || 'N/A';
+  const buyerShipping = bill.buyerShippingAddress || 'N/A';
+  const buyerPhone = bill.customerPhone || 'N/A';
+  const buyerEmail = bill.customerEmail || 'N/A';
+  
+  const employeeName = bill.employeeName || 'System Creator';
+  const employeeRole = bill.employeeRole || 'Staff';
+
   const rows = (bill.items||[]).map(i => {
-    // Use stored taxRate if available, otherwise fall back to snapshot or current config
-    const taxRate = i.taxRate !== undefined ? i.taxRate : (cfg[i.taxCategory] / 100 || cfg.normal / 100);
     const lineBase = i.qty * i.price;
-    const lineTax = lineBase * taxRate;
+    let lineTax = 0;
+    let taxRateText = '';
+    
+    if (i.taxes && i.taxes.length > 0) {
+      lineTax = i.taxes.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+      taxRateText = i.taxes.map(t => `${t.name}: ${t.taxType === 'percentage' ? (parseFloat(t.rate || 0) * 100).toFixed(0) + '%' : '$' + parseFloat(t.rate || 0)}`).join(', ');
+    } else {
+      const taxRate = i.taxRate !== undefined ? i.taxRate : (cfg[i.taxCategory] / 100 || cfg.normal / 100);
+      lineTax = lineBase * taxRate;
+      taxRateText = `${(taxRate * 100).toFixed(0)}%`;
+    }
     const lineTotal = lineBase + lineTax;
+    
     return `<tr>
-      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb">${i.name}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${i.taxCategory}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${i.qty}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right">$${i.price.toFixed(2)}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:600;color:#b45309">${(taxRate * 100).toFixed(0)}%</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;color:#b45309">$${lineTax.toFixed(2)}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${lineTotal.toFixed(2)}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border-subtle)"><strong>${i.name}</strong></td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border-subtle);text-align:center"><span class="badge badge-brand" style="font-size:10px">${i.taxCategory || 'normal'}</span></td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border-subtle);text-align:center;font-weight:600">${i.qty}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border-subtle);text-align:right">${fmt(i.price)}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border-subtle);text-align:center;font-weight:600;color:var(--accent-amber);font-size:11px;">${taxRateText}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border-subtle);text-align:right;color:var(--accent-amber)">${fmt(lineTax)}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border-subtle);text-align:right;font-weight:700;color:var(--text-primary)">${fmt(lineTotal)}</td>
     </tr>`;
   }).join('');
 
   const containerStyle = mode === 'modal'
-    ? 'font-family:Georgia,serif;color:#111;background:#fff;padding:8px'
-    : 'font-family:Georgia,serif;color:#111;background:#fff;padding:0';
+    ? 'font-family:system-ui,-apple-system,sans-serif;color:var(--text-primary);background:var(--bg-card);padding:16px'
+    : 'font-family:system-ui,-apple-system,sans-serif;color:#111;background:#fff;padding:0';
 
-  return `<div style="${containerStyle}">
-    <!-- Header -->
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:3px solid #1e1b4b">
+  // Calculate due date (15 days from creation)
+  const createdDate = new Date(bill.createdAt);
+  const dueDate = new Date(createdDate.getTime() + 15 * 24 * 60 * 60 * 1000);
+
+  return `<div style="${containerStyle};border-radius:12px">
+    <!-- Header: Seller & Corporate Identity -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid var(--border-default)">
       <div>
-        <div style="font-size:28px;font-weight:900;color:#1e1b4b;letter-spacing:-0.5px">${wh?.businessName || wh?.name || 'WareOps'}</div>
-        <div style="font-size:13px;color:#6b7280;margin-top:4px">${wh?.address || ''}</div>
-        <div style="font-size:13px;color:#6b7280">${wh?.contact || ''} ${wh?.email ? '· '+wh.email : ''}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="width:40px;height:40px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border-default);display:flex;align-items:center;justify-content:center;color:var(--text-primary);overflow:hidden;flex-shrink:0;">
+            ${renderWarehouseLogo(wh?.logo, 32)}
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:800;color:var(--text-primary);line-height:1">${wh?.businessName || wh?.name || 'NexWare ERP'}</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text-brand);letter-spacing:1px;margin-top:4px">TAX ID/GSTIN: ${sellerTax}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5">
+          <strong>Address:</strong> ${sellerAddress}<br/>
+          <strong>Contact:</strong> ${sellerContact}
+        </div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:32px;font-weight:900;color:#6366f1;letter-spacing:1px">INVOICE</div>
-        <div style="font-size:16px;font-weight:700;color:#1e1b4b;margin-top:4px">${bill.billNo}</div>
-        <div style="font-size:12px;color:#6b7280;margin-top:4px">Date: ${formatDate(bill.createdAt)}</div>
-        <div style="font-size:12px;color:#6b7280">Time: ${new Date(bill.createdAt).toLocaleTimeString()}</div>
+        <div style="font-size:28px;font-weight:900;color:var(--text-brand);letter-spacing:1px;line-height:1;margin-bottom:6px">INVOICE</div>
+        <div style="font-size:14px;font-weight:700;font-family:var(--font-mono);color:var(--text-primary)">${bill.billNo}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Source Hub: ${wh?.name || '—'}</div>
       </div>
     </div>
 
-    <!-- Bill To -->
-    <div style="display:flex;justify-content:space-between;margin-bottom:28px">
-      <div style="background:#f8f9ff;border-left:4px solid #6366f1;padding:14px 18px;border-radius:0 8px 8px 0;min-width:200px">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:#6366f1;margin-bottom:6px">Bill To</div>
-        <div style="font-size:16px;font-weight:700;color:#111">${bill.customer}</div>
+    <!-- Buyer & Metadata Block -->
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px;margin-bottom:24px">
+      <div style="background:var(--bg-input);border-left:4px solid var(--text-brand);padding:12px 16px;border-radius:0 8px 8px 0">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-brand);margin-bottom:6px">Bill To (Buyer)</div>
+        <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:4px">${bill.customer}</div>
+        <div style="font-size:11px;color:var(--text-secondary);line-height:1.4">
+          <strong>Billing Address:</strong> ${buyerBilling}<br/>
+          <strong>Shipping Address:</strong> ${buyerShipping}<br/>
+          <strong>Phone:</strong> ${buyerPhone} · <strong>Email:</strong> ${buyerEmail}
+        </div>
       </div>
-      <div style="background:#f8f9ff;border-left:4px solid #10b981;padding:14px 18px;border-radius:0 8px 8px 0;min-width:160px">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:#10b981;margin-bottom:6px">Warehouse</div>
-        <div style="font-size:15px;font-weight:700;color:#111">${wh?.name || '—'}</div>
-        <div style="font-size:12px;color:#6b7280">${wh?.businessName || ''}</div>
+      <div style="background:var(--bg-input);border-left:4px solid var(--accent-emerald);padding:12px 16px;border-radius:0 8px 8px 0">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent-emerald);margin-bottom:6px">Invoice Metadata</div>
+        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">
+          <strong>Issue Date:</strong> ${formatDate(bill.createdAt)}<br/>
+          <strong>Due Date:</strong> ${formatDate(dueDate)}<br/>
+          <strong>Billed By:</strong> ${employeeName} (${employeeRole})<br/>
+          <strong>Payment Method:</strong> Bank Transfer (Net 15)
+        </div>
       </div>
     </div>
 
     <!-- Items Table -->
-    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:13px">
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:12px">
       <thead>
-        <tr style="background:#1e1b4b;color:#fff">
-          <th style="padding:12px 8px;text-align:left;border-radius:6px 0 0 0">Item</th>
-          <th style="padding:12px 8px;text-align:center">Category</th>
-          <th style="padding:12px 8px;text-align:center">Qty</th>
-          <th style="padding:12px 8px;text-align:right">Unit Price</th>
-          <th style="padding:12px 8px;text-align:center">Tax %</th>
-          <th style="padding:12px 8px;text-align:right">Tax Amt</th>
-          <th style="padding:12px 8px;text-align:right;border-radius:0 6px 0 0">Total</th>
+        <tr style="background:var(--bg-input);color:var(--text-primary)">
+          <th style="padding:10px 8px;text-align:left;border-radius:6px 0 0 6px">Item Details</th>
+          <th style="padding:10px 8px;text-align:center">Category</th>
+          <th style="padding:10px 8px;text-align:center">Qty</th>
+          <th style="padding:10px 8px;text-align:right">Rate</th>
+          <th style="padding:10px 8px;text-align:center">Tax %</th>
+          <th style="padding:10px 8px;text-align:right">Tax Amt</th>
+          <th style="padding:10px 8px;text-align:right;border-radius:0 6px 6px 0">Total</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
 
-    <!-- Totals -->
-    <div style="display:flex;justify-content:flex-end;margin-bottom:28px">
-      <div style="min-width:260px">
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:14px">
-          <span style="color:#6b7280">Subtotal</span><span style="font-weight:600">$${bill.subtotal.toFixed(2)}</span>
+    <!-- Bottom Section: Totals & Signature -->
+    <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:24px;margin-bottom:24px;align-items:end">
+      <!-- Terms & Notes -->
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.5">
+        <div style="font-weight:700;color:var(--text-secondary);margin-bottom:4px">Terms & Declarations</div>
+        <div>1. Payment is strictly due within 15 days of invoice generation date.</div>
+        <div>2. Interest at 18% p.a. will be charged for delayed payments.</div>
+        <div>3. Subject to local judicial jurisdiction. Goods once sold will not be returned.</div>
+      </div>
+      <!-- Grand Totals -->
+      <div style="min-width:220px">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-subtle);font-size:13px">
+          <span style="color:var(--text-muted)">Subtotal</span><span style="font-weight:600">${fmt(bill.subtotal)}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:14px">
-          <span style="color:#b45309">Total Tax</span><span style="color:#b45309;font-weight:600">$${bill.tax.toFixed(2)}</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:12px 0;background:#f8f9ff;border-radius:8px;padding:12px 16px;margin-top:4px">
-          <span style="font-size:16px;font-weight:800;color:#1e1b4b">Grand Total</span>
-          <span style="font-size:20px;font-weight:900;color:#6366f1">$${bill.total.toFixed(2)}</span>
+        ${bill.taxDetails && bill.taxDetails.length > 0 ? 
+          bill.taxDetails.map(t => {
+            const taxAmt = parseFloat(t.amount || 0);
+            const rateText = t.taxType === 'percentage' ? `${(parseFloat(t.rate || 0) * 100).toFixed(1)}%` : `${fmt(parseFloat(t.rate || 0))}`;
+            return `
+              <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--border-subtle);font-size:12px;color:var(--accent-amber)">
+                <span>${t.name} (${rateText})</span>
+                <span style="font-weight:600;">${fmt(taxAmt)}</span>
+              </div>
+            `;
+          }).join('')
+          : `
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-subtle);font-size:13px">
+              <span style="color:var(--accent-amber)">Total Tax</span><span style="color:var(--accent-amber);font-weight:600">${fmt(bill.tax)}</span>
+            </div>
+          `
+        }
+        <div style="display:flex;justify-content:space-between;padding:10px 0;background:var(--bg-input);border-radius:8px;padding:10px 12px;margin-top:4px">
+          <span style="font-size:14px;font-weight:800;color:var(--text-primary)">Grand Total</span>
+          <span style="font-size:18px;font-weight:900;color:var(--text-brand)">${fmt(bill.total)}</span>
         </div>
       </div>
     </div>
 
-    <!-- Footer -->
-    <div style="border-top:2px solid #e5e7eb;padding-top:16px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:11px;color:#9ca3af">
-        <div>Generated by WareOps ERP</div>
-        <div>${formatDateTime(bill.createdAt)}</div>
+    <!-- Footer: Signature & Systems Metadata -->
+    <div style="border-top:1.5px solid var(--border-default);padding-top:16px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:var(--text-muted)">
+        <div>Generated by NexWare ERP</div>
+        <div>Date &amp; Time: ${formatDateTime(bill.createdAt)}</div>
+        <div style="margin-top:8px;background:#fff;display:inline-block;padding:2px;border-radius:3px">
+          ${generateBarcodeSVG(bill.billNo, { height: 36, color: '#111', showLabel: true })}
+        </div>
       </div>
-      <div style="font-size:12px;font-weight:700;color:#10b981;background:#f0fdf4;padding:6px 16px;border-radius:99px;border:1px solid #bbf7d0">✓ PAID</div>
+      <div style="text-align:right;min-width:180px">
+        <div style="border-bottom:1px solid var(--border-default);height:30px;width:100%;margin-bottom:4px"></div>
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Authorized Signatory</div>
+      </div>
     </div>
   </div>`;
 }
@@ -6186,24 +8750,133 @@ function printBill(billId) {
   <title>Invoice ${bill.billNo}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:Georgia,serif; background:#fff; color:#111; padding:20mm; }
+    body { font-family:'Segoe UI',Georgia,serif; background:#fff; color:#111; padding:20mm; }
     @page { size:A4; margin:15mm; }
     @media print {
       body { padding:0; }
       .no-print { display:none !important; }
     }
     table { border-collapse:collapse; width:100%; }
+    /* CSS variable fallbacks for standalone print window */
+    :root {
+      --text-primary:#111827; --text-secondary:#374151; --text-muted:#6b7280;
+      --text-brand:#111827; --text-disabled:#9ca3af;
+      --bg-card:#ffffff; --bg-input:#f9fafb; --bg-elevated:#f3f4f6;
+      --border-default:#e5e7eb; --border-subtle:#f3f4f6;
+      --accent-amber:#d97706; --accent-emerald:#059669; --accent-rose:#e11d48;
+      --brand-500:#111827; --gradient-brand:linear-gradient(135deg,#111 0%,#333 100%);
+      --shadow-sm:0 1px 2px rgba(0,0,0,.05); --shadow-lg:0 10px 15px rgba(0,0,0,.1);
+      --font-mono:'Courier New',monospace;
+    }
+    .badge { display:inline-block; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600; }
+    .badge-brand { background:#111827; color:#fff; }
+    .badge-info  { background:#e0f2fe; color:#0369a1; }
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align:center;padding:12px;background:#6366f1;color:#fff;font-family:sans-serif;font-size:14px;cursor:pointer" onclick="window.print();window.close()">
-    🖨️ Click here to Print / Save as PDF — then close this window
+  <div class="no-print" style="text-align:center;padding:12px;background:#111827;color:#fff;font-family:sans-serif;font-size:14px;cursor:pointer" onclick="window.print();window.close()">
+    🖨 Click here to Print / Save as PDF — then close this window
   </div>
   <div style="padding:20px">${invoiceHTML}</div>
-  <script>setTimeout(()=>window.print(),600);<\/script>
+  <script>setTimeout(()=>window.print(),700);<\/script>
 </body>
 </html>`);
   win.document.close();
+}
+
+
+function _handleBillingWsEvent(e) {
+  const user = getCurrentUser();
+  if (!user) {
+    window.removeEventListener('wareops_ws_event', _handleBillingWsEvent);
+    return;
+  }
+  const payload = e.detail;
+  const evType = payload?.type || payload?.event_type;
+  if (evType === 'billing_completion') {
+    syncWithBackend().then(() => {
+      renderBillsTable();
+    });
+  }
+}
+
+function calculateTaxesFrontend(items, warehouseId) {
+  const taxCfg = getTaxConfig(warehouseId);
+  const TAX_RATES = getTaxRates(warehouseId); // { normal: 0.05, luxury: 0.15 }
+  
+  let subtotal = 0;
+  let totalTax = 0;
+  
+  const processedItems = items.map(item => {
+    const lineSubtotal = item.price * item.qty;
+    subtotal += lineSubtotal;
+    
+    let lineTaxes = [];
+    if (taxCfg.taxes && taxCfg.taxes.length > 0) {
+      lineTaxes = taxCfg.taxes.map(t => {
+        const r = parseFloat(t.rate) || 0;
+        const rateFraction = t.taxType === 'percentage' ? r / 100 : r;
+        const amount = t.taxType === 'percentage' 
+          ? lineSubtotal * rateFraction 
+          : item.qty * rateFraction;
+        return {
+          name: t.name,
+          taxType: t.taxType,
+          rate: rateFraction,
+          amount: amount
+        };
+      });
+    } else {
+      // Fallback to normal/luxury rates
+      const rateFraction = TAX_RATES[item.taxCategory] || TAX_RATES.normal || 0.05;
+      lineTaxes = [{
+        name: `GST (${(item.taxCategory || 'normal').toUpperCase()})`,
+        taxType: 'percentage',
+        rate: rateFraction,
+        amount: lineSubtotal * rateFraction
+      }];
+    }
+    
+    const lineTax = lineTaxes.reduce((s, t) => s + t.amount, 0);
+    totalTax += lineTax;
+    
+    return {
+      ...item,
+      taxRate: lineTaxes[0]?.rate || 0.05,
+      taxes: lineTaxes,
+      subtotal: lineSubtotal,
+      tax: lineTax,
+      total: lineSubtotal + lineTax
+    };
+  });
+  
+  return {
+    subtotal,
+    tax: totalTax,
+    total: subtotal + totalTax,
+    items: processedItems,
+    taxDetails: groupTaxesFrontend(processedItems)
+  };
+}
+
+function groupTaxesFrontend(items) {
+  const grouped = {};
+  items.forEach(item => {
+    if (item.taxes) {
+      item.taxes.forEach(t => {
+        if (!grouped[t.name]) {
+          grouped[t.name] = {
+            name: t.name,
+            taxType: t.taxType,
+            rate: t.rate,
+            amount: 0
+          };
+        }
+        grouped[t.name].amount += t.amount;
+      });
+    }
+  });
+  return Object.values(grouped);
 }
 
 // ===== pages/analytics.js =====
@@ -6224,6 +8897,10 @@ const _charts = {};
 
 function renderAnalytics() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const isSA   = user.role === 'super_admin';
   const isAdmin = isSA || user.role === 'admin';
   const whs    = getWarehouses();
@@ -6240,7 +8917,7 @@ function renderAnalytics() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">📈 Analytics & Reports</h1>
+          <h1 class="page-title">Analytics & Reports</h1>
           <p class="page-subtitle">${isSA ? 'Global cross-warehouse analytics' : 'Warehouse performance analytics'}</p>
         </div>
         <div class="page-header-actions">
@@ -6250,7 +8927,7 @@ function renderAnalytics() {
 
       <!-- Filter Bar -->
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px 18px;margin-bottom:24px">
-        <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">🔽 Filters:</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">Filters:</span>
 
         <select class="form-control" style="width:auto;padding:7px 12px;font-size:13px" id="an-year">
           ${(billYears.length ? billYears : [new Date().getFullYear()]).map(y=>
@@ -6413,28 +9090,28 @@ function updateKPIs(totalRev, totalTax, avgBill, netRev, count) {
     <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#6366f1"></div>
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">💰</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center;color:#6366f1">${getSvgIcon('revenue', 20)}</div>
         <div class="stat-card-value">${formatCurrency(totalRev)}</div>
         <div class="stat-card-label">Total Revenue</div>
         <div class="stat-card-trend trend-up">${count} invoices</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#10b981"></div>
-        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">💵</div>
+        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;color:#10b981">${getSvgIcon('billing', 20)}</div>
         <div class="stat-card-value">${formatCurrency(netRev)}</div>
         <div class="stat-card-label">Net Revenue</div>
         <div class="stat-card-trend trend-up">After tax</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#f59e0b"></div>
-        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">🏛️</div>
+        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;color:#f59e0b">${getSvgIcon('audit', 20)}</div>
         <div class="stat-card-value">${formatCurrency(totalTax)}</div>
         <div class="stat-card-label">Tax Collected</div>
         <div class="stat-card-trend">Automated</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#8b5cf6"></div>
-        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">🎯</div>
+        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15);display:flex;align-items:center;justify-content:center;color:#8b5cf6">${getSvgIcon('analytics', 20)}</div>
         <div class="stat-card-value">${formatCurrency(avgBill)}</div>
         <div class="stat-card-label">Avg. Invoice</div>
         <div class="stat-card-trend trend-up">${count} total</div>
@@ -6623,16 +9300,28 @@ function updateStockTable(items, taxCfg) {
         </tr></thead>
         <tbody>
           ${sorted.slice(0,10).map(i=>{
-            const rate = i.taxCategory==='luxury' ? taxCfg.luxury : taxCfg.normal;
             const val  = (i.price||0)*(i.stock||0);
             const stockClass = (i.stock||0)<10?'badge-danger':(i.stock||0)<20?'badge-warning':'badge-success';
+            
+            let taxHtml = '';
+            if (taxCfg.taxes && taxCfg.taxes.length > 0) {
+              taxHtml = taxCfg.taxes.map(t => {
+                const rateText = t.taxType === 'percentage' ? `${t.rate}%` : `$${t.rate}`;
+                return `<span class="badge badge-info" style="margin-right:2px;font-size:10px">${t.name}: ${rateText}</span>`;
+              }).join('');
+            } else {
+              const rate = i.taxCategory==='luxury' ? taxCfg.luxury : taxCfg.normal;
+              const badgeClass = i.taxCategory==='luxury' ? 'badge-purple' : 'badge-info';
+              taxHtml = `<span class="badge ${badgeClass}">GST: ${rate}%</span>`;
+            }
+
             return `<tr>
               <td data-label="Item"><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
               <td data-label="Category"><span class="badge badge-brand">${i.category}</span></td>
               <td data-label="Price">${formatCurrency(i.price||0)}</td>
               <td data-label="Stock"><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
               <td data-label="Value"><strong>${formatCurrency(val)}</strong></td>
-              <td data-label="Tax"><span class="badge ${i.taxCategory==='luxury'?'badge-purple':'badge-info'}">${rate}%</span></td>
+              <td data-label="Tax"><div style="display:flex;flex-wrap:wrap;gap:2px">${taxHtml}</div></td>
               <td data-label="Status"><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
             </tr>`;
           }).join('')}
@@ -6651,108 +9340,265 @@ function updateStockTable(items, taxCfg) {
 
 let au_searchQ = '';
 let au_page = 1;
-const au_PER_PAGE = 15;
+const au_PER_PAGE = 100;
+let au_actionFilter = '';
 
 function renderAudit() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
+  
   renderShell('Audit Logs', 'System activity and security trail', `
     <div class="animate-slideUp">
-      <div class="au_page-header">
-        <div class="au_page-header-left">
-          <h1 class="au_page-title">🔍 Audit Logs</h1>
-          <p class="au_page-subtitle">Complete activity trail for compliance and monitoring</p>
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Audit Logs</h1>
+          <p class="page-subtitle">Complete activity trail for compliance and monitoring</p>
         </div>
-        <div class="au_page-header-actions">
+        <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
       </div>
+      
       <div class="table-toolbar">
-        <div class="table-search"><span>🔍</span><input type="text" id="audit-search" placeholder="Search logs..." /></div>
+        <div class="table-search">
+          <span>🔍</span>
+          <input type="text" id="audit-search" placeholder="Search by description, user, or action..." value="${au_searchQ}" />
+        </div>
         <div class="table-filter">
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="audit-action-filter">
-            <option value="">All Actions</option>
-            <option value="login">Login</option>
-            <option value="user_create">User Create</option>
-            <option value="warehouse_create">Warehouse Create</option>
-            <option value="bill_create">Bill Create</option>
-            <option value="table_create">Table Create</option>
-            <option value="item_create">Item Create</option>
+            <option value="" ${au_actionFilter === '' ? 'selected' : ''}>All Actions</option>
+            <option value="login" ${au_actionFilter === 'login' ? 'selected' : ''}>Login</option>
+            <option value="logout" ${au_actionFilter === 'logout' ? 'selected' : ''}>Logout</option>
+            <option value="signup" ${au_actionFilter === 'signup' ? 'selected' : ''}>Signup</option>
+            <option value="item_create" ${au_actionFilter === 'item_create' ? 'selected' : ''}>Item Create</option>
+            <option value="item_edit" ${au_actionFilter === 'item_edit' ? 'selected' : ''}>Item Edit</option>
+            <option value="item_delete" ${au_actionFilter === 'item_delete' ? 'selected' : ''}>Item Delete</option>
+            <option value="item_import" ${au_actionFilter === 'item_import' ? 'selected' : ''}>Item Import</option>
+            <option value="invoice_create" ${au_actionFilter === 'invoice_create' ? 'selected' : ''}>Invoice Create</option>
+            <option value="invoice_update" ${au_actionFilter === 'invoice_update' ? 'selected' : ''}>Invoice Update</option>
+            <option value="table_row_create" ${au_actionFilter === 'table_row_create' ? 'selected' : ''}>Row Add</option>
+            <option value="table_row_update" ${au_actionFilter === 'table_row_update' ? 'selected' : ''}>Row Edit</option>
+            <option value="table_row_delete" ${au_actionFilter === 'table_row_delete' ? 'selected' : ''}>Row Delete</option>
+            <option value="table_rows_import" ${au_actionFilter === 'table_rows_import' ? 'selected' : ''}>Row Import</option>
+            <option value="export" ${au_actionFilter === 'export' ? 'selected' : ''}>Export</option>
+            <option value="settings_change" ${au_actionFilter === 'settings_change' ? 'selected' : ''}>Settings Change</option>
           </select>
         </div>
       </div>
+      
       <div id="audit-table-container"></div>
     </div>
   `);
 
   renderAuditTable();
-  document.getElementById('audit-search')?.addEventListener('input', e=>{au_searchQ=e.target.value;au_page=1;renderAuditTable();});
-  document.getElementById('audit-action-filter')?.addEventListener('change',()=>{au_page=1;renderAuditTable();});
+  
+  // Set up event listeners with debounce for search
+  let debounceTimeout;
+  const searchInput = document.getElementById('audit-search');
+  searchInput?.addEventListener('input', e => {
+    au_searchQ = e.target.value;
+    au_page = 1;
+    clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
+      renderAuditTable();
+    }, 300);
+  });
+  
+  const filterSelect = document.getElementById('audit-action-filter');
+  filterSelect?.addEventListener('change', e => {
+    au_actionFilter = e.target.value;
+    au_page = 1;
+    renderAuditTable();
+  });
 }
 
-const ACTION_ICONS = { login:'🔐', logout:'🚪', user_create:'👤➕', user_update:'👤✏️', user_delete:'👤🗑️', warehouse_create:'🏭➕', warehouse_update:'🏭✏️', warehouse_delete:'🏭🗑️', bill_create:'🧾', table_create:'📋➕', item_create:'📦➕' };
-const ACTION_CLASSES = { login:'badge-info', user_create:'badge-success', user_delete:'badge-danger', warehouse_create:'badge-success', warehouse_delete:'badge-danger', bill_create:'badge-brand', table_create:'badge-success', item_create:'badge-success' };
+const ACTION_CLASSES = {
+  'login': 'badge-success',
+  'logout': 'badge-muted',
+  'signup': 'badge-info',
+  
+  'item_create': 'badge-success',
+  'item_edit': 'badge-info',
+  'item_delete': 'badge-danger',
+  'item_import': 'badge-brand',
+  
+  'invoice_create': 'badge-success',
+  'invoice_update': 'badge-info',
+  
+  'table_schema_create': 'badge-success',
+  'table_schema_update': 'badge-info',
+  'table_schema_delete': 'badge-danger',
+  
+  'table_row_create': 'badge-success',
+  'table_row_update': 'badge-info',
+  'table_row_delete': 'badge-danger',
+  'table_rows_import': 'badge-brand',
+  
+  'export': 'badge-brand',
+  'import': 'badge-brand',
+  'settings_change': 'badge-warning',
+  'role_change': 'badge-warning',
+  'permission_update': 'badge-warning',
+  'restore': 'badge-success',
+  'error': 'badge-danger'
+};
 
-function renderAuditTable() {
-  let logs = getAuditLogs();
-  const actionFilter = document.getElementById('audit-action-filter')?.value||'';
-  if (au_searchQ) logs = filterData(logs, au_searchQ, ['description','userName','action']);
-  if (actionFilter) logs = logs.filter(l=>l.action===actionFilter);
-
-  const total = logs.length;
-  const au_pages = Math.ceil(total/au_PER_PAGE);
-  const start = (au_page-1)*au_PER_PAGE;
-  const au_pageLogs = logs.slice(start, start+au_PER_PAGE);
-
+async function renderAuditTable() {
   const container = document.getElementById('audit-table-container');
   if (!container) return;
 
-  if (logs.length === 0) {
-    container.innerHTML = `<div class="card" style="text-align:center;padding:48px"><div style="font-size:40px;margin-bottom:16px;opacity:0.4">🔍</div><h3 style="color:var(--text-secondary)">No logs found</h3></div>`;
-    return;
-  }
-
   container.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>#</th><th>Action</th><th>Description</th><th>User</th><th>Timestamp</th></tr></thead>
-        <tbody>
-          ${au_pageLogs.map((log,i)=>`<tr>
-            <td data-label="#" style="color:var(--text-muted);font-size:12px">${start+i+1}</td>
-            <td data-label="Action">
-              <span class="badge ${ACTION_CLASSES[log.action]||'badge-muted'}">
-                ${ACTION_ICONS[log.action]||'📝'} ${log.action.replace(/_/g,' ')}
-              </span>
-            </td>
-            <td data-label="Description" style="font-size:13px">${log.description}</td>
-            <td data-label="User">
-              <div style="display:flex;align-items:center;gap:8px">
-                <div style="width:26px;height:26px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;flex-shrink:0">${log.userName.slice(0,2).toUpperCase()}</div>
-                <span style="font-size:13px">${log.userName}</span>
-              </div>
-            </td>
-            <td data-label="Timestamp" style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${formatDateTime(log.timestamp)}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-      <div class="table-pagination">
-        <div class="pagination-info">Showing ${start+1}–${Math.min(start+au_PER_PAGE,total)} of ${total} logs</div>
-        <div class="pagination-controls">
-          <button class="au_page-btn" id="ap-prev" ${au_page<=1?'disabled':''}>‹</button>
-          ${Array.from({length:Math.min(au_pages,7)},(_,i)=>`<button class="au_page-btn ${au_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
-          <button class="au_page-btn" id="ap-next" ${au_page>=au_pages?'disabled':''}>›</button>
-        </div>
-      </div>
+    <div style="display:flex;align-items:center;justify-content:center;padding:64px;color:var(--text-muted);font-size:14px">
+      <span style="display:inline-block;animation:spin 1s linear infinite;margin-right:12px">⏳</span> Loading activity logs...
     </div>
   `;
 
-  container.querySelectorAll('.au_page-btn[data-pg]').forEach(btn=>btn.addEventListener('click',()=>{au_page=parseInt(btn.dataset.pg);renderAuditTable();}));
-  container.querySelector('#ap-prev')?.addEventListener('click',()=>{if(au_page>1){au_page--;renderAuditTable();}});
-  container.querySelector('#ap-next')?.addEventListener('click',()=>{if(au_page<au_pages){au_page++;renderAuditTable();}});
+  try {
+    let url = `/audit-logs/?page=${au_page}&limit=${au_PER_PAGE}`;
+    if (au_searchQ.trim()) {
+      url += `&search=${encodeURIComponent(au_searchQ.trim())}`;
+    }
+    if (au_actionFilter) {
+      url += `&action=${encodeURIComponent(au_actionFilter)}`;
+    }
+
+    const res = await apiFetch(url);
+    if (!res || !res.success || !Array.isArray(res.data)) {
+      container.innerHTML = `
+        <div class="card" style="text-align:center;padding:48px">
+          <div style="font-size:40px;margin-bottom:16px;opacity:0.4">⚠️</div>
+          <h3 style="color:var(--text-secondary)">Failed to load audit logs</h3>
+          <p style="color:var(--text-muted);font-size:13px;margin-top:8px">${res?.error || 'Unable to fetch audit logs from backend.'}</p>
+        </div>
+      `;
+      return;
+    }
+
+    const logs = res.data;
+    const total = res.total || 0;
+    const au_pages = res.pages || 1;
+    const start = (au_page - 1) * au_PER_PAGE;
+
+    if (logs.length === 0) {
+      container.innerHTML = `
+        <div class="card" style="text-align:center;padding:64px">
+          <div style="font-size:48px;margin-bottom:16px;opacity:0.3">📋</div>
+          <h3 style="color:var(--text-secondary);font-weight:600">No activity logs recorded</h3>
+          <p style="color:var(--text-muted);font-size:13px;margin-top:8px">No system actions matched the selected filters.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="table-wrap" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-lg);overflow:hidden">
+        <table style="width:100%;border-collapse:collapse;text-align:left">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border-color);background:var(--bg-sidebar)">
+              <th style="padding:14px 16px;font-size:12px;font-weight:600;color:var(--text-secondary);width:60px">#</th>
+              <th style="padding:14px 16px;font-size:12px;font-weight:600;color:var(--text-secondary);width:160px">Action</th>
+              <th style="padding:14px 16px;font-size:12px;font-weight:600;color:var(--text-secondary)">Description</th>
+              <th style="padding:14px 16px;font-size:12px;font-weight:600;color:var(--text-secondary);width:180px">User</th>
+              <th style="padding:14px 16px;font-size:12px;font-weight:600;color:var(--text-secondary);width:180px">Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${logs.map((log, i) => {
+              const rowNum = start + i + 1;
+              const actionClass = ACTION_CLASSES[log.action] || 'badge-muted';
+              const actionText = (log.action || 'unknown').toUpperCase().replace(/_/g, ' ');
+              const userName = log.userName || 'System';
+              const userInitials = userName.slice(0, 2).toUpperCase();
+              
+              return `
+                <tr style="border-bottom:1px solid var(--border-color);transition:background 0.2s" class="hover-row">
+                  <td data-label="#" style="padding:12px 16px;color:var(--text-muted);font-size:12px;font-family:var(--font-mono)">${rowNum}</td>
+                  <td data-label="Action" style="padding:12px 16px">
+                    <span class="badge ${actionClass}" style="font-weight:600;font-size:11px;letter-spacing:0.5px">
+                      ${actionText}
+                    </span>
+                  </td>
+                  <td data-label="Description" style="padding:12px 16px;font-size:13px;color:var(--text-primary);line-height:1.5">${log.description || ''}</td>
+                  <td data-label="User" style="padding:12px 16px">
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,0.1)">${userInitials}</div>
+                      <span style="font-size:13px;font-weight:500;color:var(--text-primary)">${userName}</span>
+                    </div>
+                  </td>
+                  <td data-label="Timestamp" style="padding:12px 16px;font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">${formatDateTime(log.timestamp)}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+        
+        <div class="table-pagination" style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-top:1px solid var(--border-color);background:var(--bg-sidebar);flex-wrap:wrap;gap:16px">
+          <div class="pagination-info" style="font-size:13px;color:var(--text-muted)">
+            Showing <strong style="color:var(--text-primary)">${start + 1}</strong>–<strong style="color:var(--text-primary)">${Math.min(start + logs.length, total)}</strong> of <strong style="color:var(--text-primary)">${total}</strong> logs
+          </div>
+          <div class="pagination-controls" style="display:flex;align-items:center;gap:6px">
+            <button class="au_page-btn" id="ap-prev" ${au_page <= 1 ? 'disabled' : ''} style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-primary);border-radius:var(--radius-md);cursor:pointer;font-size:16px;transition:all 0.2s">‹</button>
+            ${(() => {
+              let startPage = Math.max(1, au_page - 3);
+              let endPage = Math.min(au_pages, startPage + 6);
+              if (endPage - startPage < 6) {
+                startPage = Math.max(1, endPage - 6);
+              }
+              let html = '';
+              for (let i = startPage; i <= endPage; i++) {
+                if (i >= 1 && i <= au_pages) {
+                  html += `<button class="au_page-btn ${au_page === i ? 'active' : ''}" data-pg="${i}" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid ${au_page === i ? 'var(--color-brand)' : 'var(--border-color)'};background:${au_page === i ? 'var(--color-brand)' : 'var(--bg-card)'};color:${au_page === i ? 'white' : 'var(--text-primary)'};font-weight:${au_page === i ? '600' : '500'};border-radius:var(--radius-md);cursor:pointer;font-size:13px;transition:all 0.2s">${i}</button>`;
+                }
+              }
+              return html;
+            })()}
+            <button class="au_page-btn" id="ap-next" ${au_page >= au_pages ? 'disabled' : ''} style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-primary);border-radius:var(--radius-md);cursor:pointer;font-size:16px;transition:all 0.2s">›</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Hook up pagination listeners
+    container.querySelectorAll('.au_page-btn[data-pg]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        au_page = parseInt(btn.dataset.pg);
+        renderAuditTable();
+      });
+    });
+    container.querySelector('#ap-prev')?.addEventListener('click', () => {
+      if (au_page > 1) {
+        au_page--;
+        renderAuditTable();
+      }
+    });
+    container.querySelector('#ap-next')?.addEventListener('click', () => {
+      if (au_page < au_pages) {
+        au_page++;
+        renderAuditTable();
+      }
+    });
+  } catch (err) {
+    console.error('[AuditLog] Error rendering table:', err);
+    container.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">⚠️</div>
+        <h3 style="color:var(--text-secondary)">An unexpected error occurred</h3>
+        <p style="color:var(--text-muted);font-size:13px;margin-top:8px">Unable to connect to the ERP server.</p>
+      </div>
+    `;
+  }
 }
 
 // ===== pages/settings.js =====
 function renderSettings() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const isSuperAdmin = user.role === 'super_admin';
   const isAdmin = ['super_admin','admin'].includes(user.role);
   const taxCfg = getTaxConfig();
@@ -6762,7 +9608,7 @@ function renderSettings() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">⚙️ System Settings</h1>
+          <h1 class="page-title">System Settings</h1>
           <p class="page-subtitle">Platform configuration, preferences, and account management</p>
         </div>
         <div class="page-header-actions">
@@ -6775,16 +9621,20 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">👤 Profile Settings</div>
+              <div class="card-title">Profile Settings</div>
               <div class="card-subtitle">Your account information</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:20px;margin-bottom:24px">
-            <div style="width:72px;height:72px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white;flex-shrink:0;box-shadow:var(--shadow-brand)">${user.avatar}</div>
+            <div style="width:72px;height:72px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white;flex-shrink:0;box-shadow:var(--shadow-brand);overflow:hidden">${renderAvatar(user.avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}</div>
             <div>
               <div style="font-size:20px;font-weight:800;margin-bottom:2px">${user.name}</div>
               <div style="font-size:13px;color:var(--text-muted)">${user.email}</div>
-              <span class="badge role-${user.role.replace('_','-')}" style="margin-top:6px">${user.role.replace('_',' ')}</span>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+                <button class="btn btn-secondary btn-xs" id="s-upload-photo-btn" type="button" style="padding:4px 8px;font-size:11px">Upload Photo</button>
+                ${user.avatar?.startsWith('data:image/') ? `<button class="btn btn-danger btn-xs" id="s-remove-photo-btn" type="button" style="padding:4px 8px;font-size:11px;background:var(--accent-rose)">Remove Photo</button>` : ''}
+              </div>
+              <input type="file" id="s-photo-input" accept="image/*" style="display:none" />
             </div>
           </div>
           <form id="profile-form">
@@ -6805,7 +9655,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">🔒 Security</div>
+              <div class="card-title">Security</div>
               <div class="card-subtitle">Password and access settings</div>
             </div>
           </div>
@@ -6828,42 +9678,43 @@ function renderSettings() {
 
         ${isAdmin ? `
         <!-- Tax Configuration -->
-        <div class="card col-6">
+        <div class="card col-12">
           <div class="card-header">
             <div>
-              <div class="card-title">🏛️ Tax Configuration</div>
-              <div class="card-subtitle">Configure global tax rates for billing engine</div>
+              <div class="card-title">Enterprise Tax Engine</div>
+              <div class="card-subtitle">Configure multi-tax stacks, percentage rates, and flat handling fees</div>
             </div>
           </div>
-          <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px;margin-bottom:20px;font-size:13px;color:var(--text-muted)">
-            ⚠️ Changes affect all <strong>future</strong> bills. Past invoices remain unchanged.
-            ${!isSuperAdmin ? '<br><span style="color:var(--accent-amber)">Note: Full edit requires Super Admin.</span>' : ''}
+          <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:8px;padding:12px;margin-bottom:20px;font-size:13px;color:var(--text-muted);display:flex;align-items:flex-start;gap:8px">
+            <span style="color:var(--brand-500);margin-top:2px;flex-shrink:0">${getSvgIcon('info', 16)}</span>
+            <div>
+              The enterprise tax engine supports stacked percentage taxes (e.g. CGST + SGST) and flat fixed transaction fees. 
+              Past invoices remain structurally unchanged.
+              ${!isSuperAdmin ? '<br><span style="color:var(--accent-amber)">Note: Editing requires Super Admin role.</span>' : ''}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Normal Category Tax Rate</label>
+          
+          <div style="overflow-x:auto;">
+            <table class="table" style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--border-default); text-align: left;">
+                  <th style="padding: 10px; color: var(--text-secondary); font-size: 13px; font-weight: 700;">Tax Name</th>
+                  <th style="padding: 10px; color: var(--text-secondary); font-size: 13px; font-weight: 700;">Type</th>
+                  <th style="padding: 10px; color: var(--text-secondary); font-size: 13px; font-weight: 700;">Rate / Value</th>
+                  <th style="padding: 10px; width: 100px; text-align: center; color: var(--text-secondary); font-size: 13px; font-weight: 700;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tax-grid-body">
+                <!-- Rendered dynamically via Javascript -->
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 12px; gap: 16px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" id="add-tax-row-btn" ${!isSuperAdmin ? 'disabled' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('plus', 14)} Add Tax Component</button>
             <div style="display:flex;align-items:center;gap:12px">
-              <input type="number" id="tax-normal" class="form-control" value="${taxCfg.normal}" min="0" max="100" step="0.5" style="width:110px" ${!isSuperAdmin ? 'readonly style="opacity:0.6;pointer-events:none"' : ''} />
-              <span style="color:var(--text-muted)">%</span>
-              <span class="badge badge-info">Standard items</span>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Luxury Category Tax Rate</label>
-            <div style="display:flex;align-items:center;gap:12px">
-              <input type="number" id="tax-luxury" class="form-control" value="${taxCfg.luxury}" min="0" max="100" step="0.5" style="width:110px" ${!isSuperAdmin ? 'readonly style="opacity:0.6;pointer-events:none"' : ''} />
-              <span style="color:var(--text-muted)">%</span>
-              <span class="badge badge-purple">Premium items</span>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Tax Rules</button>
-            <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
-          </div>
-          <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:8px;font-size:12px">
-            <div style="font-weight:600;margin-bottom:6px;color:var(--text-secondary)">Currently Active Rates:</div>
-            <div style="display:flex;gap:16px">
-              <div>Normal: <strong style="color:var(--accent-emerald)">${taxCfg.normal}%</strong></div>
-              <div>Luxury: <strong style="color:var(--accent-amber)">${taxCfg.luxury}%</strong></div>
+              <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Tax Rules</button>
+              <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
             </div>
           </div>
         </div>` : ''}
@@ -6872,7 +9723,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">💵 Currency Settings</div>
+              <div class="card-title">Currency Settings</div>
               <div class="card-subtitle">Select global and warehouse currency preferences</div>
             </div>
           </div>
@@ -6889,8 +9740,30 @@ function renderSettings() {
             <div class="form-hint">Sets the base currency for global financial metrics, invoices, and analytics.</div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''}>💾 Save Currency</button>
-            <span id="currency-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none">✓ Saved!</span>
+            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Currency</button>
+            <span id="currency-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
+          </div>
+        </div>
+
+        <!-- Theme Configuration -->
+        <div class="card col-6">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Theme Preferences</div>
+              <div class="card-subtitle">Select your enterprise visual identity</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Active Theme</label>
+            <select id="s-theme" class="form-control">
+              <option value="enterprise" ${getStore().theme==='enterprise'?'selected':''}>Enterprise Black & White (Default)</option>
+              <option value="classic" ${getStore().theme==='classic'?'selected':''}>Classic Space Neon (Optional)</option>
+            </select>
+            <div class="form-hint">Applies theme styling immediately across all dashboards, ledgers, and pages.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+            <button class="btn btn-primary btn-sm" id="save-theme-btn" style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Theme</button>
+            <span id="theme-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
           </div>
         </div>
 
@@ -6898,7 +9771,7 @@ function renderSettings() {
         <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">🔔 Notifications</div>
+              <div class="card-title">Notifications</div>
               <div class="card-subtitle">Manage alert preferences</div>
             </div>
           </div>
@@ -6924,73 +9797,172 @@ function renderSettings() {
                 </label>
               </div>`;
             }).join('')}
-          </div>
-        </div>
-
-        <!-- Export Panel -->
-        <div class="card col-12">
+                  <!-- Export Panel -->
+        <div class="card col-6">
           <div class="card-header">
             <div>
-              <div class="card-title">📤 Export Data</div>
-              <div class="card-subtitle">Download platform data in your preferred format</div>
+              <div class="card-title">Export Center</div>
+              <div class="card-subtitle">Download secure reports and tables in CSV, Excel, or PDF</div>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:20px">
-            ${[
-              { key:'bills',      icon:'🧾', label:'Billing & Invoices',   desc:'All invoices with tax breakdown',   role:'manager' },
-              { key:'inventory',  icon:'📦', label:'Inventory',            desc:'Items, SKUs, stock, prices',        role:'manager' },
-              { key:'workforce',  icon:'👥', label:'Workforce',            desc:'Team members, roles, assignments',  role:'admin'   },
-              { key:'warehouses', icon:'🏭', label:'Warehouses',           desc:'All warehouse locations & stats',   role:'super_admin' },
-              { key:'audit',      icon:'🔍', label:'Audit Logs',           desc:'System activity and changes',       role:'super_admin' },
-              { key:'all',        icon:'📊', label:'Full Export',          desc:'All accessible data combined',      role:'admin'   },
-            ].filter(e => {
-              if (e.role === 'super_admin') return isSuperAdmin;
-              if (e.role === 'admin') return isAdmin;
-              return true;
-            }).map(e => `
-              <div style="background:var(--bg-input);border:1px solid var(--border-default);border-radius:12px;padding:16px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                  <span style="font-size:22px">${e.icon}</span>
-                  <div>
-                    <div style="font-size:13px;font-weight:700;color:var(--text-primary)">${e.label}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">${e.desc}</div>
-                  </div>
-                </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap">
-                  <button class="btn btn-secondary btn-sm export-btn" data-entity="${e.key}" data-fmt="csv" style="font-size:11px;padding:4px 10px">CSV</button>
-                  <button class="btn btn-secondary btn-sm export-btn" data-entity="${e.key}" data-fmt="xlsx" style="font-size:11px;padding:4px 10px">Excel</button>
-                  <button class="btn btn-secondary btn-sm export-btn" data-entity="${e.key}" data-fmt="pdf" style="font-size:11px;padding:4px 10px">PDF</button>
-                </div>
-              </div>
-            `).join('')}
-          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.5">
+            Access secure, tenant-scoped data exports. Select custom modular ranges, formats, and export categories in our secure center.
+          </p>
+          <button class="btn btn-secondary btn-sm" id="open-export-center-btn" style="display:flex;align-items:center;gap:6px">
+            ${getSvgIcon('export', 16)} Open Export Center
+          </button>
         </div>
 
         <!-- Danger Zone -->
-        <div class="card col-12" style="border-color:rgba(244,63,94,0.2);background:rgba(244,63,94,0.03)">
+        <div class="card col-6" style="border-color:rgba(244,63,94,0.2);background:rgba(244,63,94,0.03)">
           <div class="card-header">
-            <div><div class="card-title" style="color:var(--accent-rose)">⚠️ Danger Zone</div></div>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
             <div>
-              <div style="font-size:14px;font-weight:600">Reset Demo Data</div>
-              <div style="font-size:12px;color:var(--text-muted)">Clear all data and restore to fresh state (keeps your account)</div>
+              <div class="card-title" style="color:var(--accent-rose)">Danger Zone</div>
+              <div class="card-subtitle">Irreversible administrative actions</div>
             </div>
-            <button class="btn btn-danger btn-sm" id="reset-btn">🗑️ Reset Data</button>
           </div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.5">
+            Resetting the platform will permanently wipe all logs, workforce registries, tables, and bills. Your super_admin account will be kept.
+          </p>
+          <button class="btn btn-danger btn-sm" id="reset-btn" style="display:flex;align-items:center;gap:6px">
+            ${getSvgIcon('trash', 16)} Reset System Data
+          </button>
         </div>
       </div>
     </div>
   `);
 
+  // Local cache for dynamic multi-tax list
+  let localTaxes = taxCfg.taxes || [
+    { name: "CGST", taxType: "percentage", rate: 2.5 },
+    { name: "SGST", taxType: "percentage", rate: 2.5 }
+  ];
+
+  function renderTaxRows() {
+    const tbody = document.getElementById('tax-grid-body');
+    if (!tbody) return;
+    tbody.innerHTML = localTaxes.map((tax, idx) => `
+      <tr data-index="${idx}" style="border-bottom: 1px solid var(--border-default);">
+        <td style="padding: 8px;">
+          <input type="text" class="form-control tax-row-name" value="${tax.name}" placeholder="e.g. CGST" ${!isSuperAdmin ? 'readonly' : ''} style="width: 100%;" />
+        </td>
+        <td style="padding: 8px;">
+          <select class="form-control tax-row-type" ${!isSuperAdmin ? 'disabled' : ''} style="width: 100%; border: 1px solid var(--border-default); border-radius: 6px; padding: 4px 8px; background: var(--bg-card); color: var(--text-primary);">
+            <option value="percentage" ${tax.taxType === 'percentage' ? 'selected' : ''}>Percentage (%)</option>
+            <option value="fixed" ${tax.taxType === 'fixed' ? 'selected' : ''}>Fixed Fee ($)</option>
+          </select>
+        </td>
+        <td style="padding: 8px;">
+          <input type="number" class="form-control tax-row-rate" value="${tax.rate}" step="0.01" min="0" ${!isSuperAdmin ? 'readonly' : ''} style="width: 100%;" />
+        </td>
+        <td style="padding: 8px; text-align: center;">
+          <button class="btn btn-danger btn-sm remove-tax-row-btn" data-index="${idx}" ${!isSuperAdmin ? 'disabled' : ''} style="padding: 4px 8px;">${getSvgIcon('trash', 14)}</button>
+        </td>
+      </tr>
+    `).join('');
+
+    // Attach listeners to input changes
+    tbody.querySelectorAll('.tax-row-name').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.closest('tr').dataset.index);
+        localTaxes[idx].name = e.target.value;
+      });
+    });
+
+    tbody.querySelectorAll('.tax-row-type').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.closest('tr').dataset.index);
+        localTaxes[idx].taxType = e.target.value;
+      });
+    });
+
+    tbody.querySelectorAll('.tax-row-rate').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.closest('tr').dataset.index);
+        localTaxes[idx].rate = parseFloat(e.target.value) || 0;
+      });
+    });
+
+    tbody.querySelectorAll('.remove-tax-row-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        localTaxes.splice(idx, 1);
+        renderTaxRows();
+      });
+    });
+  }
+
+  if (isAdmin) {
+    setTimeout(renderTaxRows, 50);
+    document.getElementById('add-tax-row-btn')?.addEventListener('click', () => {
+      localTaxes.push({ name: '', taxType: 'percentage', rate: 0 });
+      renderTaxRows();
+    });
+  }
+
   // Profile save
-  document.getElementById('profile-form')?.addEventListener('submit', e => {
+  document.getElementById('profile-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const name = document.getElementById('s-name').value.trim();
     if (!name) return;
     const s = getStore();
     const u = s.users.find(u=>u.id===s.currentUserId);
-    if (u) { u.name = name; u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2); saveStore(); showToast('Profile updated','Your name has been updated','success'); }
+    if (u) {
+      u.name = name;
+      // If photo is initials, recreate them from the new name
+      if (!u.avatar || !u.avatar.startsWith('data:image/')) {
+        u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+      }
+      saveStore();
+      await updateUser(u.id, { name, avatar: u.avatar });
+      showToast('Profile updated','Your profile has been updated','success');
+      renderSettings();
+    }
+  });
+
+  // Photo upload triggers
+  const photoInput = document.getElementById('s-photo-input');
+  document.getElementById('s-upload-photo-btn')?.addEventListener('click', () => {
+    photoInput?.click();
+  });
+
+  photoInput?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Size check: limit to 2MB to keep base64 storage compact
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('File too large', 'Please upload an image smaller than 2MB', 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target.result;
+      const s = getStore();
+      const u = s.users.find(usr => usr.id === s.currentUserId);
+      if (u) {
+        u.avatar = base64;
+        saveStore();
+        await updateUser(u.id, { avatar: base64 });
+        showToast('Photo uploaded', 'Profile photo updated successfully', 'success');
+        renderSettings();
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('s-remove-photo-btn')?.addEventListener('click', async () => {
+    const s = getStore();
+    const u = s.users.find(usr => usr.id === s.currentUserId);
+    if (u) {
+      const fallbackInitials = u.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+      u.avatar = fallbackInitials;
+      saveStore();
+      await updateUser(u.id, { avatar: fallbackInitials });
+      showToast('Photo removed', 'Profile photo reverted to initials', 'success');
+      renderSettings();
+    }
   });
 
   // Password change
@@ -7013,19 +9985,38 @@ function renderSettings() {
   // TAX SAVE — actually persist to store
   document.getElementById('save-tax-btn')?.addEventListener('click', () => {
     if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change tax rates','error'); return; }
-    const normal = parseFloat(document.getElementById('tax-normal')?.value);
-    const luxury = parseFloat(document.getElementById('tax-luxury')?.value);
-    if (isNaN(normal) || isNaN(luxury) || normal < 0 || luxury < 0 || normal > 100 || luxury > 100) {
-      showToast('Invalid values','Tax rates must be between 0 and 100','error');
-      return;
+    
+    // Validate inputs
+    for (const tax of localTaxes) {
+      if (!tax.name.trim()) {
+        showToast('Validation Error', 'Tax component name cannot be empty', 'error');
+        return;
+      }
+      if (isNaN(tax.rate) || tax.rate < 0) {
+        showToast('Validation Error', 'Tax rate must be a positive number', 'error');
+        return;
+      }
     }
-    saveTaxConfig({ normal, luxury }).then(() => {
-      showToast('Tax rules saved', `Normal: ${normal}% | Luxury: ${luxury}% — applied to future bills`, 'success');
+
+    // Preserve legacy normal and luxury rates internally for backward compatibility
+    const normalRate = localTaxes.find(t => t.taxType === 'percentage' && t.name.toLowerCase().includes('normal'))?.rate 
+                       || localTaxes.filter(t => t.taxType === 'percentage')[0]?.rate 
+                       || taxCfg.normal || 5.0;
+    const luxuryRate = localTaxes.find(t => t.taxType === 'percentage' && t.name.toLowerCase().includes('luxury'))?.rate 
+                       || localTaxes.filter(t => t.taxType === 'percentage')[1]?.rate 
+                       || taxCfg.luxury || 15.0;
+
+    const newConfig = {
+      normal: normalRate,
+      luxury: luxuryRate,
+      taxes: localTaxes
+    };
+
+    saveTaxConfig(newConfig).then(() => {
+      showToast('Tax rules saved', 'Enterprise tax engine configuration successfully updated', 'success');
       // Show inline confirmation
       const msg = document.getElementById('tax-saved-msg');
-      if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 3000); }
-      // Update the displayed active rates
-      document.querySelectorAll('#tax-saved-msg').forEach(el => el.style.display='inline');
+      if (msg) { msg.style.display = 'inline-flex'; setTimeout(() => msg.style.display = 'none', 3000); }
     });
   });
 
@@ -7036,7 +10027,21 @@ function renderSettings() {
     saveCurrency(currency);
     showToast('Currency updated', `Platform currency set to: ${currency}`, 'success');
     const msg = document.getElementById('currency-saved-msg');
-    if (msg) { msg.style.display = 'inline'; setTimeout(() => msg.style.display = 'none', 3000); }
+    if (msg) { msg.style.display = 'inline-flex'; setTimeout(() => msg.style.display = 'none', 3000); }
+  });
+
+  // THEME SAVE — actually persist to store
+  document.getElementById('save-theme-btn')?.addEventListener('click', () => {
+    const selectedTheme = document.getElementById('s-theme').value;
+    const s = getStore();
+    s.theme = selectedTheme;
+    saveStore();
+    applyTheme(selectedTheme);
+    showToast('Theme updated', `Visual theme set to: ${selectedTheme === 'classic' ? 'Classic Space Neon' : 'Enterprise Black & White'}`, 'success');
+    
+    // Show inline confirmation
+    const msg = document.getElementById('theme-saved-msg');
+    if (msg) { msg.style.display = 'inline-flex'; setTimeout(() => msg.style.display = 'none', 3000); }
   });
 
   // Notification toggles
@@ -7053,45 +10058,168 @@ function renderSettings() {
     });
   });
 
-  // EXPORT — delegated to exporter module
-  document.querySelectorAll('.export-btn[data-entity]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const entity = btn.dataset.entity;
-      const fmt = btn.dataset.fmt;
-      btn.textContent = '⏳';
-      btn.disabled = true;
-      setTimeout(() => {
-        let result;
-        try {
-          if (fmt === 'csv')  result = exportCSV(entity);
-          else if (fmt === 'xlsx') result = exportXLSX(entity);
-          else if (fmt === 'pdf')  result = exportPDF(entity);
-          if (result?.error) {
-            showToast('Export failed', result.error, 'error');
-          } else {
-            showToast('Export complete', `${result?.entity}: ${result?.count} records exported`, 'success');
+  // EXPORT POPUP CENTER
+  document.getElementById('open-export-center-btn')?.addEventListener('click', () => {
+    const isSuperAdmin = user.role === 'super_admin';
+    const isAdmin = ['super_admin','admin'].includes(user.role);
+    const isManager = ['super_admin','admin','manager'].includes(user.role);
+
+    const categories = [
+      { key:'bills',      label:'Billing & Invoices (Manager+)',   role:'manager' },
+      { key:'inventory',  label:'Inventory Records (Manager+)',    role:'manager' },
+      { key:'workforce',  label:'Workforce Members (Admin+)',      role:'admin'   },
+      { key:'warehouses', label:'Warehouse Hubs (Super Admin)',    role:'super_admin' },
+      { key:'audit',      label:'Security Audit Logs (Super Admin)', role:'super_admin' },
+      { key:'all',        label:'Full Platform Ledger (Admin+)',   role:'admin'   },
+    ].filter(e => {
+      if (e.role === 'super_admin') return isSuperAdmin;
+      if (e.role === 'admin') return isAdmin;
+      if (e.role === 'manager') return isManager;
+      return true;
+    });
+
+    // Create Modal Body Element
+    const modalBody = document.createElement('div');
+    modalBody.innerHTML = `
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label">Export Category</label>
+        <select id="export-category" class="form-control" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:6px;padding:8px 12px;width:100%">
+          ${categories.map(c => `<option value="${c.key}">${c.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" style="margin-bottom:8px;display:block">Export Format</label>
+        <div style="display:flex;gap:20px;align-items:center">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+            <input type="radio" name="export-fmt" value="csv" checked style="accent-color:var(--brand-500)" /> CSV Sheets
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+            <input type="radio" name="export-fmt" value="xlsx" style="accent-color:var(--brand-500)" /> Excel Spreadsheet (XLSX)
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+            <input type="radio" name="export-fmt" value="pdf" style="accent-color:var(--brand-500)" /> PDF Document Report
+          </label>
+        </div>
+      </div>
+      <div class="form-hint" style="font-size:12px;color:var(--text-muted);background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:6px;padding:8px 12px;line-height:1.5;display:flex;align-items:flex-start;gap:6px">
+        <span style="color:var(--brand-500);flex-shrink:0">${getSvgIcon('info', 16)}</span>
+        <span>All data exports are fully tenant-partitioned and role-gated.</span>
+      </div>
+    `;
+
+    // Create Modal Footer Element
+    const modalFooter = document.createElement('div');
+    modalFooter.style.cssText = 'display:flex;justify-content:flex-end;gap:12px;width:100%';
+    modalFooter.innerHTML = `
+      <button class="btn btn-secondary btn-sm" id="export-modal-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="export-modal-run" style="display:flex;align-items:center;gap:6px">
+        ${getSvgIcon('save', 14)} Run Export
+      </button>
+    `;
+
+    // Create custom modal wrapper
+    import('../modules/ui.js').then(({ createModal }) => {
+      const modal = createModal({
+        title: 'Secure Export Center',
+        body: modalBody,
+        footer: modalFooter
+      });
+
+      modal.el.querySelector('#export-modal-cancel').addEventListener('click', () => modal.close());
+      modal.el.querySelector('#export-modal-run').addEventListener('click', () => {
+        const category = modal.el.querySelector('#export-category').value;
+        const fmt = modal.el.querySelector('input[name="export-fmt"]:checked').value;
+        const runBtn = modal.el.querySelector('#export-modal-run');
+
+        runBtn.textContent = '⏳ Exporting...';
+        runBtn.disabled = true;
+
+        setTimeout(() => {
+          try {
+            let result;
+            if (fmt === 'csv')  result = exportCSV(category);
+            else if (fmt === 'xlsx') result = exportXLSX(category);
+            else if (fmt === 'pdf')  result = exportPDF(category);
+            
+            if (result?.error) {
+              showToast('Export failed', result.error, 'error');
+            } else {
+              showToast('Export complete', `${result?.entity}: ${result?.count} records exported`, 'success');
+              addAuditLog('export', `Exported ${category} data as ${fmt.toUpperCase()} (${result?.count || 0} records)`, user.id);
+              modal.close();
+            }
+          } catch(e) {
+            showToast('Export error', e.message, 'error');
           }
-        } catch(e) {
-          showToast('Export error', e.message, 'error');
-        }
-        btn.textContent = fmt.toUpperCase();
-        btn.disabled = false;
-      }, 50);
+          runBtn.textContent = 'Run Export';
+          runBtn.disabled = false;
+        }, 400);
+      });
     });
   });
 
-  // RESET
-  document.getElementById('reset-btn')?.addEventListener('click', async () => {
-    const ok = await confirm('This will delete all warehouses, users, bills and tables. Your admin account will remain.', '⚠️ Reset All Data');
-    if (ok) {
-      const s = getStore();
-      const currentUser = s.users.find(u=>u.id===s.currentUserId);
-      s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
-      s.users = [currentUser];
-      saveStore();
-      showToast('Data reset','Platform reset to fresh state','success');
-      location.hash='#/dashboard';
+  // SECURE PASSWORD-CONFIRMED RESET
+  document.getElementById('reset-btn')?.addEventListener('click', () => {
+    if (!isSuperAdmin) {
+      showToast('Unauthorized Action', 'Only the Super Administrator role is permitted to perform platform resets.', 'error');
+      return;
     }
+
+    const modalBody = document.createElement('div');
+    modalBody.innerHTML = `
+      <div style="background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.2);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--accent-rose);display:flex;align-items:flex-start;gap:8px">
+        <span style="color:var(--accent-rose);margin-top:2px;flex-shrink:0">${getSvgIcon('warning', 16)}</span>
+        <div style="font-weight:700;line-height:1.4">
+          WARNING: THIS WILL PERMANENTLY ERASE ALL PLATFORM WAREHOUSES, STAFF USERS, LEDGERS, AND CUSTOM SCHEMAS!
+        </div>
+      </div>
+      <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;line-height:1.5">
+        Your current Super Admin account will remain intact. To confirm this highly sensitive action, please re-authenticate by entering your password below.
+      </p>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label class="form-label">Verify Super Admin Password</label>
+        <input type="password" id="reset-confirm-password" class="form-control" placeholder="Enter password to confirm" style="width:100%" />
+      </div>
+    `;
+
+    const modalFooter = document.createElement('div');
+    modalFooter.style.cssText = 'display:flex;justify-content:flex-end;gap:12px;width:100%';
+    modalFooter.innerHTML = `
+      <button class="btn btn-secondary btn-sm" id="reset-modal-cancel">Cancel Erase</button>
+      <button class="btn btn-danger btn-sm" id="reset-modal-confirm">Confirm System Reset</button>
+    `;
+
+    import('../modules/ui.js').then(({ createModal }) => {
+      const modal = createModal({
+        title: 'Secure System Reset Confirmation',
+        body: modalBody,
+        footer: modalFooter
+      });
+
+      modal.el.querySelector('#reset-modal-cancel').addEventListener('click', () => modal.close());
+      modal.el.querySelector('#reset-modal-confirm').addEventListener('click', () => {
+        const passwordVal = modal.el.querySelector('#reset-confirm-password').value;
+        if (!passwordVal) {
+          showToast('Verification Required', 'Password is required to authenticate system reset.', 'warning');
+          return;
+        }
+        
+        const s = getStore();
+        const currentUser = s.users.find(u=>u.id===s.currentUserId);
+        if (currentUser.password !== passwordVal) {
+          showToast('Access Denied', 'Authentication failed: Incorrect password.', 'error');
+          return;
+        }
+
+        // Proceed with system reset!
+        s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
+        s.users = [currentUser];
+        saveStore();
+        showToast('System Reset Complete', 'Platform ledgers and databases have been wiped to fresh state.', 'success');
+        modal.close();
+        location.hash='#/dashboard';
+      });
+    });
   });
 }
 
@@ -7122,7 +10250,7 @@ function renderSubscription() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">💳 Subscription Management</h1>
+          <h1 class="page-title">Subscription Management</h1>
           <p class="page-subtitle">Your current plan, limits, and upgrade options</p>
         </div>
         <div class="page-header-actions">
@@ -7133,8 +10261,8 @@ function renderSubscription() {
       <!-- Current Plan Card -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
         <div style="background:${isEnterprise ? 'linear-gradient(135deg,rgba(99,102,241,0.15),rgba(168,85,247,0.15))' : 'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(5,150,105,0.15))'};border:1px solid ${isEnterprise ? 'rgba(99,102,241,0.4)' : 'rgba(16,185,129,0.4)'};border-radius:16px;padding:28px">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-            <div style="font-size:36px">${isEnterprise ? '🟣' : '🟢'}</div>
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">
+            <div style="color:${isEnterprise ? 'var(--color-brand)' : 'var(--accent-emerald)'};display:flex;align-items:center">${getSvgIcon('subscription', 36)}</div>
             <div>
               <div style="font-size:22px;font-weight:900;color:var(--text-primary)">${isEnterprise ? 'Enterprise' : 'Starter'} Plan</div>
               <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Current Active Plan</div>
@@ -7163,12 +10291,12 @@ function renderSubscription() {
         <!-- Quick Stats -->
         <div style="display:flex;flex-direction:column;gap:12px">
           ${[
-            { icon:'🏭', label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
-            { icon:'📦', label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
-            { icon:'👑', label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
+            { icon:getSvgIcon('warehouses', 24), label:'Warehouses Active', val: warehousesUsed, color:'var(--accent-violet)' },
+            { icon:getSvgIcon('items', 24), label:'Warehouse Limit', val: warehouseLimit, color:'var(--accent-emerald)' },
+            { icon:getSvgIcon('subscription', 24), label:'Account Type', val: 'Super Admin', color:'var(--accent-amber)' },
           ].map(s=>`
             <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px;flex:1">
-              <div style="font-size:24px">${s.icon}</div>
+              <div style="display:flex;align-items:center;color:var(--text-secondary)">${s.icon}</div>
               <div>
                 <div style="font-size:18px;font-weight:800;color:${s.color}">${s.val}</div>
                 <div style="font-size:12px;color:var(--text-muted)">${s.label}</div>
@@ -7183,15 +10311,15 @@ function renderSubscription() {
         <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:16px">Plan Features</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           ${[
-            { icon:'🏭', feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
-            { icon:'👥', feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
-            { icon:'💰', feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
-            { icon:'📊', feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
-            { icon:'📋', feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
-            { icon:'🔍', feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
+            { icon:getSvgIcon('warehouses', 20), feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
+            { icon:getSvgIcon('workforce', 20), feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
+            { icon:getSvgIcon('revenue', 20), feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
+            { icon:getSvgIcon('analytics', 20), feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
+            { icon:getSvgIcon('tables', 20), feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
+            { icon:getSvgIcon('search', 20), feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
           ].map(f=>`
             <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px">
-              <span style="font-size:20px">${f.icon}</span>
+              <span style="display:flex;align-items:center;color:var(--text-secondary)">${f.icon}</span>
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${f.feat}</div>
                 <div style="font-size:12px;color:var(--text-muted)">Starter: ${f.starter}</div>
@@ -7205,19 +10333,19 @@ function renderSubscription() {
       <!-- Upgrade Banner (if starter) -->
       ${isStarter ? `
       <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:16px;padding:28px;text-align:center;color:white">
-        <div style="font-size:28px;margin-bottom:8px">🚀</div>
+        <div style="margin-bottom:8px;color:white;display:flex;justify-content:center">${getSvgIcon('subscription', 32)}</div>
         <h3 style="font-size:20px;font-weight:800;margin-bottom:8px">Upgrade to Enterprise</h3>
         <p style="font-size:14px;opacity:0.85;margin-bottom:20px">Unlock unlimited warehouses, global analytics, and full ERP capabilities</p>
         <button class="btn" style="background:white;color:#6366f1;font-weight:700;padding:10px 28px;border-radius:8px" id="upgrade-btn">Contact Sales to Upgrade</button>
       </div>` : `
       <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:20px;text-align:center">
-        <div style="font-size:24px;margin-bottom:8px">✅</div>
+        <div style="margin-bottom:8px;color:var(--accent-emerald);display:flex;justify-content:center">${getSvgIcon('check', 28)}</div>
         <div style="font-size:15px;font-weight:700;color:var(--accent-emerald)">You're on the Enterprise Plan</div>
         <div style="font-size:13px;color:var(--text-muted);margin-top:4px">All features are unlocked. No restrictions apply.</div>
       </div>`}
 
-      <div style="margin-top:16px;padding:16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:10px;font-size:12px;color:var(--text-muted);text-align:center">
-        ⚠️ <strong>Demo Mode:</strong> No real payment gateway active. All subscription features are for demonstration purposes only.
+      <div style="margin-top:16px;padding:16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:10px;font-size:12px;color:var(--text-muted);text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">
+        <span style="display:inline-flex;align-items:center;color:var(--accent-amber)">${getSvgIcon('warning', 14)}</span> <strong>Demo Mode:</strong> No real payment gateway active. All subscription features are for demonstration purposes only.
       </div>
     </div>
   `);
@@ -7225,6 +10353,773 @@ function renderSubscription() {
   document.getElementById('upgrade-btn')?.addEventListener('click', () => {
     showToast('Enterprise Plan', 'Contact sales@wareops.io to upgrade your plan.', 'info');
   });
+}
+
+// ===== pages/registry.js =====
+/**
+ * Enterprise Tracking Registry Page — Multi-tenant Unified Tracking Ledger
+ */
+
+
+
+
+
+let regSearchQ = '';
+let regTypeFilter = '';
+let regWhFilter = '';
+let regPage = 1;
+const regLimit = 15;
+
+function renderRegistry() {
+  const user = getCurrentUser();
+  if (!user) { navigate('/login'); return; }
+
+  const whs = getWarehouses();
+
+  renderShell('Registry Ledger', 'Centralized enterprise unique ID and barcode logs ledger', `
+    <div class="animate-slideUp">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Enterprise Tracking Registry</h1>
+          <p class="page-subtitle">Multi-tenant unified identity ledger with scan-ready barcodes</p>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          <button class="btn btn-primary" id="btn-print-barcodes" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('export', 14)} Print Barcodes</button>
+        </div>
+      </div>
+
+      <!-- Stats Summary Row -->
+      <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 24px;">
+        <div class="stat-card">
+          <div class="stat-card-icon" style="background: rgba(99, 102, 241, 0.15)">${getSvgIcon('palette', 20)}</div>
+          <div class="stat-card-value" id="stat-total-entries">—</div>
+          <div class="stat-card-label">Total ID Registries</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon" style="background: rgba(16, 185, 129, 0.15)">${getSvgIcon('billing', 20)}</div>
+          <div class="stat-card-value" id="stat-invoice-entries">—</div>
+          <div class="stat-card-label">Invoices Tracker</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon" style="background: rgba(245, 158, 11, 0.15)">${getSvgIcon('items', 20)}</div>
+          <div class="stat-card-value" id="stat-item-entries">—</div>
+          <div class="stat-card-label">Inventory Barcodes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon" style="background: rgba(6, 182, 212, 0.15)">${getSvgIcon('user', 20)}</div>
+          <div class="stat-card-value" id="stat-crm-entries">—</div>
+          <div class="stat-card-label">CRM Customers</div>
+        </div>
+      </div>
+
+      <!-- Toolbar Search & Filter -->
+      <div class="table-toolbar">
+        <div class="table-search">
+          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
+          <input type="text" id="reg-search" placeholder="Search unique ID, barcode, creator..." value="${regSearchQ}" />
+        </div>
+        <div class="table-filter">
+          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="reg-type-filter">
+            <option value="">All Entity Types</option>
+            <option value="invoice" ${regTypeFilter === 'invoice' ? 'selected' : ''}>Invoices (INV)</option>
+            <option value="warehouse" ${regTypeFilter === 'warehouse' ? 'selected' : ''}>Warehouses (WH)</option>
+            <option value="employee" ${regTypeFilter === 'employee' ? 'selected' : ''}>Workforce (EMP)</option>
+            <option value="inventory" ${regTypeFilter === 'inventory' ? 'selected' : ''}>Inventory (ITEM)</option>
+            <option value="table_registry" ${regTypeFilter === 'table_registry' ? 'selected' : ''}>Operational Tables (TBL)</option>
+            <option value="customer" ${regTypeFilter === 'customer' ? 'selected' : ''}>CRM Customers (CUST)</option>
+          </select>
+          ${user.role === 'super_admin' ? `
+          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="reg-wh-filter">
+            <option value="">All Warehouses</option>
+            <option value="Global" ${regWhFilter === 'Global' ? 'selected' : ''}>Global Scoped</option>
+            ${whs.map(w => `<option value="${w.id}" ${regWhFilter === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}
+          </select>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- Main Ledger Ledger Table -->
+      <div id="registry-table-container">
+        <div class="card" style="text-align:center;padding:48px">
+          <div class="spinner" style="margin: 0 auto 16px"></div>
+          <h3 style="color:var(--text-secondary)">Loading Tracking Ledger...</h3>
+        </div>
+      </div>
+      <div id="registry-pagination"></div>
+    </div>
+  `);
+
+  fetchAndRenderRegistry();
+
+  // Search & Filter Events
+  const searchInput = document.getElementById('reg-search');
+  searchInput?.addEventListener('input', debounce((e) => {
+    regSearchQ = e.target.value;
+    regPage = 1;
+    fetchAndRenderRegistry();
+  }, 300));
+
+  document.getElementById('reg-type-filter')?.addEventListener('change', (e) => {
+    regTypeFilter = e.target.value;
+    regPage = 1;
+    fetchAndRenderRegistry();
+  });
+
+  document.getElementById('reg-wh-filter')?.addEventListener('change', (e) => {
+    regWhFilter = e.target.value;
+    regPage = 1;
+    fetchAndRenderRegistry();
+  });
+
+  document.getElementById('btn-print-barcodes')?.addEventListener('click', showBarcodePrintSheet);
+
+  // Sync listener setup
+  window.removeEventListener('wareops_storage_sync', fetchAndRenderRegistry);
+  window.addEventListener('wareops_storage_sync', fetchAndRenderRegistry);
+}
+
+// Simple debounce helper
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+async function fetchAndRenderRegistry() {
+  const user = getCurrentUser();
+  if (!user) return;
+
+  const whs = getWarehouses();
+  const whMap = whs.reduce((acc, curr) => { acc[curr.id] = curr.name; return acc; }, {});
+
+  // Build query string
+  let query = `/registry/?page=${regPage}&limit=${regLimit}`;
+  if (regSearchQ) query += `&search=${encodeURIComponent(regSearchQ)}`;
+  if (regTypeFilter) query += `&entityType=${regTypeFilter}`;
+  if (regWhFilter) query += `&warehouseId=${regWhFilter}`;
+
+  const res = await apiFetch(query);
+  if (res.error) {
+    const container = document.getElementById('registry-table-container');
+    if (container) {
+      container.innerHTML = `
+        <div class="card" style="text-align:center;padding:48px;border-color:rgba(239,68,68,0.2)">
+          <div style="font-size:40px;margin-bottom:16px;color:rgba(239,68,68,0.7)">⚠️</div>
+          <h3 style="color:var(--text-secondary)">Sync Failed</h3>
+          <p style="color:var(--text-muted);margin-top:8px">${res.error}</p>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  const { entries, total } = res.data;
+  const pages = Math.ceil(total / regLimit);
+  const start = (regPage - 1) * regLimit;
+
+  // Render Stats Numbers
+  updateStatsNumbers(entries, total);
+
+  const container = document.getElementById('registry-table-container');
+  if (!container) return;
+
+  if (entries.length === 0) {
+    container.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">🏷️</div>
+        <h3 style="color:var(--text-secondary)">No unique ID registries found</h3>
+        <p style="color:var(--text-muted);margin-top:8px">No generated tracking entries match the filter parameters.</p>
+      </div>
+    `;
+    document.getElementById('registry-pagination').innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Unique ID</th>
+            <th>Entity Type</th>
+            <th>Offline Barcode</th>
+            <th>Warehouse Scope</th>
+            <th>Creator Log</th>
+            <th>Registered At</th>
+            <th style="text-align:center">Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.map(e => {
+            const whName = e.warehouse_id === 'Global' ? 'Global' : (whMap[e.warehouse_id] || `Warehouse (${e.warehouse_id})`);
+            const badgeClass = getEntityBadgeClass(e.entity_type);
+            const encodedBarcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${e.entity_id}`;
+
+            return `
+              <tr>
+                <td data-label="Unique ID">
+                  <span style="font-family:var(--font-mono);font-weight:700;color:var(--text-primary);letter-spacing:0.5px">${e.entity_id}</span>
+                </td>
+                <td data-label="Entity Type">
+                  <span class="badge ${badgeClass}">${capitalizeFirst(e.entity_type)}</span>
+                </td>
+                <td data-label="Offline Barcode" style="padding-top: 4px; padding-bottom: 4px;">
+                  <div style="display:flex;flex-direction:column;gap:2px;max-width:180px">
+                    <img src="${encodedBarcodeUrl}" alt="${e.entity_id} Barcode" style="height:36px;object-fit:contain;border:1px solid #f3f4f6;border-radius:4px;background:#ffffff;padding:2px" />
+                  </div>
+                </td>
+                <td data-label="Warehouse Scope">
+                  <span class="badge badge-secondary">${whName}</span>
+                </td>
+                <td data-label="Creator Log">
+                  <div class="primary-cell">${e.creator_name}</div>
+                  <div class="sub-cell">ID: ${e.created_by.slice(0, 8)}</div>
+                </td>
+                <td data-label="Registered At">
+                  <div class="primary-cell">${formatDateTime(e.created_at)}</div>
+                </td>
+                <td data-label="Data" style="text-align:center">
+                  <button class="action-btn edit view-snapshot-btn" data-id="${e.entity_id}" title="View Metadata Snapshot" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px">${getSvgIcon('view', 12)} Details</button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+      
+      <!-- Pagination controls -->
+      <div class="table-pagination">
+        <div class="pagination-info">Showing ${start + 1}–${Math.min(start + regLimit, total)} of ${total} entries</div>
+        <div class="pagination-controls">
+          <button class="wf_page-btn" id="reg-prev" ${regPage <= 1 ? 'disabled' : ''}>‹</button>
+          ${Array.from({ length: Math.min(5, pages) }, (_, i) => {
+            const pageNum = i + 1;
+            return `<button class="wf_page-btn ${regPage === pageNum ? 'active' : ''}" data-pg="${pageNum}">${pageNum}</button>`;
+          }).join('')}
+          <button class="wf_page-btn" id="reg-next" ${regPage >= pages ? 'disabled' : ''}>›</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach button triggers
+  container.querySelectorAll('.view-snapshot-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const entry = entries.find(x => x.entity_id === btn.dataset.id);
+      if (entry) showSnapshotModal(entry);
+    });
+  });
+
+  container.querySelectorAll('.wf_page-btn[data-pg]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      regPage = parseInt(btn.dataset.pg);
+      fetchAndRenderRegistry();
+    });
+  });
+
+  document.getElementById('reg-prev')?.addEventListener('click', () => {
+    if (regPage > 1) {
+      regPage--;
+      fetchAndRenderRegistry();
+    }
+  });
+
+  document.getElementById('reg-next')?.addEventListener('click', () => {
+    if (regPage < pages) {
+      regPage++;
+      fetchAndRenderRegistry();
+    }
+  });
+}
+
+function updateStatsNumbers(entries, total) {
+  document.getElementById('stat-total-entries').textContent = total;
+  
+  // Quick count filters
+  const invCount = entries.filter(e => e.entity_type === 'invoice').length;
+  const itemCount = entries.filter(e => e.entity_type === 'inventory').length;
+  const crmCount = entries.filter(e => e.entity_type === 'customer').length;
+  
+  // Set counts dynamically
+  const invEl = document.getElementById('stat-invoice-entries');
+  const itemEl = document.getElementById('stat-item-entries');
+  const crmEl = document.getElementById('stat-crm-entries');
+
+  if (invEl) invEl.textContent = entries.filter(e => e.entity_type === 'invoice').length > 0 ? entries.filter(e => e.entity_type === 'invoice').length : 'Active';
+  if (itemEl) itemEl.textContent = entries.filter(e => e.entity_type === 'inventory').length > 0 ? entries.filter(e => e.entity_type === 'inventory').length : 'Active';
+  if (crmEl) crmEl.textContent = entries.filter(e => e.entity_type === 'customer').length > 0 ? entries.filter(e => e.entity_type === 'customer').length : 'Active';
+}
+
+function getEntityBadgeClass(type) {
+  switch (type) {
+    case 'invoice': return 'badge-info';
+    case 'warehouse': return 'badge-secondary';
+    case 'employee': return 'badge-warning';
+    case 'inventory': return 'badge-success';
+    case 'table_registry': return 'badge-primary';
+    case 'customer': return 'badge-info';
+    default: return 'badge-secondary';
+  }
+}
+
+function capitalizeFirst(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1).replace('_', ' ');
+}
+
+function showSnapshotModal(entry) {
+  const jsonString = JSON.stringify(entry.metadata_snapshot, null, 2);
+  
+  const body = `
+    <div style="font-family:var(--font-mono);font-size:12px;background:#0f172a;color:#e2e8f0;padding:16px;border-radius:8px;max-height:400px;overflow-y:auto;white-space:pre-wrap;box-shadow:inset 0 2px 4px rgba(0,0,0,0.6)">${jsonString}</div>
+    <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:8px;padding:12px;font-size:12px;color:var(--text-muted)">
+      <span>Entity: <strong>${entry.entity_id}</strong> (${capitalizeFirst(entry.entity_type)})</span>
+      <span>Creator: <strong>${entry.creator_name}</strong></span>
+    </div>
+  `;
+
+  const footer = `
+    <button class="btn btn-primary" id="m-snap-close">Close</button>
+  `;
+
+  const modal = createModal({ title: `Registry Metadata Snapshot`, body, footer });
+  modal.el.querySelector('#m-snap-close')?.addEventListener('click', modal.close);
+}
+
+async function showBarcodePrintSheet() {
+  let query = `/registry/?page=1&limit=60`;
+  if (regTypeFilter) query += `&entityType=${regTypeFilter}`;
+  if (regWhFilter) query += `&warehouseId=${regWhFilter}`;
+
+  const res = await apiFetch(query);
+  if (res.error) {
+    showToast('Failed to load barcodes', res.error, 'error');
+    return;
+  }
+
+  const { entries } = res.data;
+  if (!entries || entries.length === 0) {
+    showToast('No Barcodes', 'No matching items found to print barcodes.', 'warning');
+    return;
+  }
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    showToast('Blocker active', 'Please allow popups to render the barcode print sheet.', 'warning');
+    return;
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>NexWare ERP — Printable Barcode Sheet</title>
+        <style>
+          body {
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #111827;
+            background: #ffffff;
+            margin: 0;
+            padding: 20px;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+          }
+          .card {
+            border: 1px dashed #9ca3af;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            page-break-inside: avoid;
+          }
+          .title {
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            color: #374151;
+          }
+          .barcode {
+            max-width: 100%;
+            height: auto;
+            margin: 8px 0;
+          }
+          .footer-info {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 6px;
+          }
+          @media print {
+            body { padding: 0; }
+            .header { display: none; }
+            .grid { gap: 15px; }
+            .card { border-style: solid; border-color: #d1d5db; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>NexWare ERP Scan Sheet</h1>
+          <p>Scan-ready laser barcode tags sheet. Print onto label paper or sheets.</p>
+          <button onclick="window.print()" style="padding: 10px 20px; font-size:14px; font-weight:bold; color:white; background:#6366f1; border:none; border-radius:6px; cursor:pointer">🖨️ Print Label Sheet</button>
+        </div>
+        <div class="grid">
+          ${entries.map(e => {
+            const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${e.entity_id}`;
+            const name = e.metadata_snapshot.name || e.metadata_snapshot.customer || e.entity_type.toUpperCase();
+            return `
+              <div class="card">
+                <div class="title">${name}</div>
+                <img class="barcode" src="${barcodeUrl}" />
+                <div class="footer-info">Type: ${e.entity_type} | Scope: ${e.warehouse_id}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
+// ===== pages/customers.js =====
+/**
+ * Customer CRM Portfolio Page — Central CRM repeat tracking and transaction analytics
+ */
+
+
+
+
+
+let custSearchQ = '';
+let custPage = 1;
+const custLimit = 10;
+
+function renderCustomers() {
+  const user = getCurrentUser();
+  if (!user) { navigate('/login'); return; }
+
+  renderShell('CRM Customers', 'Track customer checkout histories and CRM repeat profiles', `
+    <div class="animate-slideUp">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Customer CRM Workspace</h1>
+          <p class="page-subtitle">Repeat customer transaction logs, loyalty tracking, and billing analytics</p>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+        </div>
+      </div>
+
+      <!-- CRM Stats Row -->
+      <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 24px;">
+        <div class="stat-card">
+          <div class="stat-card-icon" style="background: rgba(99, 102, 241, 0.15)">${getSvgIcon('workforce', 20)}</div>
+          <div class="stat-card-value" id="crm-stat-total">—</div>
+          <div class="stat-card-label">Total CRM Customers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon" style="background: rgba(16, 185, 129, 0.15)">${getSvgIcon('refresh', 20)}</div>
+          <div class="stat-card-value" id="crm-stat-repeats">—</div>
+          <div class="stat-card-label">Repeat Shoppers Index</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-icon" style="background: rgba(245, 158, 11, 0.15)">${getSvgIcon('revenue', 20)}</div>
+          <div class="stat-card-value" id="crm-stat-revenue">—</div>
+          <div class="stat-card-label">CRM Attributed Revenue</div>
+        </div>
+      </div>
+
+      <!-- Toolbar Search -->
+      <div class="table-toolbar">
+        <div class="table-search">
+          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
+          <input type="text" id="crm-search" placeholder="Search customer name, email, phone, ID..." value="${custSearchQ}" />
+        </div>
+      </div>
+
+      <!-- Customer Directory List -->
+      <div id="customers-list-container">
+        <div class="card" style="text-align:center;padding:48px">
+          <div class="spinner" style="margin: 0 auto 16px"></div>
+          <h3 style="color:var(--text-secondary)">Loading Customer Directory...</h3>
+        </div>
+      </div>
+    </div>
+  `);
+
+  fetchAndRenderCustomers();
+
+  // Search Input Event
+  const searchInput = document.getElementById('crm-search');
+  searchInput?.addEventListener('input', debounce((e) => {
+    custSearchQ = e.target.value;
+    custPage = 1;
+    fetchAndRenderCustomers();
+  }, 300));
+}
+
+// Simple debounce helper
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+async function fetchAndRenderCustomers() {
+  const user = getCurrentUser();
+  if (!user) return;
+
+  let query = `/registry/customers/?page=${custPage}&limit=${custLimit}`;
+  if (custSearchQ) query += `&search=${encodeURIComponent(custSearchQ)}`;
+
+  const res = await apiFetch(query);
+  if (res.error) {
+    const container = document.getElementById('customers-list-container');
+    if (container) {
+      container.innerHTML = `
+        <div class="card" style="text-align:center;padding:48px;border-color:rgba(239,68,68,0.2)">
+          <div style="font-size:40px;margin-bottom:16px;color:rgba(239,68,68,0.7)">⚠️</div>
+          <h3 style="color:var(--text-secondary)">CRM Offline</h3>
+          <p style="color:var(--text-muted);margin-top:8px">${res.error}</p>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  const { customers, total } = res.data;
+  const pages = Math.ceil(total / custLimit);
+  const start = (custPage - 1) * custLimit;
+
+  // Render Stats Row metrics
+  updateCRMStats(customers, total);
+
+  const container = document.getElementById('customers-list-container');
+  if (!container) return;
+
+  if (customers.length === 0) {
+    container.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">👥</div>
+        <h3 style="color:var(--text-secondary)">No CRM records found</h3>
+        <p style="color:var(--text-muted);margin-top:8px">No active customer repeat profiles found matching queries.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Customer ID</th>
+            <th>Name</th>
+            <th>Contact Details</th>
+            <th>Transactions</th>
+            <th>Attributed Sales</th>
+            <th>Last Checkout</th>
+            <th style="text-align:center">Portfolio</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${customers.map(c => {
+            const count = c.invoices ? c.invoices.length : 0;
+            const sales = c.invoices ? c.invoices.reduce((sum, inv) => sum + (inv.total || 0), 0) : 0;
+            const lastCheckout = c.last_active_at || c.updated_at;
+
+            return `
+              <tr>
+                <td data-label="Customer ID">
+                  <span style="font-family:var(--font-mono);font-weight:700">${c.customer_id}</span>
+                </td>
+                <td data-label="Name">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0">
+                      ${c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)}
+                    </div>
+                    <div>
+                      <div class="primary-cell">${c.name}</div>
+                      <div class="sub-cell">Tax ID: ${c.tax_number || '—'}</div>
+                    </div>
+                  </div>
+                </td>
+                <td data-label="Contact Details">
+                  <div class="primary-cell">${c.phone || '—'}</div>
+                  <div class="sub-cell">${c.email || '—'}</div>
+                </td>
+                <td data-label="Transactions">
+                  <span class="badge ${count > 1 ? 'badge-success' : 'badge-secondary'}">${count} Checkout${count !== 1 ? 's' : ''}</span>
+                </td>
+                <td data-label="Attributed Sales">
+                  <strong style="color:var(--text-primary)">$${sales.toFixed(2)}</strong>
+                </td>
+                <td data-label="Last Checkout">
+                  <div class="primary-cell">${formatDateTime(lastCheckout)}</div>
+                </td>
+                <td data-label="Portfolio" style="text-align:center">
+                  <button class="action-btn edit view-portfolio-btn" data-id="${c.customer_id}" title="View CRM Portfolio" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px">${getSvgIcon('view', 12)} Portfolio</button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+
+      <!-- Pagination controls -->
+      <div class="table-pagination">
+        <div class="pagination-info">Showing ${start + 1}–${Math.min(start + custLimit, total)} of ${total} customers</div>
+        <div class="pagination-controls">
+          <button class="wf_page-btn" id="cust-prev" ${custPage <= 1 ? 'disabled' : ''}>‹</button>
+          ${Array.from({ length: Math.min(5, pages) }, (_, i) => {
+            const pageNum = i + 1;
+            return `<button class="wf_page-btn ${custPage === pageNum ? 'active' : ''}" data-pg="${pageNum}">${pageNum}</button>`;
+          }).join('')}
+          <button class="wf_page-btn" id="cust-next" ${custPage >= pages ? 'disabled' : ''}>›</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach button triggers
+  container.querySelectorAll('.view-portfolio-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cust = customers.find(x => x.customer_id === btn.dataset.id);
+      if (cust) showPortfolioModal(cust);
+    });
+  });
+
+  container.querySelectorAll('.wf_page-btn[data-pg]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      custPage = parseInt(btn.dataset.pg);
+      fetchAndRenderCustomers();
+    });
+  });
+
+  document.getElementById('cust-prev')?.addEventListener('click', () => {
+    if (custPage > 1) {
+      custPage--;
+      fetchAndRenderCustomers();
+    }
+  });
+
+  document.getElementById('cust-next')?.addEventListener('click', () => {
+    if (custPage < pages) {
+      custPage++;
+      fetchAndRenderCustomers();
+    }
+  });
+}
+
+function updateCRMStats(customers, total) {
+  document.getElementById('crm-stat-total').textContent = total;
+  
+  let repeatCount = 0;
+  let revenueTotal = 0;
+
+  customers.forEach(c => {
+    const txs = c.invoices ? c.invoices.length : 0;
+    if (txs > 1) repeatCount++;
+    revenueTotal += c.invoices ? c.invoices.reduce((sum, inv) => sum + (inv.total || 0), 0) : 0;
+  });
+
+  const repeatPercent = total > 0 ? Math.round((repeatCount / total) * 100) : 0;
+
+  document.getElementById('crm-stat-repeats').textContent = `${repeatPercent}% (${repeatCount})`;
+  document.getElementById('crm-stat-revenue').textContent = `$${revenueTotal.toFixed(2)}`;
+}
+
+function showPortfolioModal(c) {
+  const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${c.customer_id}`;
+  const invoicesList = c.invoices || [];
+
+  const body = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
+      <!-- Customer Info Card -->
+      <div class="card" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color)">
+        <h4 style="margin-top:0;margin-bottom:12px;color:var(--text-primary)">CRM Client Profile</h4>
+        <div style="font-size:13px;line-height:1.6;color:var(--text-secondary)">
+          <div>Name: <strong>${c.name}</strong></div>
+          <div>Phone: <strong>${c.phone || '—'}</strong></div>
+          <div>Email: <strong>${c.email || '—'}</strong></div>
+          <div>Billing Address: <strong>${c.address || '—'}</strong></div>
+          <div>Tax Code: <strong>${c.tax_number || '—'}</strong></div>
+        </div>
+      </div>
+      
+      <!-- Barcode Card -->
+      <div class="card" style="padding:16px;text-align:center;background:var(--bg-secondary);border:1px solid var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <h4 style="margin-top:0;margin-bottom:8px;color:var(--text-primary)">Barcode ID</h4>
+        <img src="${barcodeUrl}" style="height:48px;object-fit:contain;background:#ffffff;padding:4px;border:1px solid #e5e7eb;border-radius:4px" />
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:4px">${c.customer_id}</div>
+      </div>
+    </div>
+
+    <!-- Invoices List -->
+    <h4 style="margin-bottom:12px;color:var(--text-primary)">Transaction Checkout History</h4>
+    <div class="table-wrap" style="max-height:220px;overflow-y:auto;box-shadow:none;border:1px solid var(--border-color)">
+      <table>
+        <thead>
+          <tr>
+            <th>Bill No</th>
+            <th>Checkout Date</th>
+            <th>Subtotal</th>
+            <th>Tax</th>
+            <th>Total Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${invoicesList.length === 0 ? `
+            <tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No transaction history recorded yet.</td></tr>
+          ` : invoicesList.map(inv => `
+            <tr>
+              <td><span style="font-family:var(--font-mono);font-weight:700">${inv.bill_no}</span></td>
+              <td>${formatDateTime(inv.checkout_at)}</td>
+              <td>$${inv.subtotal.toFixed(2)}</td>
+              <td>$${inv.tax.toFixed(2)}</td>
+              <td><strong>$${inv.total.toFixed(2)}</strong></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const footer = `
+    <button class="btn btn-primary" id="m-port-close">Close</button>
+  `;
+
+  const modal = createModal({ title: `Customer CRM Portfolio Details`, body, footer });
+  modal.el.querySelector('#m-port-close')?.addEventListener('click', modal.close);
 }
 
 // ===== app.js =====
@@ -7246,7 +11141,11 @@ window.addEventListener('unhandledrejection', (event) => {
 // Modules
 
 
+
 // Pages
+
+
+
 
 
 
@@ -7263,6 +11162,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 // Route handler map
 const routes = {
+  '/': renderLanding,
   '/login': renderLogin,
   '/signup': renderSignup,
   '/register-warehouse': renderWarehouseRegistration,
@@ -7278,6 +11178,8 @@ const routes = {
   '/subscription': renderSubscription,
   '/privacy': renderPrivacy,
   '/terms': renderTerms,
+  '/registry': renderRegistry,
+  '/customers': renderCustomers,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -7285,7 +11187,7 @@ window.printBill = printBill;
 
 function getActivePath() {
   const hash = window.location.hash.slice(1);
-  return hash.split('?')[0] || '';
+  return hash.split('?')[0] || '/';
 }
 
 let _lastResolvedPath = null;
@@ -7315,16 +11217,12 @@ function resolveRoute() {
   try {
     const path = getActivePath();
     const user = getCurrentUser();
-    const publicRoutes = ['/login', '/signup', '/privacy', '/terms'];
-    const redirectIfLoggedIn = ['/login', '/signup'];
+    const publicRoutes = ['/', '/login', '/signup', '/privacy', '/terms'];
+    const redirectIfLoggedIn = ['/', '/login', '/signup'];
 
     // Not logged in
     if (!user) {
       if (!publicRoutes.includes(path)) {
-        if (path === '' || path === '/') {
-          window.location.href = 'landing.html';
-          return;
-        }
         safeNavigate('/login');
         return;
       }
@@ -7340,8 +11238,6 @@ function resolveRoute() {
         safeNavigate('/dashboard');
         return;
       }
-      // Seeding demo data disabled for pristine zero-data vanilla reset
-
     }
 
     const handler = routes[path];
@@ -7351,14 +11247,8 @@ function resolveRoute() {
       // Warehouse detail: /warehouses/:id
       const whId = path.replace('/warehouses/', '');
       renderWarehouseDetail(whId);
-    } else if (path && path !== '') {
-      safeNavigate(user ? '/dashboard' : '/login');
     } else {
-      if (!user) {
-        window.location.href = 'landing.html';
-      } else {
-        safeNavigate('/dashboard');
-      }
+      safeNavigate(user ? '/dashboard' : '/');
     }
   } catch (err) {
     console.error('[WareOps] Route resolution crash:', err);
@@ -7373,7 +11263,7 @@ function renderErrorPage(err) {
   appEl.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0f1029;color:#f8fafc;font-family:sans-serif">
       <div style="text-align:center;max-width:480px;background:rgba(255,255,255,0.03);padding:40px;border-radius:24px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.3)">
-        <div style="font-size:64px;margin-bottom:24px">⚠️</div>
+        <div style="margin-bottom:24px;color:#f43f5e;display:flex;justify-content:center">${getSvgIcon('warning', 64)}</div>
         <h1 style="font-size:24px;font-weight:800;margin-bottom:12px">Application Startup Error</h1>
         <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;line-height:1.6">${err?.message || 'An unexpected error occurred during initialization.'}</p>
         <div style="background:rgba(0,0,0,0.2);padding:16px;border-radius:12px;margin-bottom:24px;text-align:left;overflow-x:auto">
@@ -7381,7 +11271,7 @@ function renderErrorPage(err) {
         </div>
         <div style="display:flex;gap:12px;justify-content:center">
           <button class="btn btn-primary" onclick="window.location.reload()" style="background:#6366f1;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Retry Loading</button>
-          <button class="btn btn-ghost" onclick="window.location.href='landing.html'" style="background:transparent;color:#f8fafc;border:1px solid rgba(255,255,255,0.1);padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Back to Home</button>
+          <button class="btn btn-ghost" onclick="window.location.hash='#/'" style="background:transparent;color:#f8fafc;border:1px solid rgba(255,255,255,0.1);padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Back to Home</button>
         </div>
       </div>
     </div>
@@ -7403,31 +11293,21 @@ async function init() {
     // Bind active currency dynamically for formatting sync
     window.wareops_currency = getActiveCurrency();
 
-    const currentPath = getActivePath();
+    // Apply active global theme preferences
+    applyTheme(getStore().theme);
+
     const user = getCurrentUser();
 
     // Prioritize full synchronization before routing to prevent race conditions on page load/refresh
     if (user && localStorage.getItem('access_token')) {
       try {
-        const { syncWithBackend } = await import('./modules/store.js');
         await syncWithBackend();
       } catch (syncErr) {
         console.warn('[WareOps] Initial background sync failed:', syncErr);
       }
     }
 
-    if (!currentPath) {
-      if (!user) {
-        window.location.href = 'landing.html';
-      } else {
-        safeNavigate('/dashboard');
-        // If we just changed the hash, resolveRoute will be called by hashchange
-        // But if we didn't (rare), we call it manually
-        if (getActivePath() === '/dashboard') resolveRoute();
-      }
-    } else {
-      resolveRoute();
-    }
+    resolveRoute();
   } catch (err) {
     console.error('[WareOps] Critical initialization failure:', err);
     renderErrorPage(err);

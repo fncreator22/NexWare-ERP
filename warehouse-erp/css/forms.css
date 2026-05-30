@@ -65,3 +65,15 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .step-label { font-size: var(--text-xs); color: var(--text-muted); margin-top: 4px; white-space: nowrap; }
 .step.active .step-label { color: var(--text-brand); font-weight: 600; }
 .step-wrap { display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+/* Warehouse & Inventory Media selectors */
+.wh-icon-option:hover {
+  border-color: var(--border-brand) !important;
+  background: var(--bg-elevated) !important;
+}
+.wh-icon-option.selected {
+  border-color: var(--border-brand) !important;
+  box-shadow: 0 0 0 2px var(--border-brand) !important;
+  background: var(--bg-elevated) !important;
+}
+

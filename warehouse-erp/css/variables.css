@@ -1,5 +1,73 @@
 :root {
-  /* === COLOR SYSTEM === */
+  /* === DEFAULT THEME: ENTERPRISE BLACK & WHITE === */
+  --brand-50: #f4f4f5;
+  --brand-100: #e4e4e7;
+  --brand-200: #d4d4d8;
+  --brand-300: #a1a1aa;
+  --brand-400: #71717a;
+  --brand-500: #ffffff;
+  --brand-600: #e4e4e7;
+  --brand-700: #d4d4d8;
+  --brand-800: #a1a1aa;
+  --brand-900: #27272a;
+
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-violet: #8b5cf6;
+  --accent-sky: #0ea5e9;
+
+  /* Background Layers */
+  --bg-base: #09090b;
+  --bg-surface: #121214;
+  --bg-elevated: #1a1a1e;
+  --bg-card: #1d1d22;
+  --bg-card-hover: #27272e;
+  --bg-input: #121214;
+  --bg-sidebar: #09090b;
+  --bg-topbar: rgba(9,9,11,0.95);
+
+  /* Borders */
+  --border-subtle: rgba(255,255,255,0.06);
+  --border-default: rgba(255,255,255,0.12);
+  --border-strong: rgba(255,255,255,0.22);
+  --border-brand: rgba(255,255,255,0.4);
+
+  /* Text */
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-disabled: #3f3f46;
+  --text-brand: #ffffff;
+  --text-success: #34d399;
+  --text-warning: #fbbf24;
+  --text-danger: #fb7185;
+  --text-info: #38bdf8;
+
+  /* Gradients */
+  --gradient-brand: linear-gradient(135deg, #ffffff 0%, #a1a1aa 50%, #e4e4e7 100%);
+  --gradient-card: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
+  --gradient-sidebar: linear-gradient(180deg, #09090b 0%, #121214 100%);
+  --gradient-hero: radial-gradient(ellipse at 20% 50%, rgba(255,255,255,0.08) 0%, transparent 60%),
+                   radial-gradient(ellipse at 80% 20%, rgba(255,255,255,0.04) 0%, transparent 50%);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+  --shadow-xl: 0 16px 40px rgba(0,0,0,0.7);
+  --shadow-brand: 0 4px 16px rgba(255,255,255,0.05);
+  --shadow-glow: 0 0 16px rgba(255,255,255,0.08);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(255,255,255,0.02);
+  --glass-border: rgba(255,255,255,0.05);
+  --glass-blur: blur(4px);
+}
+
+/* === OPTIONAL THEME: CLASSIC SPACE NEON === */
+:root.theme-classic {
   --brand-50: #eef2ff;
   --brand-100: #e0e7ff;
   --brand-200: #c7d2fe;
@@ -11,14 +79,6 @@
   --brand-800: #3730a3;
   --brand-900: #312e81;
 
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
-  --accent-violet: #8b5cf6;
-  --accent-sky: #0ea5e9;
-
-  /* Background Layers */
   --bg-base: #0a0b1a;
   --bg-surface: #0f1029;
   --bg-elevated: #151730;
@@ -28,24 +88,17 @@
   --bg-sidebar: #0c0e22;
   --bg-topbar: rgba(10,11,26,0.95);
 
-  /* Borders */
   --border-subtle: rgba(255,255,255,0.06);
   --border-default: rgba(255,255,255,0.10);
   --border-strong: rgba(255,255,255,0.18);
   --border-brand: rgba(99,102,241,0.5);
 
-  /* Text */
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
   --text-disabled: #334155;
   --text-brand: #818cf8;
-  --text-success: #34d399;
-  --text-warning: #fbbf24;
-  --text-danger: #fb7185;
-  --text-info: #38bdf8;
 
-  /* Gradients */
   --gradient-brand: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
   --gradient-card: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.05) 100%);
   --gradient-sidebar: linear-gradient(180deg, #0c0e22 0%, #080921 100%);
@@ -53,7 +106,6 @@
                    radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.2) 0%, transparent 50%),
                    radial-gradient(ellipse at 60% 80%, rgba(6,182,212,0.15) 0%, transparent 50%);
 
-  /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
   --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
@@ -61,10 +113,11 @@
   --shadow-brand: 0 4px 16px rgba(99,102,241,0.2);
   --shadow-glow: 0 0 16px rgba(99,102,241,0.3);
 
-  /* Glassmorphism */
   --glass-bg: rgba(255,255,255,0.04);
   --glass-border: rgba(255,255,255,0.08);
-  --glass-blur: blur(4px);
+}
+
+:root {
 
   /* Spacing Scale */
   --space-1: 0.25rem;

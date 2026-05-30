@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getBills, getItems, getAllUsers, getWarehouses, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { formatCurrency, formatDate } from '../modules/ui.js';
+import { formatCurrency, formatDate, getSvgIcon } from '../modules/ui.js';
 
 // Persisted filter state (survives re-renders within session)
 let an_whFilter  = '';
@@ -15,6 +15,10 @@ const _charts = {};
 
 export function renderAnalytics() {
   const user = getCurrentUser();
+  if (!user) {
+    window.location.hash = '#/login';
+    return;
+  }
   const isSA   = user.role === 'super_admin';
   const isAdmin = isSA || user.role === 'admin';
   const whs    = getWarehouses();
@@ -31,7 +35,7 @@ export function renderAnalytics() {
     <div class="animate-slideUp">
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">📈 Analytics & Reports</h1>
+          <h1 class="page-title">Analytics & Reports</h1>
           <p class="page-subtitle">${isSA ? 'Global cross-warehouse analytics' : 'Warehouse performance analytics'}</p>
         </div>
         <div class="page-header-actions">
@@ -41,7 +45,7 @@ export function renderAnalytics() {
 
       <!-- Filter Bar -->
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px 18px;margin-bottom:24px">
-        <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">🔽 Filters:</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text-secondary)">Filters:</span>
 
         <select class="form-control" style="width:auto;padding:7px 12px;font-size:13px" id="an-year">
           ${(billYears.length ? billYears : [new Date().getFullYear()]).map(y=>
@@ -204,28 +208,28 @@ function updateKPIs(totalRev, totalTax, avgBill, netRev, count) {
     <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#6366f1"></div>
-        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">💰</div>
+        <div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center;color:#6366f1">${getSvgIcon('revenue', 20)}</div>
         <div class="stat-card-value">${formatCurrency(totalRev)}</div>
         <div class="stat-card-label">Total Revenue</div>
         <div class="stat-card-trend trend-up">${count} invoices</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#10b981"></div>
-        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">💵</div>
+        <div class="stat-card-icon" style="background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;color:#10b981">${getSvgIcon('billing', 20)}</div>
         <div class="stat-card-value">${formatCurrency(netRev)}</div>
         <div class="stat-card-label">Net Revenue</div>
         <div class="stat-card-trend trend-up">After tax</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#f59e0b"></div>
-        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">🏛️</div>
+        <div class="stat-card-icon" style="background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;color:#f59e0b">${getSvgIcon('audit', 20)}</div>
         <div class="stat-card-value">${formatCurrency(totalTax)}</div>
         <div class="stat-card-label">Tax Collected</div>
         <div class="stat-card-trend">Automated</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-glow" style="background:#8b5cf6"></div>
-        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">🎯</div>
+        <div class="stat-card-icon" style="background:rgba(139,92,246,0.15);display:flex;align-items:center;justify-content:center;color:#8b5cf6">${getSvgIcon('analytics', 20)}</div>
         <div class="stat-card-value">${formatCurrency(avgBill)}</div>
         <div class="stat-card-label">Avg. Invoice</div>
         <div class="stat-card-trend trend-up">${count} total</div>
@@ -414,16 +418,28 @@ function updateStockTable(items, taxCfg) {
         </tr></thead>
         <tbody>
           ${sorted.slice(0,10).map(i=>{
-            const rate = i.taxCategory==='luxury' ? taxCfg.luxury : taxCfg.normal;
             const val  = (i.price||0)*(i.stock||0);
             const stockClass = (i.stock||0)<10?'badge-danger':(i.stock||0)<20?'badge-warning':'badge-success';
+            
+            let taxHtml = '';
+            if (taxCfg.taxes && taxCfg.taxes.length > 0) {
+              taxHtml = taxCfg.taxes.map(t => {
+                const rateText = t.taxType === 'percentage' ? `${t.rate}%` : `$${t.rate}`;
+                return `<span class="badge badge-info" style="margin-right:2px;font-size:10px">${t.name}: ${rateText}</span>`;
+              }).join('');
+            } else {
+              const rate = i.taxCategory==='luxury' ? taxCfg.luxury : taxCfg.normal;
+              const badgeClass = i.taxCategory==='luxury' ? 'badge-purple' : 'badge-info';
+              taxHtml = `<span class="badge ${badgeClass}">GST: ${rate}%</span>`;
+            }
+
             return `<tr>
               <td data-label="Item"><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
               <td data-label="Category"><span class="badge badge-brand">${i.category}</span></td>
               <td data-label="Price">${formatCurrency(i.price||0)}</td>
               <td data-label="Stock"><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
               <td data-label="Value"><strong>${formatCurrency(val)}</strong></td>
-              <td data-label="Tax"><span class="badge ${i.taxCategory==='luxury'?'badge-purple':'badge-info'}">${rate}%</span></td>
+              <td data-label="Tax"><div style="display:flex;flex-wrap:wrap;gap:2px">${taxHtml}</div></td>
               <td data-label="Status"><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
             </tr>`;
           }).join('')}

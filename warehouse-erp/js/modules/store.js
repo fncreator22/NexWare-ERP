@@ -23,6 +23,7 @@ function getDefaultData() {
     notifications: [],
     taxConfig,
     subscription,
+    theme: 'enterprise',
     currentUserId: null,
     currentWarehouseId: null,
   };
@@ -187,8 +188,8 @@ export async function syncWithBackend() {
       _store.bills = [];
     }
 
-    // 5. Fetch Audit Logs
-    const auditRes = await apiFetch('/audit-logs/');
+    // 5. Fetch Audit Logs (dashboard preview only)
+    const auditRes = await apiFetch('/audit-logs/?limit=10');
     if (auditRes && auditRes.success && Array.isArray(auditRes.data)) {
       _store.auditLogs = normalize(auditRes.data);
     } else {
@@ -266,6 +267,14 @@ export async function logout() {
   const s = getStore();
   s.currentUserId = null;
   saveStore();
+  if (ws) {
+    try {
+      ws.close();
+    } catch (e) {
+      console.error('[WebSocket] Error closing socket:', e);
+    }
+    ws = null;
+  }
 }
 
 export async function signup(name, email, password) {
@@ -481,61 +490,79 @@ export function getItems(warehouseId) {
   return s.items.filter(i => i.warehouseId === u.warehouseId);
 }
 
-export function createItem(data) {
-  const s = getStore();
+export async function createItem(data) {
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null; // Employees cannot create items
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
+  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
   // SKU Uniqueness check to prevent tracking errors
+  const s = getStore();
   if (data.sku && s.items.find(i => i.sku === data.sku)) {
     return { error: 'SKU already exists in the system' };
   }
 
-  const id = 'item' + Date.now();
-  const item = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId };
-  s.items.push(item);
+  const res = await apiFetch('/items/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
 
-  saveStore();
-  addAuditLog('item_create', `Item created: ${data.name} (SKU: ${data.sku})`, s.currentUserId);
-  addNotification('item_create', 'New Item Added', `${data.name} was added to inventory`, '/items', data.warehouseId);
-  return item;
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  await syncWithBackend();
+  return res.data;
 }
 
-export function updateItem(id, data) {
+export async function updateItem(id, data) {
   const s = getStore();
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
 
   const idx = s.items.findIndex(i => i.id === id);
-  if (idx === -1) return null;
+  if (idx === -1) return { error: 'Item not found' };
   const target = s.items[idx];
 
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return null;
-  if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
+  if (data.warehouseId && u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
   // SKU Uniqueness check for updates
   if (data.sku && s.items.find(i => i.sku === data.sku && i.id !== id)) {
     return { error: 'SKU already exists' };
   }
 
-  s.items[idx] = { ...s.items[idx], ...data, updatedAt: new Date().toISOString() };
-  saveStore();
-  addNotification('item_update', 'Inventory Updated', `${s.items[idx].name} stock or details updated`, '/items', s.items[idx].warehouseId);
-  return s.items[idx];
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  await syncWithBackend();
+  return res.data;
 }
 
-export function deleteItem(id) {
+export async function deleteItem(id) {
   const s = getStore();
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
 
   const target = s.items.find(i => i.id === id);
-  if (!target) return;
-  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return;
+  if (!target) return { error: 'Item not found' };
+  if (u.role !== 'super_admin' && target.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
-  s.items = s.items.filter(i => i.id !== id);
-  saveStore();
+  const res = await apiFetch(`/items/${id}`, {
+    method: 'DELETE'
+  });
+
+  if (res.error) {
+    return { error: res.error };
+  }
+
+  await syncWithBackend();
+  return { success: true };
 }
 
 // ---- TABLES ----
@@ -676,53 +703,57 @@ export function getBills(warehouseId) {
   );
 }
 
-export function createBill(data) {
-  const s = getStore();
+export async function createBill(data) {
   const u = getCurrentUser();
-  if (!u || u.role === 'employee') return null;
-  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return null;
+  if (!u || u.role === 'employee') return { error: 'Unauthorized' };
+  if (u.role !== 'super_admin' && data.warehouseId !== u.warehouseId) return { error: 'Unauthorized' };
 
-  // Manual Inventory Synchronization: Decrement stock for billed items
-  if (data.items && Array.isArray(data.items)) {
-    data.items.forEach(billItem => {
-      const itemIdx = s.items.findIndex(i => i.id === billItem.id);
-      if (itemIdx !== -1) {
-        s.items[itemIdx].stock = Math.max(0, (s.items[itemIdx].stock || 0) - billItem.qty);
-      }
-    });
+  const res = await apiFetch('/billing/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    return { error: res.error };
   }
 
-  const id = 'bill' + Date.now();
-  // Regional Tax Snapshot: Use warehouse-specific tax config if available
-  const taxConfig = getTaxConfig(data.warehouseId);
-  const bill = { 
-    id, ...data, 
-    taxConfigSnapshot: { ...taxConfig }, // Snapshot for record integrity
-    createdAt: new Date().toISOString(), 
-    createdBy: s.currentUserId, 
-    billNo: 'INV-' + String(s.bills.length + 1).padStart(4, '0') 
-  };
-  s.bills.push(bill);
-
-  saveStore();
-  addAuditLog('bill_create', `Bill generated: ${bill.billNo} — $${data.total}`, s.currentUserId);
-  addNotification('bill_create', 'New Invoice Generated', `${bill.billNo} for ${data.customer} — $${data.total}`, '/billing', data.warehouseId);
-  return bill;
+  await syncWithBackend();
+  return res.data;
 }
 
 // ---- AUDIT LOGS ----
 export function addAuditLog(action, description, userId) {
   const s = getStore();
   const u = s.users.find(u => u.id === userId);
-  s.auditLogs.unshift({
+  const timestamp = new Date().toISOString();
+  
+  const localLog = {
     id: 'log' + Date.now(), action, description,
     userId, userName: u ? u.name : 'System',
     warehouseId: u ? u.warehouseId : null,
-    timestamp: new Date().toISOString()
-  });
-  // Increased limit for enterprise compliance and historical tracking
+    timestamp
+  };
+  s.auditLogs.unshift(localLog);
   if (s.auditLogs.length > 5000) s.auditLogs = s.auditLogs.slice(0, 5000);
   saveStore();
+
+  // Async push to backend in background (don't block caller)
+  if (localStorage.getItem('access_token')) {
+    apiFetch('/audit-logs/', {
+      method: 'POST',
+      body: JSON.stringify({
+        action,
+        description,
+        warehouseId: u ? u.warehouseId : null
+      })
+    }).then(res => {
+      if (res && res.success && res.data) {
+        localLog.id = res.data.id;
+        localLog.timestamp = res.data.timestamp;
+        saveStore();
+      }
+    }).catch(err => console.warn('[AuditLog] Failed background sync:', err));
+  }
 }
 
 export function getAuditLogs() {
@@ -942,6 +973,14 @@ export function connectWebSocket() {
     console.error('[WebSocket] Error:', err);
     ws.close();
   };
+}
+
+export function sendWebSocketMessage(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+    return true;
+  }
+  return false;
 }
 
 // ---- CURRENCY HELPERS ----
