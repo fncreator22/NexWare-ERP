@@ -1006,6 +1006,10 @@ export function printBill(billId) {
   const invoiceHTML = buildInvoiceHTML(bill, wh, 'print');
 
   const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) {
+    showToast('Popup Blocked', 'Please allow popups in your browser settings to print/export invoices.', 'error');
+    return;
+  }
   win.document.write(`<!DOCTYPE html>
 <html>
 <head>

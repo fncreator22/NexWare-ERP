@@ -444,32 +444,128 @@ export function getSvgIcon(name, size = 20) {
     location:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
     mail:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
     phone:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+    // Sidebar panel collapse/expand icons
+    panel_left:        `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
+    panel_left_open:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="14 9 17 12 14 15"/></svg>`,
+    panel_left_close:  `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="17 9 14 12 17 15"/></svg>`,
+    collapse:          `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="6 9 3 12 6 15"/></svg>`,
   };
   return icons[name] || `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
 }
 
 export function applyTheme(themeName) {
   const root = document.documentElement;
+  // Remove all theme classes first
+  root.classList.remove('theme-classic', 'theme-light', 'theme-dark');
   if (themeName === 'classic') {
     root.classList.add('theme-classic');
+  } else if (themeName === 'light') {
+    root.classList.add('theme-light');
+  } else if (themeName === 'dark') {
+    root.classList.add('theme-dark');
+  }
+  // Default 'enterprise' = no class (root vars apply)
+  // Persist for instant load
+  try { localStorage.setItem('wareops_theme', themeName || 'enterprise'); } catch {}
+}
+
+/**
+ * renderAvatar — renders a user avatar as either an <img> (photo) or styled initials span.
+ * When avatar is a data URL or http URL  → renders <img> tag
+ * When avatar is a string of 1-3 chars (initials) → renders styled initials span
+ * When avatar is empty → returns empty string
+ */
+export function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
+  if (!avatar) return '';
+  // Check for image URLs (data URI or http/https)
+  if (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://')) {
+    return `<img src="${avatar}" style="${sizeStyle}" alt="Avatar" onerror="this.style.display='none'" />`;
+  }
+  // Treat as initials string — render with background transparent (the container provides gradient)
+  return `<span style="font-size:inherit;font-weight:700;color:inherit;line-height:1;">${avatar}</span>`;
+}
+
+/**
+ * Centralized entity image resolver.
+ * Renders an image if it exists, otherwise renders initials or dynamic icons.
+ * @param {string} src - The image URI or base64 data string
+ * @param {string} type - Entity type ('workforce' | 'profile' | 'warehouse' | 'inventory' | 'reports' | 'tables' | 'roles')
+ * @param {string} fallbackText - Initials or name to generate initials, or icon key
+ * @param {number} size - Square/diameter size in pixels (default 40)
+ * @param {string} extraStyle - Inline styles to merge
+ * @returns {string} HTML string
+ */
+export function renderEntityImage(src, type, fallbackText = '', size = 40, extraStyle = '') {
+  const isUrl = src && (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://'));
+  const s = size;
+
+  if (type === 'workforce' || type === 'profile') {
+    // Circular user avatar
+    const initials = fallbackText.length <= 3 && !fallbackText.startsWith('data:') && !fallbackText.startsWith('http')
+      ? fallbackText
+      : (fallbackText ? fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?');
+    const bgStyle = isUrl ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);';
+    
+    return `<div class="entity-avatar-container" style="width:${s}px;height:${s}px;border-radius:50%;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="Avatar" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
+    </div>`;
+  } else if (type === 'warehouse') {
+    // Square card / logo layout
+    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
+    
+    // Dynamic icon matching from renderWarehouseLogo
+    const defaultIcon = `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
+    const icons = {
+      'icon:industrial': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
+      'icon:distribution': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+      'icon:retail': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+      'icon:office': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
+      'icon:tech': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
+    };
+    
+    let fallbackIcon = defaultIcon;
+    if (fallbackText && fallbackText.startsWith('icon:')) {
+      fallbackIcon = icons[fallbackText.toLowerCase()] || defaultIcon;
+    }
+
+    return `<div class="entity-logo-container" style="width:${s}px;height:${s}px;border-radius:8px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="Logo" onerror="this.remove();this.parentElement.innerHTML='${fallbackIcon}'" />` : fallbackIcon}
+    </div>`;
+  } else if (type === 'inventory') {
+    // Square item cards / boxes
+    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
+    const boxIcon = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
+
+    return `<div class="entity-item-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Item" onerror="this.parentElement.style.background='var(--bg-elevated)';this.remove();this.parentElement.innerHTML='${boxIcon}'" />` : boxIcon}
+    </div>`;
   } else {
-    root.classList.remove('theme-classic');
+    // Reports, Tables, Role management - general fallback rendering
+    const initials = fallbackText.length <= 3 
+      ? fallbackText 
+      : fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--gradient-brand);';
+
+    return `<div class="entity-general-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Entity" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
+    </div>`;
   }
 }
 
-export function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
-  if (avatar && (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://'))) {
-    return `<img src="${avatar}" style="${sizeStyle}" />`;
-  }
-  return avatar || '';
+/**
+ * renderAvatarContainer — renders a full avatar with container.
+ * Handles both image and initials, removing gradient when image is present.
+ */
+export function renderAvatarContainer(avatar, name = '', size = 36, extraStyle = '') {
+  return renderEntityImage(avatar, 'workforce', name, size, extraStyle);
 }
 
 export function renderWarehouseLogo(logo, size = 24) {
-  if (logo && logo.startsWith('data:image/')) {
-    return `<img src="${logo}" style="width:${size}px;height:${size}px;object-fit:contain;border-radius:6px;display:inline-block;vertical-align:middle" />`;
-  }
-  
   const s = size;
+  // Handle image uploads (data URIs or external URLs)
+  if (logo && (logo.startsWith('data:image/') || logo.startsWith('http://') || logo.startsWith('https://'))) {
+    return `<img src="${logo}" style="width:${s}px;height:${s}px;object-fit:cover;border-radius:6px;display:block;" alt="Warehouse logo" onerror="this.style.display='none'" />`;
+  }
   const icons = {
     'icon:industrial': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
     'icon:distribution': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
@@ -490,6 +586,7 @@ export function renderWarehouseLogo(logo, size = 24) {
 // ---- INLINE BARCODE GENERATOR (Code128 subset B) ----
 // Generates a standalone SVG barcode — no HTTP, no external library, works in print.
 export function generateBarcodeSVG(text, opts = {}) {
+  text = String(text || 'EMPTY');
   const barW   = opts.barWidth  || 1.4;
   const height = opts.height    || 38;
   const quiet  = opts.quiet     || 8;

@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, getAllUsers, getBills, getPlanWarehouseLimit, getSubscription, addNotification, getItems, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wh_currentView = 'grid';
@@ -159,7 +159,7 @@ function renderWarehouseGrid(whs, allUsers) {
       return `
       <div class="warehouse-card animate-slideUp" data-wh-id="${wh.id}" style="cursor:pointer" title="Click to view warehouse dashboard">
         <div class="warehouse-card-top">
-          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0">${renderWarehouseLogo(wh.logo, 24)}</div>
+          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0;overflow:hidden">${renderWarehouseLogo(wh.logo, 40)}</div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             <span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'} badge-dot"> ${wh.status}</span>
             <div style="display:flex;gap:4px">
@@ -222,7 +222,7 @@ function renderWarehouseTable(whs, allUsers) {
               const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
               return `
                 <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
-                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:6px;width:32px;height:32px;overflow:hidden">${renderWarehouseLogo(wh.logo, 20)}</div></td>
+                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:6px;width:32px;height:32px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 32)}</div></td>
                   <td data-label="Name">
                     <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
                     <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('location', 11)} ${wh.address}</div>
@@ -558,7 +558,7 @@ export function renderWarehouseDetail(whId) {
       <div class="page-header">
         <div class="page-header-left">
           <div style="display:flex;align-items:center;gap:14px">
-            <div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 36)}</div>
+            <div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 60)}</div>
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
                 <h1 class="page-title" style="margin:0">${wh.name}</h1>
@@ -571,8 +571,7 @@ export function renderWarehouseDetail(whId) {
         <div class="page-header-actions" style="align-items:center">
           ${wh.barcode ? `
           <div style="display:flex;align-items:center;gap:8px;background:white;padding:4px 8px;border:1px solid var(--border-default);border-radius:6px;margin-right:12px;box-shadow:var(--shadow-sm)">
-            <img src="http://localhost:8000/api/v1/registry/barcode?code=${wh.barcode}" style="height:28px" />
-            <div style="font-family:var(--font-mono);font-size:9px;color:#1f2937;font-weight:700">${wh.barcode}</div>
+            ${generateBarcodeSVG(wh.barcode, { height: 28, color: '#111', showLabel: true })}
           </div>
           ` : ''}
           ${isSA?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/warehouses'">← Warehouses</button>`:''}

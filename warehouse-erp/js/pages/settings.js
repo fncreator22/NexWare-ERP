@@ -166,10 +166,31 @@ export function renderSettings() {
           <div class="form-group">
             <label class="form-label">Active Theme</label>
             <select id="s-theme" class="form-control">
-              <option value="enterprise" ${getStore().theme==='enterprise'?'selected':''}>Enterprise Black & White (Default)</option>
-              <option value="classic" ${getStore().theme==='classic'?'selected':''}>Classic Space Neon (Optional)</option>
+              <option value="enterprise" ${getStore().theme==='enterprise'||!getStore().theme?'selected':''}>Grayscale B&W (Default)</option>
+              <option value="dark"       ${getStore().theme==='dark'?'selected':''}>Slate-Blue Premium Dark</option>
+              <option value="light"      ${getStore().theme==='light'?'selected':''}>Enterprise Light</option>
+              <option value="classic"    ${getStore().theme==='classic'?'selected':''}>Classic Space Neon</option>
             </select>
-            <div class="form-hint">Applies theme styling immediately across all dashboards, ledgers, and pages.</div>
+            <div class="form-hint">Theme is applied immediately across all pages. Changes persist after saving.</div>
+          </div>
+          <!-- Live theme preview swatches -->
+          <div style="display:flex;gap:8px;margin-bottom:16px;" id="theme-swatches">
+            <div data-theme="enterprise" class="theme-swatch ${!getStore().theme||getStore().theme==='enterprise'?'swatch-active':''}" title="Grayscale B&W"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#09090b,#18181b);border:2px solid ${!getStore().theme||getStore().theme==='enterprise'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#a1a1aa;font-weight:700">B&W</div>
+            </div>
+            <div data-theme="dark" class="theme-swatch ${getStore().theme==='dark'?'swatch-active':''}" title="Slate-Blue Dark"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#0b0f19,#1e293b);border:2px solid ${getStore().theme==='dark'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#60a5fa;font-weight:700">DARK</div>
+            </div>
+            <div data-theme="light" class="theme-swatch ${getStore().theme==='light'?'swatch-active':''}" title="Enterprise Light"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);border:2px solid ${getStore().theme==='light'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#475569;font-weight:700">LIGHT</div>
+            </div>
+            <div data-theme="classic" class="theme-swatch ${getStore().theme==='classic'?'swatch-active':''}" title="Classic Neon"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);border:2px solid ${getStore().theme==='classic'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:white;font-weight:700">NEON</div>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
             <button class="btn btn-primary btn-sm" id="save-theme-btn" style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Theme</button>
@@ -238,6 +259,33 @@ export function renderSettings() {
             ${getSvgIcon('trash', 16)} Reset System Data
           </button>
         </div>
+
+        ${isSuperAdmin ? `
+        <!-- Role Manager Card -->
+        <div class="card col-6" style="border-color:rgba(99,102,241,0.25);background:rgba(99,102,241,0.04)">
+          <div class="card-header">
+            <div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">
+                ${getSvgIcon('workforce', 16)}
+                Role Manager
+                <span class="badge badge-success" style="font-size:10px">Super Admin</span>
+              </div>
+              <div class="card-subtitle">Create custom roles with granular permission matrices</div>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">
+            Define custom roles, configure module-level permissions (View, Create, Edit, Delete, Export, Import, Manage), and assign them to users. Built-in roles remain protected.
+          </p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="location.hash='#/roles'" style="display:flex;align-items:center;gap:6px">
+              ${getSvgIcon('plus', 14)} Create / Edit Roles
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="display:flex;align-items:center;gap:6px">
+              ${getSvgIcon('workforce', 14)} Manage Users
+            </button>
+          </div>
+        </div>
+        ` : ''}
       </div>
     </div>
   `);
@@ -440,18 +488,37 @@ export function renderSettings() {
     if (msg) { msg.style.display = 'inline-flex'; setTimeout(() => msg.style.display = 'none', 3000); }
   });
 
-  // THEME SAVE — actually persist to store
+  // THEME SAVE — persist to store, apply globally
   document.getElementById('save-theme-btn')?.addEventListener('click', () => {
     const selectedTheme = document.getElementById('s-theme').value;
     const s = getStore();
     s.theme = selectedTheme;
     saveStore();
     applyTheme(selectedTheme);
-    showToast('Theme updated', `Visual theme set to: ${selectedTheme === 'classic' ? 'Classic Space Neon' : 'Enterprise Black & White'}`, 'success');
-    
+    const themeNames = { enterprise: 'Grayscale B&W', dark: 'Slate-Blue Premium Dark', light: 'Enterprise Light', classic: 'Classic Space Neon' };
+    showToast('Theme updated', `Visual theme set to: ${themeNames[selectedTheme] || selectedTheme}`, 'success');
     // Show inline confirmation
     const msg = document.getElementById('theme-saved-msg');
     if (msg) { msg.style.display = 'inline-flex'; setTimeout(() => msg.style.display = 'none', 3000); }
+  });
+
+  // THEME SWATCHES — live preview on click
+  document.querySelectorAll('.theme-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const t = sw.dataset.theme;
+      document.getElementById('s-theme').value = t;
+      applyTheme(t);
+      document.querySelectorAll('.theme-swatch').forEach(s => s.style.borderColor = 'var(--border-default)');
+      sw.style.borderColor = 'var(--accent-emerald)';
+    });
+  });
+
+  // Theme select dropdown change — live preview
+  document.getElementById('s-theme')?.addEventListener('change', (e) => {
+    applyTheme(e.target.value);
+    document.querySelectorAll('.theme-swatch').forEach(s => {
+      s.style.borderColor = s.dataset.theme === e.target.value ? 'var(--accent-emerald)' : 'var(--border-default)';
+    });
   });
 
   // Notification toggles

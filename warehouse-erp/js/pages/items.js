@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig, syncWithBackend } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce, getSvgIcon } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce, getSvgIcon, renderEntityImage, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let it_searchQ = '';
@@ -11,6 +11,7 @@ let categoryFilter = '';
 let it_whFilter = '';
 let it_page = 1;
 const it_PER_PAGE = 10;
+let it_layout = localStorage.getItem('wareops_items_layout') || 'table';
 
 const CATEGORIES = ['Electronics','Furniture','Apparel','Food & Beverage','Tools','Medical','Automotive','Books','Sports','Other'];
 
@@ -58,6 +59,12 @@ export function renderItems() {
             <option value="">All Warehouses</option>
             ${whs.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
           </select>` : ''}
+          <!-- View Mode Toggle -->
+          <div class="view-mode-toggle" id="it-view-toggle" style="margin-left: 8px;">
+            <button class="view-mode-btn ${it_layout==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
+            <button class="view-mode-btn ${it_layout==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
+            <button class="view-mode-btn ${it_layout==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
+          </div>
         </div>
       </div>
 
@@ -81,7 +88,21 @@ export function renderItems() {
   document.getElementById('cat-filter')?.addEventListener('change', e => { categoryFilter = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
 
+  // View mode buttons
+  document.getElementById('it-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      it_layout = btn.dataset.view;
+      localStorage.setItem('wareops_items_layout', it_layout);
+      document.querySelectorAll('#it-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === it_layout));
+      renderItemsTable();
+    });
+  });
+
   window._showItemModal = (item) => showItemModal(item);
+  window._showItemCardModalById = (id) => {
+    const item = getItems().find(i => i.id === id);
+    if (item) showItemCardModal(item);
+  };
   
   // Realtime WebSocket auto-refresh for inventory
   window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
@@ -127,6 +148,18 @@ function renderItemsTable() {
     return;
   }
 
+  if (it_layout === 'card') {
+    renderItemsCardView(it_pageItems, whs, canEdit, container, start, total, it_pages);
+  } else if (it_layout === 'grid') {
+    renderItemsGridView(it_pageItems, whs, canEdit, container, start, total, it_pages);
+  } else {
+    renderItemsTableView(it_pageItems, whs, canEdit, container, start, total, it_pages);
+  }
+
+  bindItemsEvents(container, it_pages);
+}
+
+function renderItemsTableView(pageItems, whs, canEdit, container, start, total, it_pages) {
   container.innerHTML = `
     <div class="table-wrap">
       <table>
@@ -136,13 +169,21 @@ function renderItemsTable() {
           ${canEdit ? '<th>Actions</th>' : ''}
         </tr></thead>
         <tbody>
-          ${it_pageItems.map(item => {
+          ${pageItems.map(item => {
             const wh = whs.find(w=>w.id===item.warehouseId);
             const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+            const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
             return `<tr>
               <td data-label="Item">
-                <div class="primary-cell clickable-item-name" data-iid="${item.id}" style="cursor:pointer;color:var(--text-brand);text-decoration:underline;text-underline-offset:4px;" title="View Product Card">${item.name}</div>
-                <div class="sub-cell">Added ${formatDate(item.createdAt)}</div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div class="clickable-item-name" data-iid="${item.id}" style="cursor:pointer;flex-shrink:0" title="View Product Card">
+                    ${renderEntityImage(itemImg, 'inventory', item.name, 36)}
+                  </div>
+                  <div>
+                    <div class="primary-cell clickable-item-name" data-iid="${item.id}" style="cursor:pointer;color:var(--text-brand);text-decoration:underline;text-underline-offset:4px;" title="View Product Card">${item.name}</div>
+                    <div class="sub-cell">Added ${formatDate(item.createdAt)}</div>
+                  </div>
+                </div>
               </td>
               <td data-label="SKU"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">${item.sku||'—'}</span></td>
               <td data-label="Category"><span class="badge badge-brand">${item.category}</span></td>
@@ -160,7 +201,7 @@ function renderItemsTable() {
         </tbody>
       </table>
       <div class="table-pagination">
-        <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total}</div>
+        <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total} items</div>
         <div class="pagination-controls">
           <button class="it_page-btn" id="ip-prev" ${it_page<=1?'disabled':''}>‹</button>
           ${Array.from({length:it_pages},(_,i)=>`<button class="it_page-btn ${it_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
@@ -169,13 +210,147 @@ function renderItemsTable() {
       </div>
     </div>
   `;
+}
+
+function renderItemsGridView(pageItems, whs, canEdit, container, start, total, it_pages) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:16px">
+      ${pageItems.map(item => {
+        const wh = whs.find(w=>w.id===item.warehouseId);
+        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
+        return `
+          <div class="card clickable-card" data-iid="${item.id}" style="padding:16px;display:flex;flex-direction:column;justify-content:space-between;transition:transform 0.15s,box-shadow 0.15s;cursor:pointer" 
+               onmouseenter="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow-lg)'" 
+               onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div>
+              <div style="display:flex;justify-content:center;margin-bottom:12px;background:var(--bg-elevated);border-radius:6px;padding:8px">
+                ${renderEntityImage(itemImg, 'inventory', item.name, 72)}
+              </div>
+              <div style="font-size:14px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.name}</div>
+              <div style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted);margin:4px 0">${item.sku||'—'}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+                <strong style="color:var(--text-primary);font-size:14px">${formatCurrency(item.price||0)}</strong>
+                <span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span>
+              </div>
+            </div>
+            <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center">
+              <span class="badge badge-brand" style="font-size:10px">${item.category}</span>
+              <div style="display:flex;gap:6px">
+                <button class="action-btn view profile-btn" data-iid="${item.id}" title="View Details" style="padding: 4px;">${getSvgIcon('view', 12)}</button>
+                ${canEdit ? `
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="table-pagination" style="margin-top: 16px;">
+      <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total} items</div>
+      <div class="pagination-controls">
+        <button class="it_page-btn" id="ip-prev" ${it_page<=1?'disabled':''}>‹</button>
+        ${Array.from({length:it_pages},(_,i)=>`<button class="it_page-btn ${it_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
+        <button class="it_page-btn" id="ip-next" ${it_page>=it_pages?'disabled':''}>›</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderItemsCardView(pageItems, whs, canEdit, container, start, total, it_pages) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin-bottom:16px">
+      ${pageItems.map(item => {
+        const wh = whs.find(w=>w.id===item.warehouseId);
+        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
+        const barcodeStr = item.barcode || item.sku || `ITEM-${item.id.slice(-6)}`;
+        const barcodeSVG = generateBarcodeSVG(barcodeStr, { height: 30, showLabel: false });
+        return `
+          <div class="card clickable-card" data-iid="${item.id}" style="padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;transition:transform 0.15s,box-shadow 0.15s" 
+               onmouseenter="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow-lg)'" 
+               onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div>
+              <div style="height: 180px; width: 100%; overflow: hidden; position: relative; background: var(--bg-elevated); display: flex; align-items: center; justify-content: center;">
+                ${itemImg ? `<img src="${itemImg}" style="width: 100%; height: 100%; object-fit: cover;" alt="${item.name}" />` : `<div style="color: var(--text-muted);">${getSvgIcon('items', 48)}</div>`}
+              </div>
+              <div style="padding: 16px 16px 0 16px;">
+                <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.name}</div>
+                <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:12px">${item.sku||'—'}</div>
+                
+                <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border-subtle);padding-top:10px;">
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Warehouse</span>
+                    <strong style="color:var(--text-primary)">${wh?.name || '—'}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Category</span>
+                    <strong style="color:var(--text-primary)">${item.category}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Price</span>
+                    <strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Stock Status</span>
+                    <span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div style="padding: 12px 16px 16px 16px;">
+              <!-- Barcode Display -->
+              <div style="background:white;border-radius:4px;border:1px solid var(--border-subtle);padding:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:12px;">
+                <div style="width:100%;display:flex;justify-content:center;mix-blend-mode:multiply;">
+                  ${barcodeSVG}
+                </div>
+                <span style="font-family:var(--font-mono);font-size:9px;color:#555;margin-top:2px;letter-spacing:1px">${barcodeStr}</span>
+              </div>
+              
+              <!-- Actions -->
+              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-subtle);padding-top:10px;">
+                <button class="btn btn-secondary btn-xs clickable-card" data-iid="${item.id}" style="font-size:11px;">${getSvgIcon('view', 12)} View Details</button>
+                <div style="display:flex;gap:6px">
+                  ${canEdit ? `
+                    <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                    <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="table-pagination" style="margin-top: 16px;">
+      <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total} items</div>
+      <div class="pagination-controls">
+        <button class="it_page-btn" id="ip-prev" ${it_page<=1?'disabled':''}>‹</button>
+        ${Array.from({length:it_pages},(_,i)=>`<button class="it_page-btn ${it_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
+        <button class="it_page-btn" id="ip-next" ${it_page>=it_pages?'disabled':''}>›</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindItemsEvents(container, it_pages) {
+  const user = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   if (canEdit) {
-    container.querySelectorAll('.action-btn.edit[data-iid]').forEach(btn => {
-      btn.addEventListener('click', () => { const item = getItems().find(i=>i.id===btn.dataset.iid); showItemModal(item); });
+    container.querySelectorAll('.edit[data-iid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = getItems().find(i=>i.id===btn.dataset.iid);
+        if (item) showItemModal(item);
+      });
     });
-    container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
-      btn.addEventListener('click', async () => {
+    container.querySelectorAll('.delete[data-iid]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
         if (ok) {
           const res = await deleteItem(btn.dataset.iid);
@@ -190,15 +365,38 @@ function renderItemsTable() {
       });
     });
   }
-  container.querySelectorAll('.clickable-item-name[data-iid]').forEach(el => {
-    el.addEventListener('click', () => {
+
+  container.querySelectorAll('.clickable-item-name[data-iid], .clickable-card[data-iid]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (e.target.closest('.edit') || e.target.closest('.delete') || e.target.closest('.btn')) {
+        return;
+      }
       const item = getItems().find(i => i.id === el.dataset.iid);
       if (item) showItemCardModal(item);
     });
   });
-  container.querySelectorAll('.it_page-btn[data-pg]').forEach(btn => { btn.addEventListener('click', () => { it_page=parseInt(btn.dataset.pg); renderItemsTable(); }); });
-  container.querySelector('#ip-prev')?.addEventListener('click', () => { if(it_page>1){it_page--;renderItemsTable();} });
-  container.querySelector('#ip-next')?.addEventListener('click', () => { if(it_page<it_pages){it_page++;renderItemsTable();} });
+
+  container.querySelectorAll('.it_page-btn[data-pg]').forEach(btn => { 
+    btn.addEventListener('click', () => { 
+      it_page = parseInt(btn.dataset.pg); 
+      renderItemsTable(); 
+    }); 
+  });
+  
+  container.querySelector('#ip-prev')?.addEventListener('click', () => { 
+    if (it_page > 1) { 
+      it_page--; 
+      renderItemsTable(); 
+    } 
+  });
+  
+  container.querySelector('#ip-next')?.addEventListener('click', () => { 
+    if (it_page < it_pages) { 
+      it_page++; 
+      renderItemsTable(); 
+    } 
+  });
 }
 
 function showItemModal(item) {

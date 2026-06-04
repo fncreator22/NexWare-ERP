@@ -21,6 +21,7 @@ function getDefaultData() {
     items: [],
     auditLogs: [],
     notifications: [],
+    roles: [],            // Custom role definitions
     taxConfig,
     subscription,
     theme: 'enterprise',
@@ -72,6 +73,8 @@ export function getStore() {
         }
       });
     }
+    // Migration: Ensure roles array exists
+    if (!_store.roles) _store.roles = [];
   } catch {
     _store = getDefaultData();
   }
@@ -145,8 +148,11 @@ export async function syncWithBackend() {
     const normalize = (items) => {
       if (!Array.isArray(items)) return [];
       return items.map(item => {
-        if (item && item._id && !item.id) {
-          item.id = item._id;
+        if (item) {
+          if (item._id && !item.id) item.id = item._id;
+          if (item.page_order && !item.pageOrder) item.pageOrder = item.page_order;
+          if (item.module_visibility && !item.moduleVisibility) item.moduleVisibility = item.module_visibility;
+          if (item.feature_access && !item.featureAccess) item.featureAccess = item.feature_access;
         }
         return item;
       });
@@ -202,6 +208,14 @@ export async function syncWithBackend() {
       _store.notifications = normalize(notifRes.data);
     } else {
       _store.notifications = [];
+    }
+
+    // 7. Fetch Roles
+    const rolesRes = await apiFetch('/roles/');
+    if (rolesRes && rolesRes.success && Array.isArray(rolesRes.data)) {
+      _store.roles = normalize(rolesRes.data);
+    } else {
+      _store.roles = [];
     }
 
     saveStore();
@@ -304,7 +318,12 @@ export function getWarehouses() {
   if (u.role === 'super_admin') {
     whs = s.warehouses.filter(w => w.ownerId === u.id);
   } else {
-    whs = s.warehouses.filter(w => w.id === u.warehouseId);
+    const allowedIds = new Set();
+    if (u.warehouseId) allowedIds.add(u.warehouseId);
+    if (Array.isArray(u.warehouseOverrides)) {
+      u.warehouseOverrides.forEach(id => allowedIds.add(id));
+    }
+    whs = s.warehouses.filter(w => allowedIds.has(w.id));
   }
   
   // Dynamically compute math/statistics for true global synchronization
@@ -483,11 +502,8 @@ export function getItems(warehouseId) {
   if (warehouseId) return s.items.filter(i => i.warehouseId === warehouseId);
   const u = getCurrentUser();
   if (!u) return [];
-  if (u.role === 'super_admin') {
-    const myWhs = getWarehouses().map(w => w.id);
-    return s.items.filter(i => myWhs.includes(i.warehouseId));
-  }
-  return s.items.filter(i => i.warehouseId === u.warehouseId);
+  const allowedWhIds = getWarehouses().map(w => w.id);
+  return s.items.filter(i => allowedWhIds.includes(i.warehouseId));
 }
 
 export async function createItem(data) {
@@ -571,11 +587,12 @@ export function getTables(warehouseId) {
   const u = getCurrentUser();
   if (!u) return [];
   let tables = s.tables;
+  const allowedWhIds = getWarehouses().map(w => w.id);
   if (u.role === 'super_admin') {
-    const myWhs = getWarehouses().map(w => w.id);
-    tables = tables.filter(t => !t.warehouseId || myWhs.includes(t.warehouseId));
+    tables = tables.filter(t => !t.warehouseId || allowedWhIds.includes(t.warehouseId));
   } else {
-    tables = tables.filter(t => t.warehouseId === u.warehouseId);
+    const allowedTableIds = new Set(u.tableOverrides || []);
+    tables = tables.filter(t => allowedWhIds.includes(t.warehouseId) || allowedTableIds.has(t.id));
   }
   if (warehouseId) tables = tables.filter(t => t.warehouseId === warehouseId);
   return tables;
@@ -681,9 +698,9 @@ export function getBills(warehouseId) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u) return [];
+  const allowedWhIds = getWarehouses().map(w => w.id);
   if (u.role === 'super_admin') {
-    const myWhs = getWarehouses().map(w => w.id);
-    const bills = s.bills.filter(b => myWhs.includes(b.warehouseId));
+    const bills = s.bills.filter(b => allowedWhIds.includes(b.warehouseId));
     if (warehouseId) return bills.filter(b => b.warehouseId === warehouseId);
     return bills;
   }
@@ -691,16 +708,18 @@ export function getBills(warehouseId) {
   const levels = { employee: 1, staff: 2, manager: 3, admin: 4, super_admin: 5 };
   const myLevel = levels[u.role] || 1;
   const visibleUsers = s.users.filter(usr => 
-    usr.warehouseId === u.warehouseId && 
+    allowedWhIds.includes(usr.warehouseId) && 
     (levels[usr.role] || 1) <= myLevel
   ).map(usr => usr.id);
   
   if (!visibleUsers.includes(u.id)) visibleUsers.push(u.id);
 
-  return s.bills.filter(b => 
-    b.warehouseId === u.warehouseId && 
+  let bills = s.bills.filter(b => 
+    allowedWhIds.includes(b.warehouseId) && 
     visibleUsers.includes(b.createdBy)
   );
+  if (warehouseId) bills = bills.filter(b => b.warehouseId === warehouseId);
+  return bills;
 }
 
 export async function createBill(data) {

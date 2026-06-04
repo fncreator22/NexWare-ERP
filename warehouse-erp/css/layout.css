@@ -34,7 +34,7 @@
   white-space: nowrap;
 }
 .sidebar-logo-tagline { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
-.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--space-4) 0; min-height: 0; scrollbar-width: thin; scrollbar-color: rgba(99,102,241,0.3) transparent; }
+.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--space-4) 0; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border-default) transparent; }
 .sidebar-section { margin-bottom: var(--space-2); }
 .sidebar-section-label {
   font-size: 10px; font-weight: 700; color: var(--text-muted);
@@ -49,8 +49,8 @@
   font-size: var(--text-sm); font-weight: 500;
   white-space: nowrap; user-select: none;
 }
-.sidebar-item:hover { background: rgba(99,102,241,0.08); color: var(--text-primary); }
-.sidebar-item.active { background: rgba(99,102,241,0.15); color: var(--text-brand); }
+.sidebar-item:hover { background: var(--glass-bg); color: var(--text-primary); }
+.sidebar-item.active { background: rgba(255,255,255,0.07); color: var(--text-brand); }
 .sidebar-item.active::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
   width: 3px; background: var(--gradient-brand); border-radius: 0 2px 2px 0;
@@ -70,8 +70,10 @@
 .sidebar-user:hover { background: var(--glass-bg); }
 .sidebar-user-avatar {
   width: 36px; height: 36px; border-radius: var(--radius-full);
-  background: var(--gradient-brand); display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: var(--text-sm); color: white; flex-shrink: 0;
+  overflow: hidden;
+  /* Background is set dynamically by renderAvatarContainer — no CSS override here */
 }
 .sidebar-user-info { display: flex; flex-direction: column; min-width: 0; }
 .sidebar-user-name { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -99,6 +101,7 @@
 .breadcrumb-item.current { color: var(--text-primary); font-weight: 600; }
 .breadcrumb-sep { color: var(--text-disabled); font-size: var(--text-xs); }
 .topbar-actions { display: flex; align-items: center; gap: var(--space-3); }
+/* Legacy .topbar-search — kept for responsive.css reference. New search uses .topbar-search-wrapper in components.css */
 .topbar-search {
   display: flex; align-items: center; gap: var(--space-2);
   background: var(--bg-input); border: 1px solid var(--border-default);
@@ -117,7 +120,7 @@
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; color: var(--text-secondary); transition: all var(--transition-fast); position: relative;
 }
-.icon-btn:hover { background: rgba(99,102,241,0.1); border-color: var(--border-brand); color: var(--text-primary); }
+.icon-btn:hover { background: var(--bg-card-hover); border-color: var(--border-strong); color: var(--text-primary); }
 .icon-btn .badge {
   position: absolute; top: -4px; right: -4px; width: 16px; height: 16px;
   background: var(--accent-rose); border-radius: var(--radius-full);
@@ -137,8 +140,11 @@
 .page-header-actions { display: flex; gap: var(--space-3); align-items: center; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .sidebar-overlay {
   display: none; position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
-  z-index: calc(var(--z-sticky) - 1);
+  background: rgba(9,9,11,0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: calc(var(--z-modal) - 1);
+  transition: opacity 0.2s ease;
 }
 .sidebar-overlay.visible { display: block; }
 
@@ -272,3 +278,24 @@
     display: none !important;
   }
 }
+
+/* ============ THEME-SPECIFIC LAYOUT OVERRIDES ============ */
+
+/* Light theme: main content and topbar are properly light */
+:root.theme-light .main-content { background: var(--bg-base); }
+:root.theme-light .page-content { background: var(--bg-base); }
+:root.theme-light .topbar { background: var(--bg-topbar); border-bottom-color: var(--border-default); }
+
+/* Light theme: sidebar stays dark (professional contrast sidebar pattern) */
+:root.theme-light .sidebar { background: var(--bg-sidebar); }
+:root.theme-light .sidebar-item { color: rgba(255,255,255,0.6); }
+:root.theme-light .sidebar-item:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); }
+:root.theme-light .sidebar-item.active { background: rgba(255,255,255,0.15); color: white; }
+:root.theme-light .sidebar-section-label { color: rgba(255,255,255,0.3); }
+:root.theme-light .sidebar-user-name { color: rgba(255,255,255,0.9); }
+:root.theme-light .sidebar-user-role { color: rgba(255,255,255,0.5); }
+:root.theme-light .sidebar-logo-tagline { color: rgba(255,255,255,0.4); }
+
+/* Classic theme: neon active sidebar items */
+:root.theme-classic .sidebar-item:hover { background: rgba(99,102,241,0.1); }
+:root.theme-classic .sidebar-item.active { background: rgba(99,102,241,0.18); }

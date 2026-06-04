@@ -9,6 +9,7 @@ import { navigate } from '../modules/router.js';
 let custSearchQ = '';
 let custPage = 1;
 const custLimit = 10;
+let crm_viewMode = localStorage.getItem('wareops_crm_view') || 'table'; // table | card | grid
 
 export function renderCustomers() {
   const user = getCurrentUser();
@@ -51,6 +52,12 @@ export function renderCustomers() {
           <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
           <input type="text" id="crm-search" placeholder="Search customer name, email, phone, ID..." value="${custSearchQ}" />
         </div>
+        <!-- View Mode Toggle -->
+        <div class="view-mode-toggle" id="crm-view-toggle">
+          <button class="view-mode-btn ${crm_viewMode==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
+          <button class="view-mode-btn ${crm_viewMode==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
+          <button class="view-mode-btn ${crm_viewMode==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
+        </div>
       </div>
 
       <!-- Customer Directory List -->
@@ -72,6 +79,16 @@ export function renderCustomers() {
     custPage = 1;
     fetchAndRenderCustomers();
   }, 300));
+
+  // View mode toggle
+  document.getElementById('crm-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      crm_viewMode = btn.dataset.view;
+      localStorage.setItem('wareops_crm_view', crm_viewMode);
+      document.querySelectorAll('#crm-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === crm_viewMode));
+      fetchAndRenderCustomers();
+    });
+  });
 }
 
 // Simple debounce helper
@@ -130,6 +147,16 @@ async function fetchAndRenderCustomers() {
     return;
   }
 
+  if (crm_viewMode === 'card') {
+    renderCRMCardView(customers, container);
+  } else if (crm_viewMode === 'grid') {
+    renderCRMGridView(customers, container);
+  } else {
+    renderCRMTableView(customers, container, start, total, pages);
+  }
+}
+
+function renderCRMTableView(customers, container, start, total, pages) {
   container.innerHTML = `
     <div class="table-wrap">
       <table>
@@ -313,4 +340,78 @@ function showPortfolioModal(c) {
 
   const modal = createModal({ title: `Customer CRM Portfolio Details`, body, footer });
   modal.el.querySelector('#m-port-close')?.addEventListener('click', modal.close);
+}
+
+function renderCRMCardView(customers, container) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px">
+      ${customers.map(c => {
+        const count = c.invoices ? c.invoices.length : 0;
+        const sales = c.invoices ? c.invoices.reduce((sum, inv) => sum + (inv.total || 0), 0) : 0;
+        const initials = c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+        return `
+          <div class="card" style="padding:0;overflow:hidden;transition:transform 0.15s,box-shadow 0.15s"
+            onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-lg)'"
+            onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div style="height:4px;background:linear-gradient(90deg,var(--accent-indigo),var(--accent-sky))"></div>
+            <div style="padding:18px">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+                <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0">${initials}</div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:var(--text-primary)">${c.name}</div>
+                  <div style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted)">${c.customer_id}</div>
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+                <div>${c.phone || '—'}</div>
+                <div>${c.email || '—'}</div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px solid var(--border-subtle)">
+                <div>
+                  <span class="badge ${count > 1 ? 'badge-success' : 'badge-secondary'}">${count} Checkout${count !== 1 ? 's' : ''}</span>
+                </div>
+                <div style="font-size:13px;font-weight:700;color:var(--text-primary)">$${sales.toFixed(2)}</div>
+              </div>
+              <button class="btn btn-secondary btn-xs view-portfolio-btn" data-id="${c.customer_id}" style="width:100%;margin-top:10px">${getSvgIcon('view', 12)} View Portfolio</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  container.querySelectorAll('.view-portfolio-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cust = customers.find(x => x.customer_id === btn.dataset.id);
+      if (cust) showPortfolioModal(cust);
+    });
+  });
+}
+
+function renderCRMGridView(customers, container) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px">
+      ${customers.map(c => {
+        const count = c.invoices ? c.invoices.length : 0;
+        const sales = c.invoices ? c.invoices.reduce((sum, inv) => sum + (inv.total || 0), 0) : 0;
+        const initials = c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+        return `
+          <div class="card" style="padding:16px;text-align:center;transition:transform 0.15s,box-shadow 0.15s;cursor:pointer"
+            onmouseenter="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow-lg)'"
+            onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:white;margin:0 auto 10px">${initials}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
+            <div style="margin:6px 0"><span class="badge ${count > 1 ? 'badge-success' : 'badge-secondary'}" style="font-size:10px">${count} tx</span></div>
+            <div style="font-size:12px;font-weight:700;color:var(--text-primary)">$${sales.toFixed(0)}</div>
+            <button class="action-btn view view-portfolio-btn" data-id="${c.customer_id}" style="margin-top:8px" title="Portfolio">${getSvgIcon('view', 12)}</button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  container.querySelectorAll('.view-portfolio-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cust = customers.find(x => x.customer_id === btn.dataset.id);
+      if (cust) showPortfolioModal(cust);
+    });
+  });
 }

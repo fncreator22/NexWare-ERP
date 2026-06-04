@@ -341,6 +341,9 @@ export function exportPDF(entity) {
   }
 
   const win = window.open('', '_blank', 'width=1000,height=700');
+  if (!win) {
+    return { error: 'Popup blocked. Please allow popups in your browser settings to export as PDF.' };
+  }
   win.document.write(`<!DOCTYPE html><html><head><title>WareOps Export</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}

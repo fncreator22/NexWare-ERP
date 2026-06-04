@@ -1,96 +1,15 @@
 /**
- * App Shell — Sidebar + Topbar + Main layout (v2)
+ * App Shell — Sidebar + Topbar + Main layout (v3 — Dynamic Nav)
  */
 import { getCurrentUser, logout, getWarehouses, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, getSubscription, getStockHealth } from '../modules/store.js';
 import { navigate, getCurrentPath } from '../modules/router.js';
-import { capitalize, positionFixedElement, getSvgIcon, timeSince, renderAvatar } from '../modules/ui.js';
+import { capitalize, positionFixedElement, getSvgIcon, timeSince, renderAvatar, renderAvatarContainer } from '../modules/ui.js';
 import { initPalette, togglePalette } from './palette.js';
+import { getDynamicNav } from '../modules/permissions.js';
 
 
-const SUPER_ADMIN_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Operations', items: [
-    { path: '/warehouses', icon: 'warehouses', label: 'Warehouses' },
-    { path: '/workforce', icon: 'workforce', label: 'Workforce' },
-    { path: '/items', icon: 'items', label: 'Inventory' },
-    { path: '/tables', icon: 'tables', label: 'Tables' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-  { section: 'Finance', items: [
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/analytics', icon: 'analytics', label: 'Global Reports' },
-  ]},
-  { section: 'System', items: [
-    { path: '/settings', icon: 'settings', label: 'System Settings' },
-    { path: '/audit', icon: 'audit', label: 'Audit Logs' },
-  ]},
-];
+// Navigation is now dynamically generated from permissions — see js/modules/permissions.js
 
-const ADMIN_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Operations', items: [
-    { path: '/warehouses', icon: 'warehouses', label: 'Warehouse' },
-    { path: '/workforce', icon: 'workforce', label: 'User Management' },
-    { path: '/items', icon: 'items', label: 'Item Management' },
-    { path: '/tables', icon: 'tables', label: 'Tables' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-  { section: 'Finance', items: [
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/analytics', icon: 'analytics', label: 'Reports' },
-  ]},
-  { section: 'System', items: [
-    { path: '/audit', icon: 'audit', label: 'Audit Logs' },
-  ]},
-];
-
-const MANAGER_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Operations', items: [
-    { path: '/items', icon: 'items', label: 'Items' },
-    { path: '/tables', icon: 'tables', label: 'Tables' },
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-  { section: 'Reports', items: [
-    { path: '/analytics', icon: 'analytics', label: 'Analytics' },
-  ]},
-];
-
-const STAFF_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Work', items: [
-    { path: '/tables', icon: 'tables', label: 'My Tables' },
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-];
-
-const EMPLOYEE_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'My Work', items: [
-    { path: '/tables', icon: 'tables', label: 'My Tables' },
-  ]},
-];
-
-function getNav(role) {
-  const map = { super_admin: SUPER_ADMIN_NAV, admin: ADMIN_NAV, manager: MANAGER_NAV, staff: STAFF_NAV, employee: EMPLOYEE_NAV };
-  return map[role] || EMPLOYEE_NAV;
-}
 
 export function renderShell(pageTitle, pageSubtitle, content) {
   const user = getCurrentUser();
@@ -103,7 +22,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
     : (whs.find(w => w.id === user.warehouseId)?.name || 'No Warehouse');
   const whAccessText = `${whCount} Warehouse${whCount !== 1 ? 's' : ''}`;
 
-  const nav = getNav(user.role);
+  const nav = getDynamicNav(user);
   const currentPath = getCurrentPath();
   const notifications = getNotifications();
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -154,7 +73,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
         ${sidebarWidget}
         <div class="sidebar-footer">
           <div class="sidebar-user" id="user-menu-btn" data-tooltip="${user.name} (${capitalize(user.role)})">
-            <div class="sidebar-user-avatar">${renderAvatar(user.avatar)}</div>
+            <div class="sidebar-user-avatar">${renderAvatarContainer(user.avatar, user.name, 36)}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
               <div class="sidebar-user-role" style="font-size:11px;color:var(--text-muted);font-weight:500;">${capitalize(user.role.replace('_', ' '))} · ${whAccessText}</div>
@@ -165,21 +84,23 @@ export function renderShell(pageTitle, pageSubtitle, content) {
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
       <main class="main-content">
         <header class="topbar">
-          <button class="topbar-menu-btn" id="topbar-menu-btn" style="display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-          <button class="topbar-collapse-btn" id="topbar-collapse-btn" data-tooltip="Toggle Sidebar">
-            ${getSvgIcon(isCollapsed ? 'chevron_right' : 'collapse', 20)}
+          <button class="topbar-collapse-btn" id="topbar-collapse-btn" data-tooltip="${isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}">
+            ${getSvgIcon(isCollapsed ? 'panel_left_open' : 'panel_left_close', 20)}
           </button>
           <div class="topbar-breadcrumb">${breadcrumb}</div>
           <div class="topbar-actions">
-            <div class="topbar-search" id="cmd-palette-btn" style="cursor:pointer" title="Search Everything (Ctrl+K)">
-              <span style="color:var(--text-muted);display:flex;align-items:center">${getSvgIcon('search', 16)}</span>
-              <input type="text" placeholder="Search (Ctrl+K)" id="global-search" readonly style="cursor:pointer" />
+            <div class="topbar-search-wrapper" id="topbar-search-wrapper" style="position:relative">
+              <span class="topbar-search-icon">${getSvgIcon('search', 14)}</span>
+              <input type="text" id="global-search" class="topbar-search-input"
+                placeholder="Search inventory, invoices..." style="cursor:text" />
+              <span class="topbar-search-kb-hint">⌘K</span>
+              <div id="global-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;margin-top:8px;background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-xl);z-index:var(--z-dropdown);max-height:320px;overflow-y:auto;padding:6px;"></div>
             </div>
             <div class="icon-btn notif-btn" id="notif-btn" data-tooltip="Notifications" style="position:relative">
               ${getSvgIcon('bell', 18)}
               ${unreadCount > 0 ? `<span class="badge" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--accent-rose);border-radius:50%;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base)">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
             </div>
-            <div class="icon-btn" data-tooltip="Profile" id="profile-btn">${renderAvatar(user.avatar)}</div>
+            <div class="icon-btn" data-tooltip="Profile" id="profile-btn" style="overflow:hidden;padding:0;">${renderAvatarContainer(user.avatar, user.name, 34)}</div>
           </div>
         </header>
         <div class="page-content" id="page-content">
@@ -203,16 +124,21 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   document.getElementById('topbar-collapse-btn')?.addEventListener('click', (e) => {
     const shell = document.querySelector('.app-shell');
     if (shell) {
-      shell.classList.toggle('collapsed');
-      const collapsed = shell.classList.contains('collapsed');
-      localStorage.setItem('wareops_sidebar_collapsed', collapsed);
-      const btn = e.currentTarget;
-      btn.innerHTML = getSvgIcon(collapsed ? 'chevron_right' : 'collapse', 20);
+      const isMobile = window.innerWidth <= 768;
+      if (isMobile) {
+        toggleSidebar();
+      } else {
+        shell.classList.toggle('collapsed');
+        const collapsed = shell.classList.contains('collapsed');
+        localStorage.setItem('wareops_sidebar_collapsed', collapsed);
+        const btn = e.currentTarget;
+        btn.innerHTML = getSvgIcon(collapsed ? 'panel_left_open' : 'panel_left_close', 20);
+        btn.dataset.tooltip = collapsed ? 'Expand Sidebar' : 'Collapse Sidebar';
+      }
     }
   });
 
-  // Mobile sidebar toggle
-  document.getElementById('topbar-menu-btn')?.addEventListener('click', toggleSidebar);
+  // Mobile sidebar overlay close
   document.getElementById('sidebar-overlay')?.addEventListener('click', closeSidebar);
   document.getElementById('sidebar-close-btn')?.addEventListener('click', closeSidebar);
 
@@ -233,9 +159,145 @@ export function renderShell(pageTitle, pageSubtitle, content) {
     showProfileDropdown(e.currentTarget);
   });
 
+  // Topbar Direct Search Logic
+  const searchInput = document.getElementById('global-search');
+  const searchResults = document.getElementById('global-search-results');
+
+  if (searchInput && searchResults) {
+    searchInput.addEventListener('focus', () => {
+      showSearchResults(searchInput.value);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+        searchResults.style.display = 'none';
+      }
+    });
+
+    searchInput.addEventListener('input', (e) => {
+      showSearchResults(e.target.value);
+    });
+    
+    // Keyboard listener to focus on search
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInput.focus();
+      }
+    });
+  }
+
+  function showSearchResults(val) {
+    const query = val.toLowerCase().trim();
+    if (!query) {
+      searchResults.innerHTML = '';
+      searchResults.style.display = 'none';
+      return;
+    }
+
+    const s = getStore();
+    const matches = [];
+
+    // Search Warehouses
+    if (s.warehouses) {
+      s.warehouses.forEach(w => {
+        if (w.name.toLowerCase().includes(query) || (w.location && w.location.toLowerCase().includes(query))) {
+          matches.push({
+            type: 'warehouse',
+            title: w.name,
+            subtitle: w.location || 'Warehouse Hub',
+            path: `#/warehouses`
+          });
+        }
+      });
+    }
+
+    // Search Items (Inventory)
+    if (s.items) {
+      s.items.forEach(i => {
+        if (i.name.toLowerCase().includes(query) || (i.sku && i.sku.toLowerCase().includes(query))) {
+          matches.push({
+            type: 'item',
+            title: i.name,
+            subtitle: `SKU: ${i.sku || 'N/A'} · Stock: ${i.stock || 0}`,
+            path: `#/items`
+          });
+        }
+      });
+    }
+
+    // Search Bills (Invoices)
+    if (s.bills) {
+      s.bills.forEach(b => {
+        const num = b.billNumber || '';
+        const client = b.customerName || '';
+        if (num.toLowerCase().includes(query) || client.toLowerCase().includes(query)) {
+          matches.push({
+            type: 'bill',
+            title: num || 'Invoice',
+            subtitle: `Client: ${client} · Total: $${(b.total || 0).toFixed(2)}`,
+            path: `#/billing`
+          });
+        }
+      });
+    }
+
+    // Search Workforce
+    if (s.users) {
+      s.users.forEach(u => {
+        if (u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query)) {
+          matches.push({
+            type: 'user',
+            title: u.name,
+            subtitle: `Email: ${u.email} · Role: ${u.role}`,
+            path: `#/workforce`
+          });
+        }
+      });
+    }
+
+    if (matches.length === 0) {
+      searchResults.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)">No matches found for "${val}"</div>`;
+      searchResults.style.display = 'block';
+      return;
+    }
+
+    const typeLabels = { item: 'Inventory', bill: 'Invoice', warehouse: 'Warehouse', user: 'Workforce' };
+    const typeIcons = { item: 'items', bill: 'billing', warehouse: 'warehouses', user: 'user' };
+
+    searchResults.innerHTML = matches.slice(0, 8).map((m, idx) => `
+      <div class="search-result-item" data-path="${m.path}" data-index="${idx}"
+        style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:all 0.15s;margin-bottom:2px">
+        <span style="color:var(--text-muted);display:flex;align-items:center">${getSvgIcon(typeIcons[m.type], 14)}</span>
+        <div style="flex:1;min-width:0;text-align:left">
+          <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.title}</div>
+          <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.subtitle}</div>
+        </div>
+        <span class="badge badge-muted" style="font-size:9px;padding:2px 6px;text-transform:uppercase">${typeLabels[m.type]}</span>
+      </div>
+    `).join('');
+
+    // Attach click/hover events
+    searchResults.querySelectorAll('.search-result-item').forEach(item => {
+      item.addEventListener('mouseenter', () => {
+        item.style.background = 'var(--bg-card-hover)';
+      });
+      item.addEventListener('mouseleave', () => {
+        item.style.background = 'transparent';
+      });
+      item.addEventListener('click', () => {
+        const path = item.dataset.path;
+        navigate(path);
+        searchInput.value = '';
+        searchResults.style.display = 'none';
+      });
+    });
+
+    searchResults.style.display = 'block';
+  }
+
   // Command Palette
   initPalette();
-  document.getElementById('cmd-palette-btn')?.addEventListener('click', togglePalette);
 
   // Intelligent JS tooltips system initialization
   initGlobalTooltips();
@@ -340,21 +402,26 @@ function showProfileDropdown(anchor) {
   const isSidebar = anchor.id === 'user-menu-btn';
   
   if (isSidebar) {
-    // Append to body if not already there to measure
-    if (!dropdown.parentElement) document.body.appendChild(dropdown);
+    // Append to body FIRST so we can measure its rendered height
+    document.body.appendChild(dropdown);
+    // Force layout calculation
+    dropdown.getBoundingClientRect();
     
     const rect = anchor.getBoundingClientRect();
     const elRect = dropdown.getBoundingClientRect();
     const winH = window.innerHeight;
+    const winW = window.innerWidth;
     
     // Position outside sidebar (to the right of the sidebar)
     let left = rect.right + 8;
-    // Align upward (so the bottom of the dropdown aligns with the bottom of the anchor)
+    // Default: open upward so bottom of popup aligns to bottom of anchor
     let top = rect.bottom - elRect.height;
     
-    // Clamp inside viewport
-    if (top < 10) top = 10;
-    if (top + elRect.height > winH - 10) top = winH - elRect.height - 10;
+    // Clamp vertically within viewport
+    if (top < 8) top = 8;
+    if (top + elRect.height > winH - 8) top = winH - elRect.height - 8;
+    // Clamp horizontally (if collapsed sidebar is very narrow)
+    if (left + elRect.width > winW - 8) left = winW - elRect.width - 8;
     
     dropdown.style.position = 'fixed';
     dropdown.style.left = left + 'px';

@@ -25,6 +25,7 @@ let _savingRows      = new Set();       // rowIds currently being saved
 let _lockedRows      = new Map();       // rowId → { userId, userName } — locked by another user
 let _pendingCells    = new Map();       // `${rowIndex}:${colId}` → cellEl — dirty cells
 let _debounceSavers  = new Map();       // rowIndex → debounced save fn
+let _activePage      = 1;      // active page tracking
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 export async function renderTables() {
@@ -136,6 +137,7 @@ async function _renderTableList(user, whs, canManage) {
   document.querySelectorAll('.action-btn.view[data-tid]').forEach(btn => {
     btn.addEventListener('click', async () => {
       _activeTableId = btn.dataset.tid;
+      _activePage = 1;
       await renderTables();
     });
   });
@@ -181,7 +183,7 @@ async function _openSpreadsheet(user, canManage) {
   }
 
 
-  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
+  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
 
   const canEdit   = ['super_admin','admin','manager','staff'].includes(user.role);
@@ -200,6 +202,7 @@ async function _openSpreadsheet(user, canManage) {
             <span style="font-weight:700;color:var(--text-primary)">${_schema.name}</span>
             <span class="badge badge-muted" style="font-size:11px">${_schema.category}</span>
           </div>
+          <div id="ss-pages-tabs-container" style="display:flex;align-items:center"></div>
           <div id="ss-collab-badges" class="ss-collab-area"></div>
         </div>
         <div class="ss-toolbar-right">
@@ -211,7 +214,6 @@ async function _openSpreadsheet(user, canManage) {
             <button class="btn btn-secondary btn-sm" id="ss-export-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('export', 14)} Export CSV</button>
           ` : ''}
           ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('settings', 14)} Edit Schema</button>` : ''}
-          ${canEdit ? `<button class="btn btn-primary btn-sm" id="ss-add-row-btn">+ Add Row</button>` : ''}
         </div>
       </div>
 
@@ -239,9 +241,10 @@ async function _openSpreadsheet(user, canManage) {
             </tbody>
           </table>
         </div>
-        <div class="ss-status-bar">
-          <span id="ss-row-count">${_rows.length} rows</span>
+        <div class="ss-status-bar" style="display:flex;align-items:center;justify-content:space-between">
+          <span id="ss-row-count">${_rows.length} active rows (100 rows capacity)</span>
           <span id="ss-selected-info" style="color:var(--text-muted)"></span>
+          <span id="ss-page-meta" style="color:var(--text-muted);font-size:12px;display:flex;align-items:center;gap:12px"></span>
         </div>
       </div>
     </div>
@@ -256,7 +259,6 @@ async function _openSpreadsheet(user, canManage) {
     _lockedRows.clear(); _pendingCells.clear(); _debounceSavers.clear();
     renderTables();
   });
-  document.getElementById('ss-add-row-btn')?.addEventListener('click', () => _appendVirtualRow(cols, canEdit, user));
   document.getElementById('ss-schema-btn')?.addEventListener('click', () => _showSchemaModal(_schema, getWarehouses()));
   document.getElementById('ss-import-btn')?.addEventListener('click', () => document.getElementById('ss-csv-file').click());
   document.getElementById('ss-export-btn')?.addEventListener('click', () => _exportCSV());
@@ -264,6 +266,8 @@ async function _openSpreadsheet(user, canManage) {
 
   // Attach cell + row events
   _attachGridEvents(cols, canEdit, user);
+  _renderPageTabs(canEdit);
+  _updatePageMeta();
 
   // Connect WebSocket for realtime collaboration
   _subscribeToTableEvents();
@@ -276,12 +280,148 @@ function _buildAllRows(cols, canEdit, user) {
   for (let i = 0; i < _rows.length; i++) {
     html += _buildRow(_rows[i], i, cols, canEdit, user, false);
   }
-  // Virtual empty rows
-  const virtualCount = Math.max(VIRTUAL_ROWS, 20);
+  // Virtual empty rows to fill up to exactly 100 capacity
+  const virtualCount = Math.max(0, 100 - _rows.length);
   for (let v = 0; v < virtualCount; v++) {
     html += _buildVirtualRow(_rows.length + v, cols, canEdit);
   }
   return html;
+}
+
+// ─── PAGE SYSTEM UTILITIES ──────────────────────────────────────────────────
+function _renderPageTabs(canEdit) {
+  const container = document.getElementById('ss-pages-tabs-container');
+  if (!container) return;
+
+  const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{
+    page_number: 1,
+    created_at: _schema.createdAt,
+    created_by: _schema.createdBy,
+    permissions: _schema.roles || [],
+    storage_usage: 0
+  }];
+
+  container.innerHTML = `
+    <div class="ss-pages-tabs" style="display:flex;align-items:center;gap:4px;margin-left:16px;background:var(--bg-input);padding:3px;border-radius:8px;border:1px solid var(--border-default)">
+      ${pages.map(p => `
+        <button class="ss-page-tab ${p.page_number === _activePage ? 'active' : ''}" data-page="${p.page_number}" 
+                style="border:none;padding:6px 12px;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;
+                       background:${p.page_number === _activePage ? 'var(--brand-500)' : 'transparent'};
+                       color:${p.page_number === _activePage ? 'white' : 'var(--text-secondary)'};
+                       transition:all 0.15s">
+          Page ${p.page_number}
+        </button>
+      `).join('')}
+      ${canEdit ? `
+        <button class="ss-page-tab-add" id="ss-add-page-btn" title="Add Page" 
+                style="border:none;padding:6px;border-radius:6px;cursor:pointer;background:transparent;
+                       color:var(--brand-500);display:flex;align-items:center;justify-content:center">
+          ${getSvgIcon('plus', 14)}
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  _bindPageEvents(canEdit);
+}
+
+async function _switchPage(pageNumber) {
+  _activePage = pageNumber;
+  
+  // Show smooth loading state in tbody for fast feedback
+  const tbody = document.getElementById('ss-tbody');
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="100" style="text-align:center;padding:48px;color:var(--text-muted)">
+          <span class="ss-save-spinner" style="display:inline-block;margin-right:8px">⟳</span> Loading Page ${pageNumber}…
+        </td>
+      </tr>
+    `;
+  }
+  
+  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
+  _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
+  _updateRowCount();
+  _updatePageMeta();
+  
+  const cols = _schema.columns || [];
+  const user = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  if (tbody) {
+    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
+    _attachGridEvents(cols, canEdit, user);
+  }
+  
+  _renderPageTabs(canEdit);
+}
+
+function _bindPageEvents(canEdit) {
+  document.querySelectorAll('.ss-page-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pageNum = parseInt(btn.dataset.page);
+      if (pageNum !== _activePage) {
+        _switchPage(pageNum);
+      }
+    });
+  });
+
+  document.getElementById('ss-add-page-btn')?.addEventListener('click', async () => {
+    const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{}];
+    const storeSub = localStorage.getItem('wareops_store');
+    let plan = 'enterprise';
+    try {
+      if (storeSub) {
+        const parsed = JSON.parse(storeSub);
+        if (parsed.subscription?.plan) plan = parsed.subscription.plan;
+      }
+    } catch (e) {}
+
+    const maxPages = plan === 'starter' ? 2 : 50;
+    if (pages.length >= maxPages) {
+      showToast('Plan Limit Exceeded', `Starter plan tables are limited to ${maxPages} pages. Please upgrade your subscription.`, 'warning');
+      return;
+    }
+
+    _showSavingIndicator(true);
+    const res = await apiFetch(`/dynamic-tables/${_activeTableId}/pages`, { method: 'POST' });
+    _showSavingIndicator(false);
+
+    if (res?.success && res.data) {
+      _schema = res.data;
+      showToast('Page Created', `Page ${_schema.pages.length} added to table`, 'success');
+      _activePage = _schema.pages.length;
+      _renderPageTabs(canEdit);
+      await _switchPage(_schema.pages.length);
+    } else {
+      showToast('Error', res?.error || 'Could not create new page', 'error');
+    }
+  });
+}
+
+function _updatePageMeta() {
+  const metaEl = document.getElementById('ss-page-meta');
+  if (!metaEl) return;
+  const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{
+    page_number: 1,
+    created_at: _schema.createdAt,
+    created_by: _schema.createdBy,
+    permissions: _schema.roles || [],
+    storage_usage: 0
+  }];
+  const currentPageMeta = pages.find(p => p.page_number === _activePage) || pages[0];
+  const dateStr = currentPageMeta.created_at ? new Date(currentPageMeta.created_at).toLocaleDateString() : '—';
+  const storageStr = currentPageMeta.storage_usage !== undefined ? `${currentPageMeta.storage_usage} B` : '0 B';
+  const rolesStr = (currentPageMeta.permissions || []).length > 0 ? currentPageMeta.permissions.join(', ') : 'All';
+  const ownerStr = currentPageMeta.created_by ? `Owner: ID ${currentPageMeta.created_by.slice(0, 8)}` : 'System';
+
+  metaEl.innerHTML = `
+    <span>📄 Page ${_activePage}</span>
+    <span>📅 Created: ${dateStr}</span>
+    <span>👤 ${ownerStr}</span>
+    <span>🔒 Roles: ${rolesStr}</span>
+    <span>💾 Storage: ${storageStr}</span>
+  `;
 }
 
 function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
@@ -502,7 +642,7 @@ async function _saveNewVirtualRow(tr, cols, canEdit, user) {
   if (isBlank) return;
 
   _showSavingIndicator(true);
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`, {
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`, {
     method: 'POST',
     body: JSON.stringify(rowData)
   });
@@ -643,8 +783,17 @@ function _handleWsEvent(e) {
   if (!data?.tableId || data.tableId !== _activeTableId) return;
 
   const userId = String(user.id || user._id || '');
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
 
   switch (type) {
+    case 'table_page_created': {
+      if (data.tableId === _activeTableId) {
+        _schema.pages = data.pages;
+        _renderPageTabs(canEdit);
+        _showCollabToast(`Page ${data.pageNumber} was added to this table`);
+      }
+      break;
+    }
     case 'table_row_created': {
       // Another user added a row — refresh rows from server
       if (data.actorId !== userId) {
@@ -683,8 +832,10 @@ function _handleWsEvent(e) {
     }
     case 'table_rows_imported': {
       if (data.actorId !== userId) {
-        _refreshRowsFromServer();
-        _showCollabToast(`${data.actorName} imported ${data.inserted} rows`);
+        if (data.page === _activePage) {
+          _refreshRowsFromServer();
+        }
+        _showCollabToast(`${data.actorName} imported ${data.inserted} rows to Page ${data.page || 1}`);
       }
       break;
     }
@@ -704,7 +855,7 @@ function _showCollabToast(msg) {
 }
 
 async function _refreshRowsFromServer() {
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
   if (!res?.success) return;
   _rows = res.data || [];
   _updateRowCount();
@@ -797,7 +948,7 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
   if (isBlank) return;
 
   _showSavingIndicator(true);
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`, {
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`, {
     method: 'POST',
     body: JSON.stringify(rowData)
   });
@@ -936,7 +1087,7 @@ async function _handleCSVImport(e, cols) {
   }
 
   _showSavingIndicator(true);
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/import`, {
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/import?page=${_activePage}`, {
     method: 'POST',
     body: JSON.stringify(rowsData)
   });

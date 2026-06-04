@@ -16,6 +16,7 @@ window.addEventListener('unhandledrejection', (event) => {
 // Modules
 import { getCurrentUser, getWarehouses, getStore, seedDemoData, getActiveCurrency, syncWithBackend } from './modules/store.js';
 import { getSvgIcon, applyTheme } from './modules/ui.js';
+import { canDo } from './modules/permissions.js';
 
 // Pages
 import { renderLogin, renderSignup, renderWarehouseRegistration } from './pages/auth.js';
@@ -34,6 +35,7 @@ import { renderWarehouseDetail } from './pages/warehouses.js';
 import { renderLanding } from './pages/landing.js';
 import { renderRegistry } from './pages/registry.js';
 import { renderCustomers } from './pages/customers.js';
+import { renderRoles } from './pages/roles.js';
 
 // Route handler map
 const routes = {
@@ -55,6 +57,7 @@ const routes = {
   '/terms': renderTerms,
   '/registry': renderRegistry,
   '/customers': renderCustomers,
+  '/roles': renderRoles,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -113,6 +116,30 @@ function resolveRoute() {
         safeNavigate('/dashboard');
         return;
       }
+
+      // Granular Page Access Guard check
+      const routeModuleMap = {
+        '/dashboard': 'dashboard',
+        '/warehouses': 'warehouses',
+        '/workforce': 'workforce',
+        '/items': 'inventory',
+        '/tables': 'tables',
+        '/billing': 'billing',
+        '/analytics': 'reports',
+        '/audit': 'audit',
+        '/settings': 'settings',
+        '/customers': 'crm',
+      };
+
+      if (['/registry', '/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
+        safeNavigate('/dashboard');
+        return;
+      }
+
+      if (routeModuleMap[path] && !canDo(routeModuleMap[path], 'view', user)) {
+        safeNavigate('/dashboard');
+        return;
+      }
     }
 
     const handler = routes[path];
@@ -168,8 +195,13 @@ async function init() {
     // Bind active currency dynamically for formatting sync
     window.wareops_currency = getActiveCurrency();
 
-    // Apply active global theme preferences
-    applyTheme(getStore().theme);
+    // Apply active global theme — first from localStorage for instant load (no flash),
+    // then confirm from store (handles fresh logins / resets)
+    const cachedTheme = localStorage.getItem('wareops_theme') || 'enterprise';
+    applyTheme(cachedTheme);
+    const storeTheme = getStore().theme;
+    if (storeTheme && storeTheme !== cachedTheme) applyTheme(storeTheme);
+
 
     const user = getCurrentUser();
 

@@ -7,12 +7,13 @@ const jsBase = join(base, 'js');
 
 const files = [
   'modules/store.js', 'modules/router.js', 'modules/ui.js', 'modules/exporter.js',
+  'modules/permissions.js',
   'components/shell.js', 'components/palette.js',
   'pages/auth.js', 'pages/landing.js', 'pages/legal.js', 'pages/dashboard.js', 'pages/warehouses.js',
   'pages/workforce.js', 'pages/items.js', 'pages/tables.js',
   'pages/billing.js', 'pages/analytics.js', 'pages/audit.js',
   'pages/settings.js', 'pages/subscription.js',
-  'pages/registry.js', 'pages/customers.js',
+  'pages/registry.js', 'pages/customers.js', 'pages/roles.js',
 ];
 
 function strip(code) {

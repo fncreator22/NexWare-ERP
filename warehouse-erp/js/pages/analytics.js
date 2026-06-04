@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getBills, getItems, getAllUsers, getWarehouses, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { formatCurrency, formatDate, getSvgIcon } from '../modules/ui.js';
+import { formatCurrency, formatDate, getSvgIcon, renderWarehouseLogo } from '../modules/ui.js';
 
 // Persisted filter state (survives re-renders within session)
 let an_whFilter  = '';
@@ -395,7 +395,8 @@ function updateWhBreakdown(bills, whs, totalRev) {
     const pct = totalRev>0 ? Math.round(rev/totalRev*100) : 0;
     return `
       <div class="revenue-bar" style="margin-bottom:12px">
-        <div class="revenue-bar-label">${wh.logo||'🏭'} ${wh.name}
+        <div class="revenue-bar-label">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;overflow:hidden;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}vertical-align:middle;margin-right:6px;">${renderWarehouseLogo(wh.logo, 20)}</span>${wh.name}
           <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
         </div>
         <div class="revenue-bar-track"><div class="revenue-bar-fill" style="width:${pct}%"></div></div>

@@ -3,7 +3,8 @@
  */
 import { getCurrentUser, getWarehouses, getAllUsers, getItems, getBills, getAuditLogs, getSubscription, getTaxConfig } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { formatCurrency, formatDate, getSvgIcon } from '../modules/ui.js';
+import { formatCurrency, formatDate, getSvgIcon, renderAvatarContainer } from '../modules/ui.js';
+import { canDo } from '../modules/permissions.js';
 
 // Track chart instances so we can destroy before re-rendering
 const _dashboardCharts = {};
@@ -25,15 +26,21 @@ export function renderDashboard() {
   const users = getAllUsers();
   const items = getItems();
   const bills = getBills();
-  const logs = getAuditLogs().slice(0, 6);
-  const sub = getSubscription();
+  const logs = getAuditLogs().slice(0, 6);  const sub = getSubscription();
+  const isSA = user.role === 'super_admin';
+
+  // Dynamic capability checks
+  const canViewWarehouses = canDo('warehouses', 'view', user);
+  const canViewBilling = canDo('billing', 'view', user);
+  const canViewWorkforce = canDo('workforce', 'view', user);
+  const canViewInventory = canDo('inventory', 'view', user);
+  const canViewAudit = canDo('audit', 'view', user);
+  const canViewReports = canDo('reports', 'view', user);
 
   const totalRevenue = bills.reduce((s,b)=>s+(b.total||0),0);
   const totalTax    = bills.reduce((s,b)=>s+(b.tax||0),0);
   const totalStock  = items.reduce((s,i)=>s+(i.stock||0),0);
   const activeUsers = users.filter(u=>u.status==='active').length;
-  const isSA = user.role === 'super_admin';
-  const isAdmin = isSA || user.role === 'admin';
 
   // Low stock items
   const lowStock = items.filter(i=>(i.stock||0)<20).slice(0,5);
@@ -59,6 +66,10 @@ export function renderDashboard() {
     .sort((a, b) => b.priority - a.priority)
     .slice(0, 4);
 
+  // Count visible panels in second row to compute responsive widths
+  const row2Count = 1 + (canViewBilling ? 1 : 0) + (canViewInventory ? 1 : 0);
+  const row2Col = row2Count === 3 ? 'col-4' : row2Count === 2 ? 'col-6' : 'col-12';
+
   renderShell('Dashboard', roleLabel, `
     <div class="animate-slideUp">
 
@@ -70,21 +81,21 @@ export function renderDashboard() {
           <p style="color:var(--text-muted);font-size:13px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})} · ${roleLabel}</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/warehouses'">${getSvgIcon('warehouses', 14)} Warehouses</button>
-          <button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
-          ${!isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
+          ${isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/warehouses'">${getSvgIcon('warehouses', 14)} Warehouses</button>` : ''}
+          ${canDo('billing', 'create', user) ? `<button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
         </div>
       </div>
 
       <!-- KPI Cards — compact row -->
       <div class="stat-grid" style="margin-bottom:20px">
-        ${isSA ? `<div class="stat-card">
+        ${canViewWarehouses ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#6366f1"></div>
           <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value">${whs.length}</div>
           <div class="stat-card-label">Warehouses</div>
           <div class="stat-card-trend trend-up">${sub.plan} plan</div>
         </div>` : ''}
+        ${canViewBilling ? `
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#10b981"></div>
           <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">${getSvgIcon('revenue', 20)}</div>
@@ -99,20 +110,21 @@ export function renderDashboard() {
           <div class="stat-card-label">Invoices</div>
           <div class="stat-card-trend trend-up">↑ This period</div>
         </div>
-        <div class="stat-card">
+        ` : ''}
+        ${canViewWorkforce ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#06b6d4"></div>
           <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${activeUsers}</div>
           <div class="stat-card-label">Active Users</div>
           <div class="stat-card-trend">${users.length} total</div>
-        </div>
-        <div class="stat-card">
+        </div>` : ''}
+        ${canViewInventory ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#f59e0b"></div>
           <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
           <div class="stat-card-label">Stock Units</div>
           <div class="stat-card-trend ${lowStock.length>0?'trend-down':'trend-up'}">${lowStock.length} low stock</div>
-        </div>
+        </div>` : ''}
         ${isSA ? `<div class="stat-card" style="cursor:pointer" onclick="location.hash='#/subscription'">
           <div class="stat-card-glow" style="background:#f43f5e"></div>
           <div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">${getSvgIcon('subscription', 20)}</div>
@@ -123,10 +135,12 @@ export function renderDashboard() {
       </div>
 
       <!-- Main content grid -->
+      ${(canViewBilling || canViewReports || canViewAudit) ? `
       <div class="dashboard-grid">
 
         <!-- Revenue Chart -->
-        <div class="chart-card col-8">
+        ${(canViewBilling || canViewReports) ? `
+        <div class="chart-card ${canViewAudit ? 'col-8' : 'col-12'}">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Trend</div>
@@ -139,9 +153,11 @@ export function renderDashboard() {
           </div>
           <div class="chart-container" style="height:180px"><canvas id="revenue-chart"></canvas></div>
         </div>
+        ` : ''}
 
         <!-- Activity Feed -->
-        <div class="chart-card col-4">
+        ${canViewAudit ? `
+        <div class="chart-card ${(canViewBilling || canViewReports) ? 'col-4' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('clock', 18)} Activity</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/audit'" style="font-size:11px">All →</button>
@@ -159,14 +175,16 @@ export function renderDashboard() {
               `).join('')}
           </div>
         </div>
+        ` : ''}
       </div>
+      ` : ''}
 
       <!-- Second row -->
       <div class="dashboard-grid">
 
         <!-- Warehouse Summary -->
-        ${isSA ? `
-        <div class="chart-card col-4">
+        ${canViewWarehouses ? `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} Warehouses</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -184,7 +202,8 @@ export function renderDashboard() {
             `).join('')}
             ${whs.length === 0 ? `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">No warehouses yet</div>` : ''}
           </div>
-        </div>` : `<div class="chart-card">
+        </div>` : `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} My Warehouse</div>
           </div>
@@ -201,7 +220,8 @@ export function renderDashboard() {
         </div>`}
 
         <!-- Billing Quick Stats -->
-        <div class="chart-card col-4">
+        ${canViewBilling ? `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Billing Stats</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">View →</button>
@@ -227,9 +247,11 @@ export function renderDashboard() {
             </div>
           `).join('')}
         </div>
+        ` : ''}
 
         <!-- Low Stock Alerts -->
-        <div class="chart-card col-4">
+        ${canViewInventory ? `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px;color:var(--accent-rose)">${getSvgIcon('warning', 18)} Low Stock</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
@@ -246,23 +268,26 @@ export function renderDashboard() {
             <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">Quick Actions</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               ${[
-                { icon:'items', label:'Add Item',   href:'/items'     },
-                { icon:'billing', label:'New Bill',   href:'/billing'   },
-                { icon:'workforce', label:'Workforce',  href:'/workforce' },
-                { icon:'analytics', label:'Reports',    href:'/analytics' },
-              ].filter(a=>isAdmin || (a.href!=='/workforce')).map(a=>`
+                { icon:'items', label:'Add Item',   href:'/items', mod: 'inventory' },
+                { icon:'billing', label:'New Bill',   href:'/billing', mod: 'billing' },
+                { icon:'workforce', label:'Workforce',  href:'/workforce', mod: 'workforce' },
+                { icon:'analytics', label:'Reports',    href:'/analytics', mod: 'reports' },
+              ].filter(a => canDo(a.mod, 'view', user) || (a.mod === 'billing' && canDo('billing', 'create', user))).map(a=>`
                 <button class="btn btn-secondary btn-sm" onclick="location.hash='#${a.href}'" style="font-size:11px;padding:6px 8px;justify-content:flex-start;gap:6px">${getSvgIcon(a.icon, 14)} ${a.label}</button>
               `).join('')}
             </div>
           </div>
         </div>
+        ` : ''}
       </div>
 
       <!-- Third Row -->
+      ${(canViewInventory || canViewBilling) ? `
       <div class="dashboard-grid">
         
         <!-- Smart Restock Recommender -->
-        <div class="chart-card col-5">
+        ${canViewInventory ? `
+        <div class="chart-card ${canViewBilling ? 'col-5' : 'col-12'}">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Restock Recommender</div>
@@ -286,9 +311,11 @@ export function renderDashboard() {
               `).join('')}
           </div>
         </div>
+        ` : ''}
 
         <!-- Revenue Summary -->
-        <div class="chart-card col-7">
+        ${canViewBilling ? `
+        <div class="chart-card ${canViewInventory ? 'col-7' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Summary</div>
           </div>
@@ -307,12 +334,15 @@ export function renderDashboard() {
             </div>
           </div>
         </div>
+        ` : ''}
       </div>
+      ` : ''}
 
-      <!-- Workforce Summary -->
-      ${isAdmin ? `
+      <!-- Fourth Row: Workforce & Distribution -->
+      ${canViewWorkforce || (canViewReports && canViewWarehouses) ? `
       <div class="dashboard-grid">
-        <div class="chart-card col-6">
+        ${canViewWorkforce ? `
+        <div class="chart-card ${(canViewReports && canViewWarehouses) ? 'col-6' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 18)} Workforce Summary</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -335,18 +365,20 @@ export function renderDashboard() {
           <div style="display:flex;flex-direction:column;gap:6px">
             ${users.slice(0,4).map(u=>`
               <div style="display:flex;align-items:center;gap:8px">
-                <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0">${u.avatar}</div>
+                <div style="flex-shrink:0">${renderAvatarContainer(u.avatar, u.name, 28)}</div>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.name}</div>
                 </div>
-                <span style="font-size:10px;color:var(--text-muted)">${u.role}</span>
+                <span style="font-size:10px;color:var(--text-muted)">${u.role.charAt(0).toUpperCase() + u.role.slice(1).replace('_', ' ')}</span>
               </div>
             `).join('')}
           </div>
         </div>
+        ` : ''}
 
         <!-- Warehouse Distribution -->
-        <div class="chart-card col-6">
+        ${canViewReports && canViewWarehouses ? `
+        <div class="chart-card ${canViewWorkforce ? 'col-6' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue by Warehouse</div>
           </div>
@@ -362,23 +394,19 @@ export function renderDashboard() {
               </div>`;
             }).join('')}
           </div>
-        </div>` : `
-        <div class="chart-card col-6">
-          <div class="chart-card-header"><div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('tables', 18)} My Tables</div></div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/tables'" style="width:100%">📋 View My Tables</button>
-            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/analytics'" style="width:100%">📈 View Reports</button>
-            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/items'" style="width:100%">📦 Manage Inventory</button>
-          </div>
-        </div>`}
+        </div>
+        ` : ''}
       </div>
+      ` : ''}
 
     </div>
 
     <!-- Floating Action Button for Quick Invoicing -->
+    ${canDo('billing', 'create', user) ? `
     <button class="fab" onclick="location.hash='#/billing'" title="Quick Invoice">
       <span style="display:flex;align-items:center;justify-content:center;color:white">${getSvgIcon('billing', 24)}</span>
     </button>
+    ` : ''}
   `);
 
   setTimeout(() => initDashboardCharts(bills, whs), 100);

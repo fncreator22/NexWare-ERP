@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-05-30T12:35:42.374Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-06-04T22:07:40.412Z
 
 
 // ===== modules/store.js =====
@@ -25,6 +25,7 @@ function getDefaultData() {
     items: [],
     auditLogs: [],
     notifications: [],
+    roles: [],            // Custom role definitions
     taxConfig,
     subscription,
     theme: 'enterprise',
@@ -76,6 +77,8 @@ function getStore() {
         }
       });
     }
+    // Migration: Ensure roles array exists
+    if (!_store.roles) _store.roles = [];
   } catch {
     _store = getDefaultData();
   }
@@ -149,8 +152,11 @@ async function syncWithBackend() {
     const normalize = (items) => {
       if (!Array.isArray(items)) return [];
       return items.map(item => {
-        if (item && item._id && !item.id) {
-          item.id = item._id;
+        if (item) {
+          if (item._id && !item.id) item.id = item._id;
+          if (item.page_order && !item.pageOrder) item.pageOrder = item.page_order;
+          if (item.module_visibility && !item.moduleVisibility) item.moduleVisibility = item.module_visibility;
+          if (item.feature_access && !item.featureAccess) item.featureAccess = item.feature_access;
         }
         return item;
       });
@@ -206,6 +212,14 @@ async function syncWithBackend() {
       _store.notifications = normalize(notifRes.data);
     } else {
       _store.notifications = [];
+    }
+
+    // 7. Fetch Roles
+    const rolesRes = await apiFetch('/roles/');
+    if (rolesRes && rolesRes.success && Array.isArray(rolesRes.data)) {
+      _store.roles = normalize(rolesRes.data);
+    } else {
+      _store.roles = [];
     }
 
     saveStore();
@@ -308,7 +322,12 @@ function getWarehouses() {
   if (u.role === 'super_admin') {
     whs = s.warehouses.filter(w => w.ownerId === u.id);
   } else {
-    whs = s.warehouses.filter(w => w.id === u.warehouseId);
+    const allowedIds = new Set();
+    if (u.warehouseId) allowedIds.add(u.warehouseId);
+    if (Array.isArray(u.warehouseOverrides)) {
+      u.warehouseOverrides.forEach(id => allowedIds.add(id));
+    }
+    whs = s.warehouses.filter(w => allowedIds.has(w.id));
   }
   
   // Dynamically compute math/statistics for true global synchronization
@@ -487,11 +506,8 @@ function getItems(warehouseId) {
   if (warehouseId) return s.items.filter(i => i.warehouseId === warehouseId);
   const u = getCurrentUser();
   if (!u) return [];
-  if (u.role === 'super_admin') {
-    const myWhs = getWarehouses().map(w => w.id);
-    return s.items.filter(i => myWhs.includes(i.warehouseId));
-  }
-  return s.items.filter(i => i.warehouseId === u.warehouseId);
+  const allowedWhIds = getWarehouses().map(w => w.id);
+  return s.items.filter(i => allowedWhIds.includes(i.warehouseId));
 }
 
 async function createItem(data) {
@@ -575,11 +591,12 @@ function getTables(warehouseId) {
   const u = getCurrentUser();
   if (!u) return [];
   let tables = s.tables;
+  const allowedWhIds = getWarehouses().map(w => w.id);
   if (u.role === 'super_admin') {
-    const myWhs = getWarehouses().map(w => w.id);
-    tables = tables.filter(t => !t.warehouseId || myWhs.includes(t.warehouseId));
+    tables = tables.filter(t => !t.warehouseId || allowedWhIds.includes(t.warehouseId));
   } else {
-    tables = tables.filter(t => t.warehouseId === u.warehouseId);
+    const allowedTableIds = new Set(u.tableOverrides || []);
+    tables = tables.filter(t => allowedWhIds.includes(t.warehouseId) || allowedTableIds.has(t.id));
   }
   if (warehouseId) tables = tables.filter(t => t.warehouseId === warehouseId);
   return tables;
@@ -685,9 +702,9 @@ function getBills(warehouseId) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u) return [];
+  const allowedWhIds = getWarehouses().map(w => w.id);
   if (u.role === 'super_admin') {
-    const myWhs = getWarehouses().map(w => w.id);
-    const bills = s.bills.filter(b => myWhs.includes(b.warehouseId));
+    const bills = s.bills.filter(b => allowedWhIds.includes(b.warehouseId));
     if (warehouseId) return bills.filter(b => b.warehouseId === warehouseId);
     return bills;
   }
@@ -695,16 +712,18 @@ function getBills(warehouseId) {
   const levels = { employee: 1, staff: 2, manager: 3, admin: 4, super_admin: 5 };
   const myLevel = levels[u.role] || 1;
   const visibleUsers = s.users.filter(usr => 
-    usr.warehouseId === u.warehouseId && 
+    allowedWhIds.includes(usr.warehouseId) && 
     (levels[usr.role] || 1) <= myLevel
   ).map(usr => usr.id);
   
   if (!visibleUsers.includes(u.id)) visibleUsers.push(u.id);
 
-  return s.bills.filter(b => 
-    b.warehouseId === u.warehouseId && 
+  let bills = s.bills.filter(b => 
+    allowedWhIds.includes(b.warehouseId) && 
     visibleUsers.includes(b.createdBy)
   );
+  if (warehouseId) bills = bills.filter(b => b.warehouseId === warehouseId);
+  return bills;
 }
 
 async function createBill(data) {
@@ -1491,32 +1510,128 @@ function getSvgIcon(name, size = 20) {
     location:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
     mail:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
     phone:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+    // Sidebar panel collapse/expand icons
+    panel_left:        `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
+    panel_left_open:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="14 9 17 12 14 15"/></svg>`,
+    panel_left_close:  `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="17 9 14 12 17 15"/></svg>`,
+    collapse:          `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="6 9 3 12 6 15"/></svg>`,
   };
   return icons[name] || `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
 }
 
 function applyTheme(themeName) {
   const root = document.documentElement;
+  // Remove all theme classes first
+  root.classList.remove('theme-classic', 'theme-light', 'theme-dark');
   if (themeName === 'classic') {
     root.classList.add('theme-classic');
+  } else if (themeName === 'light') {
+    root.classList.add('theme-light');
+  } else if (themeName === 'dark') {
+    root.classList.add('theme-dark');
+  }
+  // Default 'enterprise' = no class (root vars apply)
+  // Persist for instant load
+  try { localStorage.setItem('wareops_theme', themeName || 'enterprise'); } catch {}
+}
+
+/**
+ * renderAvatar — renders a user avatar as either an <img> (photo) or styled initials span.
+ * When avatar is a data URL or http URL  → renders <img> tag
+ * When avatar is a string of 1-3 chars (initials) → renders styled initials span
+ * When avatar is empty → returns empty string
+ */
+function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
+  if (!avatar) return '';
+  // Check for image URLs (data URI or http/https)
+  if (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://')) {
+    return `<img src="${avatar}" style="${sizeStyle}" alt="Avatar" onerror="this.style.display='none'" />`;
+  }
+  // Treat as initials string — render with background transparent (the container provides gradient)
+  return `<span style="font-size:inherit;font-weight:700;color:inherit;line-height:1;">${avatar}</span>`;
+}
+
+/**
+ * Centralized entity image resolver.
+ * Renders an image if it exists, otherwise renders initials or dynamic icons.
+ * @param {string} src - The image URI or base64 data string
+ * @param {string} type - Entity type ('workforce' | 'profile' | 'warehouse' | 'inventory' | 'reports' | 'tables' | 'roles')
+ * @param {string} fallbackText - Initials or name to generate initials, or icon key
+ * @param {number} size - Square/diameter size in pixels (default 40)
+ * @param {string} extraStyle - Inline styles to merge
+ * @returns {string} HTML string
+ */
+function renderEntityImage(src, type, fallbackText = '', size = 40, extraStyle = '') {
+  const isUrl = src && (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://'));
+  const s = size;
+
+  if (type === 'workforce' || type === 'profile') {
+    // Circular user avatar
+    const initials = fallbackText.length <= 3 && !fallbackText.startsWith('data:') && !fallbackText.startsWith('http')
+      ? fallbackText
+      : (fallbackText ? fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?');
+    const bgStyle = isUrl ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);';
+    
+    return `<div class="entity-avatar-container" style="width:${s}px;height:${s}px;border-radius:50%;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="Avatar" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
+    </div>`;
+  } else if (type === 'warehouse') {
+    // Square card / logo layout
+    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
+    
+    // Dynamic icon matching from renderWarehouseLogo
+    const defaultIcon = `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
+    const icons = {
+      'icon:industrial': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
+      'icon:distribution': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+      'icon:retail': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+      'icon:office': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
+      'icon:tech': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
+    };
+    
+    let fallbackIcon = defaultIcon;
+    if (fallbackText && fallbackText.startsWith('icon:')) {
+      fallbackIcon = icons[fallbackText.toLowerCase()] || defaultIcon;
+    }
+
+    return `<div class="entity-logo-container" style="width:${s}px;height:${s}px;border-radius:8px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="Logo" onerror="this.remove();this.parentElement.innerHTML='${fallbackIcon}'" />` : fallbackIcon}
+    </div>`;
+  } else if (type === 'inventory') {
+    // Square item cards / boxes
+    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
+    const boxIcon = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
+
+    return `<div class="entity-item-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Item" onerror="this.parentElement.style.background='var(--bg-elevated)';this.remove();this.parentElement.innerHTML='${boxIcon}'" />` : boxIcon}
+    </div>`;
   } else {
-    root.classList.remove('theme-classic');
+    // Reports, Tables, Role management - general fallback rendering
+    const initials = fallbackText.length <= 3 
+      ? fallbackText 
+      : fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--gradient-brand);';
+
+    return `<div class="entity-general-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
+      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Entity" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
+    </div>`;
   }
 }
 
-function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
-  if (avatar && (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://'))) {
-    return `<img src="${avatar}" style="${sizeStyle}" />`;
-  }
-  return avatar || '';
+/**
+ * renderAvatarContainer — renders a full avatar with container.
+ * Handles both image and initials, removing gradient when image is present.
+ */
+function renderAvatarContainer(avatar, name = '', size = 36, extraStyle = '') {
+  return renderEntityImage(avatar, 'workforce', name, size, extraStyle);
 }
 
 function renderWarehouseLogo(logo, size = 24) {
-  if (logo && logo.startsWith('data:image/')) {
-    return `<img src="${logo}" style="width:${size}px;height:${size}px;object-fit:contain;border-radius:6px;display:inline-block;vertical-align:middle" />`;
-  }
-  
   const s = size;
+  // Handle image uploads (data URIs or external URLs)
+  if (logo && (logo.startsWith('data:image/') || logo.startsWith('http://') || logo.startsWith('https://'))) {
+    return `<img src="${logo}" style="width:${s}px;height:${s}px;object-fit:cover;border-radius:6px;display:block;" alt="Warehouse logo" onerror="this.style.display='none'" />`;
+  }
   const icons = {
     'icon:industrial': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
     'icon:distribution': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
@@ -1537,6 +1652,7 @@ function renderWarehouseLogo(logo, size = 24) {
 // ---- INLINE BARCODE GENERATOR (Code128 subset B) ----
 // Generates a standalone SVG barcode — no HTTP, no external library, works in print.
 function generateBarcodeSVG(text, opts = {}) {
+  text = String(text || 'EMPTY');
   const barW   = opts.barWidth  || 1.4;
   const height = opts.height    || 38;
   const quiet  = opts.quiet     || 8;
@@ -1949,6 +2065,9 @@ function exportPDF(entity) {
   }
 
   const win = window.open('', '_blank', 'width=1000,height=700');
+  if (!win) {
+    return { error: 'Popup blocked. Please allow popups in your browser settings to export as PDF.' };
+  }
   win.document.write(`<!DOCTYPE html><html><head><title>WareOps Export</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
@@ -1976,9 +2095,368 @@ function exportPDF(entity) {
   return { count: d.bills.length + d.users.length + d.items.length, entity: 'PDF Export' };
 }
 
+// ===== modules/permissions.js =====
+// ── MODULE & ACTION DEFINITIONS ──────────────────────────────────────────────
+
+const ALL_MODULES = [
+  { key: 'dashboard',   label: 'Dashboard',    icon: 'dashboard'  },
+  { key: 'inventory',   label: 'Inventory',    icon: 'items'      },
+  { key: 'warehouses',  label: 'Warehouses',   icon: 'warehouses' },
+  { key: 'workforce',   label: 'Workforce',    icon: 'workforce'  },
+  { key: 'billing',     label: 'Billing',      icon: 'billing'    },
+  { key: 'crm',         label: 'CRM',          icon: 'customer'   },
+  { key: 'tables',      label: 'Tables',       icon: 'tables'     },
+  { key: 'reports',     label: 'Reports',      icon: 'analytics'  },
+  { key: 'audit',       label: 'Audit Logs',   icon: 'audit'      },
+  { key: 'settings',    label: 'Settings',     icon: 'settings'   },
+  { key: 'registration', label: 'Registration modules', icon: 'audit' },
+];
+
+const ALL_ACTIONS = ['view','create','edit','delete','export','import','manage'];
+
+// ── BUILT-IN DEFAULT PERMISSIONS PER ROLE ────────────────────────────────────
+
+const DEFAULT_ROLE_PERMISSIONS = {
+  super_admin: {
+    dashboard:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    inventory:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    warehouses: { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    workforce:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    billing:    { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    crm:        { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    tables:     { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    reports:    { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    audit:      { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    settings:   { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    registration:{ view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+  },
+  admin: {
+    dashboard:  { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    inventory:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    warehouses: { view:true,  create:false, edit:true,  delete:false, export:true,  import:false, manage:false },
+    workforce:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:false, manage:true  },
+    billing:    { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
+    crm:        { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
+    tables:     { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    reports:    { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    audit:      { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:{ view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:true  },
+  },
+  manager: {
+    dashboard:  { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    inventory:  { view:true,  create:true,  edit:true,  delete:false, export:true,  import:true,  manage:false },
+    warehouses: { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    workforce:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    billing:    { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
+    crm:        { view:true,  create:false, edit:true,  delete:false, export:true,  import:false, manage:false },
+    tables:     { view:true,  create:true,  edit:true,  delete:false, export:true,  import:true,  manage:false },
+    reports:    { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    audit:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:{ view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+  },
+  staff: {
+    dashboard:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    inventory:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    warehouses: { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    workforce:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    billing:    { view:true,  create:true,  edit:false, delete:false, export:false, import:false, manage:false },
+    crm:        { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    tables:     { view:true,  create:false, edit:true,  delete:false, export:false, import:false, manage:false },
+    reports:    { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    audit:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:{ view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+  },
+  employee: {
+    dashboard:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    inventory:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    warehouses: { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    workforce:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    billing:    { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    crm:        { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    tables:     { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    reports:    { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    audit:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:{ view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+  },
+};
+
+// ── PERMISSION RESOLUTION ─────────────────────────────────────────────────────
+
+/**
+ * Get the fully resolved permissions for a user.
+ * Resolution: userOverrides > customRole.permissions > builtinDefaults
+ */
+function resolvePermissions(user) {
+  if (!user) return {};
+  const s = getStore();
+
+  // Find base permissions from role
+  let base = {};
+  const roleKey = user.role || 'employee';
+  const builtinBase = DEFAULT_ROLE_PERMISSIONS[roleKey];
+  if (builtinBase) {
+    // Deep copy
+    for (const mod of ALL_MODULES) {
+      base[mod.key] = { ...builtinBase[mod.key] };
+    }
+  } else {
+    // Custom role — look up in store.roles
+    const customRole = (s.roles || []).find(r => r.id === roleKey || r.key === roleKey);
+    if (customRole?.permissions) {
+      for (const mod of ALL_MODULES) {
+        base[mod.key] = { ...(customRole.permissions[mod.key] || {}) };
+      }
+    }
+  }
+
+  // Apply user-level overrides
+  if (user.permissionOverrides) {
+    for (const mod of ALL_MODULES) {
+      if (user.permissionOverrides[mod.key]) {
+        base[mod.key] = {
+          ...base[mod.key],
+          ...user.permissionOverrides[mod.key]
+        };
+      }
+    }
+  }
+
+  return base;
+}
+
+/**
+ * Check if the current user can perform an action on a module.
+ * @param {string} module - e.g. 'inventory'
+ * @param {string} action - e.g. 'create'
+ * @param {object} [user] - optional user, defaults to getCurrentUser()
+ */
+function canDo(module, action, user) {
+  const u = user || getCurrentUser();
+  if (!u) return false;
+  // Super admin always has all permissions
+  if (u.role === 'super_admin') return true;
+  const perms = resolvePermissions(u);
+  return !!(perms[module]?.[action]);
+}
+
+// ── DYNAMIC NAVIGATION ────────────────────────────────────────────────────────
+
+const MODULE_TO_NAV = {
+  dashboard:  { path: '/dashboard',  icon: 'dashboard',  label: 'Dashboard',      section: 'Overview'    },
+  inventory:  { path: '/items',      icon: 'items',      label: 'Inventory',      section: 'Operations'  },
+  warehouses: { path: '/warehouses', icon: 'warehouses', label: 'Warehouses',     section: 'Operations'  },
+  workforce:  { path: '/workforce',  icon: 'workforce',  label: 'Workforce',      section: 'Operations'  },
+  billing:    { path: '/billing',    icon: 'billing',    label: 'Billing',        section: 'Finance'     },
+  crm:        { path: '/customers',  icon: 'customer',   label: 'CRM Customers',  section: 'Operations'  },
+  tables:     { path: '/tables',     icon: 'tables',     label: 'Tables',         section: 'Operations'  },
+  reports:    { path: '/analytics',  icon: 'analytics',  label: 'Reports',        section: 'Finance'     },
+  audit:      { path: '/audit',      icon: 'audit',      label: 'Audit Logs',     section: 'System'      },
+  settings:   { path: '/settings',   icon: 'settings',   label: 'Settings',       section: 'System'      },
+};
+
+// Always show for super_admin — extra items not tied to permissions
+const SUPER_ADMIN_EXTRAS = [
+  { path: '/registry', icon: 'audit', label: 'Registry Ledger', section: 'Operations' },
+  { path: '/roles',    icon: 'workforce', label: 'Role Manager', section: 'System' },
+];
+
+const SECTION_ORDER = ['Overview', 'Operations', 'Finance', 'Reports', 'System'];
+
+/**
+ * Generate a dynamic sidebar nav structure based on user's resolved permissions.
+ * @param {object} user
+ * @returns {Array<{section, items}>}
+ */
+function getDynamicNav(user) {
+  if (!user) return [];
+  const perms = resolvePermissions(user);
+  const isSA = user.role === 'super_admin';
+
+  // Find user custom role details for page ordering and visibility overrides
+  const s = getStore();
+  const role = (s.roles || []).find(r => r.id === user.role || r.key === user.role);
+  const pageOrder = role?.pageOrder || role?.page_order;
+  const visibility = role?.moduleVisibility || role?.module_visibility;
+
+  // Collect visible nav items
+  let navItems = [];
+  for (const [moduleKey, navDef] of Object.entries(MODULE_TO_NAV)) {
+    const isVisible = visibility ? visibility[moduleKey] !== false : true;
+    if (isVisible && (isSA || perms[moduleKey]?.view)) {
+      navItems.push({ ...navDef, module: moduleKey });
+    }
+  }
+  if (isSA) {
+    SUPER_ADMIN_EXTRAS.forEach(e => {
+      const extraKey = e.path.replace('/', '');
+      const isVisible = visibility ? visibility[extraKey] !== false : true;
+      if (isVisible) navItems.push(e);
+    });
+  }
+
+  // If a custom pageOrder is set, sort items relative to each other
+  if (pageOrder && Array.isArray(pageOrder)) {
+    navItems.sort((a, b) => {
+      const keyA = a.module || a.path.replace('/', '');
+      const keyB = b.module || b.path.replace('/', '');
+      const idxA = pageOrder.indexOf(keyA);
+      const idxB = pageOrder.indexOf(keyB);
+      const valA = idxA === -1 ? 999 : idxA;
+      const valB = idxB === -1 ? 999 : idxB;
+      return valA - valB;
+    });
+  }
+
+  // Group by section maintaining order
+  const grouped = {};
+  navItems.forEach(item => {
+    if (!grouped[item.section]) grouped[item.section] = [];
+    grouped[item.section].push(item);
+  });
+
+  return SECTION_ORDER
+    .filter(s => grouped[s]?.length > 0)
+    .map(s => ({ section: s, items: grouped[s] }));
+}
+
+// ── ROLE CRUD (store helpers) ─────────────────────────────────────────────────
+
+function getRoles() {
+  const s = getStore();
+  if (!s.roles) s.roles = [];
+  return s.roles;
+}
+
+async function createRole(data) {
+  const payload = {
+    name: data.name,
+    description: data.description || '',
+    color: data.color || '#71717a',
+    disabled: !!data.disabled,
+    permissions: data.permissions || {},
+    pageOrder: data.pageOrder || data.page_order || null,
+    moduleVisibility: data.moduleVisibility || data.module_visibility || null,
+    featureAccess: data.featureAccess || data.feature_access || null,
+  };
+  const res = await apiFetch('/roles/', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  if (res.error) {
+    throw new Error(res.error);
+  }
+  await syncWithBackend();
+  return res.data;
+}
+
+async function updateRole(id, data) {
+  const payload = {
+    name: data.name,
+    description: data.description,
+    color: data.color,
+    disabled: data.disabled,
+    permissions: data.permissions,
+    pageOrder: data.pageOrder || data.page_order,
+    moduleVisibility: data.moduleVisibility || data.module_visibility,
+    featureAccess: data.featureAccess || data.feature_access,
+  };
+  // Remove undefined parameters
+  Object.keys(payload).forEach(k => {
+    if (payload[k] === undefined) delete payload[k];
+  });
+  const res = await apiFetch(`/roles/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+  if (res.error) {
+    throw new Error(res.error);
+  }
+  await syncWithBackend();
+  return res.data;
+}
+
+async function deleteRole(id) {
+  const res = await apiFetch(`/roles/${id}`, {
+    method: 'DELETE'
+  });
+  if (res.error) {
+    throw new Error(res.error);
+  }
+  await syncWithBackend();
+}
+
+async function cloneRole(id) {
+  const s = getStore();
+  let src = BUILTIN_ROLES.find(r => r.id === id);
+  if (!src) {
+    src = (s.roles || []).find(r => r.id === id);
+  }
+  if (!src) return null;
+  
+  let basePerms = {};
+  if (src.isSystem) {
+    basePerms = JSON.parse(JSON.stringify(DEFAULT_ROLE_PERMISSIONS[src.key] || {}));
+  } else {
+    basePerms = JSON.parse(JSON.stringify(src.permissions || {}));
+  }
+
+  return await createRole({
+    name: src.name + ' (Copy)',
+    description: src.description || '',
+    color: src.color || '#71717a',
+    permissions: basePerms,
+    pageOrder: src.pageOrder || src.page_order || null,
+    moduleVisibility: src.moduleVisibility || src.module_visibility || null,
+    featureAccess: src.featureAccess || src.feature_access || null
+  });
+}
+
+// Built-in system role definitions for display
+const BUILTIN_ROLES = [
+  { id: 'super_admin', key: 'super_admin', name: 'Super Admin', color: '#a78bfa', isSystem: true, description: 'Full platform access. Cannot be edited.' },
+  { id: 'admin',       key: 'admin',       name: 'Admin',       color: '#06b6d4', isSystem: true, description: 'Warehouse admin. Manages users and operations.' },
+  { id: 'manager',     key: 'manager',     name: 'Manager',     color: '#10b981', isSystem: true, description: 'Operations manager. Billing, inventory, CRM.' },
+  { id: 'staff',       key: 'staff',       name: 'Staff',       color: '#f59e0b', isSystem: true, description: 'Front-line staff. Billing and limited inventory.' },
+  { id: 'employee',    key: 'employee',    name: 'Employee',    color: '#71717a', isSystem: true, description: 'Read-only dashboard and tables access.' },
+];
+
+function getAllRoles() {
+  const custom = getRoles();
+  return [...BUILTIN_ROLES, ...custom];
+}
+
+// ── PERMISSION PRESETS ────────────────────────────────────────────────────────
+
+const PERMISSION_PRESETS = {
+  'Full Access': () => {
+    const p = {};
+    ALL_MODULES.forEach(m => { p[m.key] = {}; ALL_ACTIONS.forEach(a => { p[m.key][a] = true; }); });
+    return p;
+  },
+  'Read Only': () => {
+    const p = {};
+    ALL_MODULES.forEach(m => { p[m.key] = { view: true }; ALL_ACTIONS.filter(a => a !== 'view').forEach(a => { p[m.key][a] = false; }); });
+    return p;
+  },
+  'Operator': () => {
+    // Can view + create + edit but not delete/manage/const p = {};
+    ALL_MODULES.forEach(m => { p[m.key] = { view: true, create: true, edit: true, delete: false, export: false, import: false, manage: false }; });
+    return p;
+  },
+  'No Access': () => {
+    const p = {};
+    ALL_MODULES.forEach(m => { p[m.key] = {}; ALL_ACTIONS.forEach(a => { p[m.key][a] = false; }); });
+    return p;
+  },
+};
+
 // ===== components/shell.js =====
 /**
- * App Shell — Sidebar + Topbar + Main layout (v2)
+ * App Shell — Sidebar + Topbar + Main layout (v3 — Dynamic Nav)
  */
 
 
@@ -1986,90 +2464,9 @@ function exportPDF(entity) {
 
 
 
-const SUPER_ADMIN_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Operations', items: [
-    { path: '/warehouses', icon: 'warehouses', label: 'Warehouses' },
-    { path: '/workforce', icon: 'workforce', label: 'Workforce' },
-    { path: '/items', icon: 'items', label: 'Inventory' },
-    { path: '/tables', icon: 'tables', label: 'Tables' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-  { section: 'Finance', items: [
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/analytics', icon: 'analytics', label: 'Global Reports' },
-  ]},
-  { section: 'System', items: [
-    { path: '/settings', icon: 'settings', label: 'System Settings' },
-    { path: '/audit', icon: 'audit', label: 'Audit Logs' },
-  ]},
-];
 
-const ADMIN_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Operations', items: [
-    { path: '/warehouses', icon: 'warehouses', label: 'Warehouse' },
-    { path: '/workforce', icon: 'workforce', label: 'User Management' },
-    { path: '/items', icon: 'items', label: 'Item Management' },
-    { path: '/tables', icon: 'tables', label: 'Tables' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-  { section: 'Finance', items: [
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/analytics', icon: 'analytics', label: 'Reports' },
-  ]},
-  { section: 'System', items: [
-    { path: '/audit', icon: 'audit', label: 'Audit Logs' },
-  ]},
-];
+// Navigation is now dynamically generated from permissions — see js/modules/permissions.js
 
-const MANAGER_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Operations', items: [
-    { path: '/items', icon: 'items', label: 'Items' },
-    { path: '/tables', icon: 'tables', label: 'Tables' },
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-  { section: 'Reports', items: [
-    { path: '/analytics', icon: 'analytics', label: 'Analytics' },
-  ]},
-];
-
-const STAFF_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'Work', items: [
-    { path: '/tables', icon: 'tables', label: 'My Tables' },
-    { path: '/billing', icon: 'billing', label: 'Billing' },
-    { path: '/registry', icon: 'audit', label: 'Registry Ledger' },
-    { path: '/customers', icon: 'customer', label: 'CRM Customers' },
-  ]},
-];
-
-const EMPLOYEE_NAV = [
-  { section: 'Overview', items: [
-    { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  ]},
-  { section: 'My Work', items: [
-    { path: '/tables', icon: 'tables', label: 'My Tables' },
-  ]},
-];
-
-function getNav(role) {
-  const map = { super_admin: SUPER_ADMIN_NAV, admin: ADMIN_NAV, manager: MANAGER_NAV, staff: STAFF_NAV, employee: EMPLOYEE_NAV };
-  return map[role] || EMPLOYEE_NAV;
-}
 
 function renderShell(pageTitle, pageSubtitle, content) {
   const user = getCurrentUser();
@@ -2082,7 +2479,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
     : (whs.find(w => w.id === user.warehouseId)?.name || 'No Warehouse');
   const whAccessText = `${whCount} Warehouse${whCount !== 1 ? 's' : ''}`;
 
-  const nav = getNav(user.role);
+  const nav = getDynamicNav(user);
   const currentPath = getCurrentPath();
   const notifications = getNotifications();
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -2133,7 +2530,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
         ${sidebarWidget}
         <div class="sidebar-footer">
           <div class="sidebar-user" id="user-menu-btn" data-tooltip="${user.name} (${capitalize(user.role)})">
-            <div class="sidebar-user-avatar">${renderAvatar(user.avatar)}</div>
+            <div class="sidebar-user-avatar">${renderAvatarContainer(user.avatar, user.name, 36)}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
               <div class="sidebar-user-role" style="font-size:11px;color:var(--text-muted);font-weight:500;">${capitalize(user.role.replace('_', ' '))} · ${whAccessText}</div>
@@ -2144,21 +2541,23 @@ function renderShell(pageTitle, pageSubtitle, content) {
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
       <main class="main-content">
         <header class="topbar">
-          <button class="topbar-menu-btn" id="topbar-menu-btn" style="display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-          <button class="topbar-collapse-btn" id="topbar-collapse-btn" data-tooltip="Toggle Sidebar">
-            ${getSvgIcon(isCollapsed ? 'chevron_right' : 'collapse', 20)}
+          <button class="topbar-collapse-btn" id="topbar-collapse-btn" data-tooltip="${isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}">
+            ${getSvgIcon(isCollapsed ? 'panel_left_open' : 'panel_left_close', 20)}
           </button>
           <div class="topbar-breadcrumb">${breadcrumb}</div>
           <div class="topbar-actions">
-            <div class="topbar-search" id="cmd-palette-btn" style="cursor:pointer" title="Search Everything (Ctrl+K)">
-              <span style="color:var(--text-muted);display:flex;align-items:center">${getSvgIcon('search', 16)}</span>
-              <input type="text" placeholder="Search (Ctrl+K)" id="global-search" readonly style="cursor:pointer" />
+            <div class="topbar-search-wrapper" id="topbar-search-wrapper" style="position:relative">
+              <span class="topbar-search-icon">${getSvgIcon('search', 14)}</span>
+              <input type="text" id="global-search" class="topbar-search-input"
+                placeholder="Search inventory, invoices..." style="cursor:text" />
+              <span class="topbar-search-kb-hint">⌘K</span>
+              <div id="global-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;margin-top:8px;background:var(--bg-elevated);border:1px solid var(--border-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-xl);z-index:var(--z-dropdown);max-height:320px;overflow-y:auto;padding:6px;"></div>
             </div>
             <div class="icon-btn notif-btn" id="notif-btn" data-tooltip="Notifications" style="position:relative">
               ${getSvgIcon('bell', 18)}
               ${unreadCount > 0 ? `<span class="badge" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--accent-rose);border-radius:50%;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base)">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
             </div>
-            <div class="icon-btn" data-tooltip="Profile" id="profile-btn">${renderAvatar(user.avatar)}</div>
+            <div class="icon-btn" data-tooltip="Profile" id="profile-btn" style="overflow:hidden;padding:0;">${renderAvatarContainer(user.avatar, user.name, 34)}</div>
           </div>
         </header>
         <div class="page-content" id="page-content">
@@ -2182,16 +2581,21 @@ function renderShell(pageTitle, pageSubtitle, content) {
   document.getElementById('topbar-collapse-btn')?.addEventListener('click', (e) => {
     const shell = document.querySelector('.app-shell');
     if (shell) {
-      shell.classList.toggle('collapsed');
-      const collapsed = shell.classList.contains('collapsed');
-      localStorage.setItem('wareops_sidebar_collapsed', collapsed);
-      const btn = e.currentTarget;
-      btn.innerHTML = getSvgIcon(collapsed ? 'chevron_right' : 'collapse', 20);
+      const isMobile = window.innerWidth <= 768;
+      if (isMobile) {
+        toggleSidebar();
+      } else {
+        shell.classList.toggle('collapsed');
+        const collapsed = shell.classList.contains('collapsed');
+        localStorage.setItem('wareops_sidebar_collapsed', collapsed);
+        const btn = e.currentTarget;
+        btn.innerHTML = getSvgIcon(collapsed ? 'panel_left_open' : 'panel_left_close', 20);
+        btn.dataset.tooltip = collapsed ? 'Expand Sidebar' : 'Collapse Sidebar';
+      }
     }
   });
 
-  // Mobile sidebar toggle
-  document.getElementById('topbar-menu-btn')?.addEventListener('click', toggleSidebar);
+  // Mobile sidebar overlay close
   document.getElementById('sidebar-overlay')?.addEventListener('click', closeSidebar);
   document.getElementById('sidebar-close-btn')?.addEventListener('click', closeSidebar);
 
@@ -2212,9 +2616,145 @@ function renderShell(pageTitle, pageSubtitle, content) {
     showProfileDropdown(e.currentTarget);
   });
 
+  // Topbar Direct Search Logic
+  const searchInput = document.getElementById('global-search');
+  const searchResults = document.getElementById('global-search-results');
+
+  if (searchInput && searchResults) {
+    searchInput.addEventListener('focus', () => {
+      showSearchResults(searchInput.value);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+        searchResults.style.display = 'none';
+      }
+    });
+
+    searchInput.addEventListener('input', (e) => {
+      showSearchResults(e.target.value);
+    });
+    
+    // Keyboard listener to focus on search
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInput.focus();
+      }
+    });
+  }
+
+  function showSearchResults(val) {
+    const query = val.toLowerCase().trim();
+    if (!query) {
+      searchResults.innerHTML = '';
+      searchResults.style.display = 'none';
+      return;
+    }
+
+    const s = getStore();
+    const matches = [];
+
+    // Search Warehouses
+    if (s.warehouses) {
+      s.warehouses.forEach(w => {
+        if (w.name.toLowerCase().includes(query) || (w.location && w.location.toLowerCase().includes(query))) {
+          matches.push({
+            type: 'warehouse',
+            title: w.name,
+            subtitle: w.location || 'Warehouse Hub',
+            path: `#/warehouses`
+          });
+        }
+      });
+    }
+
+    // Search Items (Inventory)
+    if (s.items) {
+      s.items.forEach(i => {
+        if (i.name.toLowerCase().includes(query) || (i.sku && i.sku.toLowerCase().includes(query))) {
+          matches.push({
+            type: 'item',
+            title: i.name,
+            subtitle: `SKU: ${i.sku || 'N/A'} · Stock: ${i.stock || 0}`,
+            path: `#/items`
+          });
+        }
+      });
+    }
+
+    // Search Bills (Invoices)
+    if (s.bills) {
+      s.bills.forEach(b => {
+        const num = b.billNumber || '';
+        const client = b.customerName || '';
+        if (num.toLowerCase().includes(query) || client.toLowerCase().includes(query)) {
+          matches.push({
+            type: 'bill',
+            title: num || 'Invoice',
+            subtitle: `Client: ${client} · Total: $${(b.total || 0).toFixed(2)}`,
+            path: `#/billing`
+          });
+        }
+      });
+    }
+
+    // Search Workforce
+    if (s.users) {
+      s.users.forEach(u => {
+        if (u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query)) {
+          matches.push({
+            type: 'user',
+            title: u.name,
+            subtitle: `Email: ${u.email} · Role: ${u.role}`,
+            path: `#/workforce`
+          });
+        }
+      });
+    }
+
+    if (matches.length === 0) {
+      searchResults.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)">No matches found for "${val}"</div>`;
+      searchResults.style.display = 'block';
+      return;
+    }
+
+    const typeLabels = { item: 'Inventory', bill: 'Invoice', warehouse: 'Warehouse', user: 'Workforce' };
+    const typeIcons = { item: 'items', bill: 'billing', warehouse: 'warehouses', user: 'user' };
+
+    searchResults.innerHTML = matches.slice(0, 8).map((m, idx) => `
+      <div class="search-result-item" data-path="${m.path}" data-index="${idx}"
+        style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:all 0.15s;margin-bottom:2px">
+        <span style="color:var(--text-muted);display:flex;align-items:center">${getSvgIcon(typeIcons[m.type], 14)}</span>
+        <div style="flex:1;min-width:0;text-align:left">
+          <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.title}</div>
+          <div style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.subtitle}</div>
+        </div>
+        <span class="badge badge-muted" style="font-size:9px;padding:2px 6px;text-transform:uppercase">${typeLabels[m.type]}</span>
+      </div>
+    `).join('');
+
+    // Attach click/hover events
+    searchResults.querySelectorAll('.search-result-item').forEach(item => {
+      item.addEventListener('mouseenter', () => {
+        item.style.background = 'var(--bg-card-hover)';
+      });
+      item.addEventListener('mouseleave', () => {
+        item.style.background = 'transparent';
+      });
+      item.addEventListener('click', () => {
+        const path = item.dataset.path;
+        navigate(path);
+        searchInput.value = '';
+        searchResults.style.display = 'none';
+      });
+    });
+
+    searchResults.style.display = 'block';
+  }
+
   // Command Palette
   initPalette();
-  document.getElementById('cmd-palette-btn')?.addEventListener('click', togglePalette);
 
   // Intelligent JS tooltips system initialization
   initGlobalTooltips();
@@ -2319,21 +2859,26 @@ function showProfileDropdown(anchor) {
   const isSidebar = anchor.id === 'user-menu-btn';
   
   if (isSidebar) {
-    // Append to body if not already there to measure
-    if (!dropdown.parentElement) document.body.appendChild(dropdown);
+    // Append to body FIRST so we can measure its rendered height
+    document.body.appendChild(dropdown);
+    // Force layout calculation
+    dropdown.getBoundingClientRect();
     
     const rect = anchor.getBoundingClientRect();
     const elRect = dropdown.getBoundingClientRect();
     const winH = window.innerHeight;
+    const winW = window.innerWidth;
     
     // Position outside sidebar (to the right of the sidebar)
     let left = rect.right + 8;
-    // Align upward (so the bottom of the dropdown aligns with the bottom of the anchor)
+    // Default: open upward so bottom of popup aligns to bottom of anchor
     let top = rect.bottom - elRect.height;
     
-    // Clamp inside viewport
-    if (top < 10) top = 10;
-    if (top + elRect.height > winH - 10) top = winH - elRect.height - 10;
+    // Clamp vertically within viewport
+    if (top < 8) top = 8;
+    if (top + elRect.height > winH - 8) top = winH - elRect.height - 8;
+    // Clamp horizontally (if collapsed sidebar is very narrow)
+    if (left + elRect.width > winW - 8) left = winW - elRect.width - 8;
     
     dropdown.style.position = 'fixed';
     dropdown.style.left = left + 'px';
@@ -2481,22 +3026,62 @@ function initGlobalTooltips() {
 
 // ===== components/palette.js =====
 /**
- * Command Palette Component — Ctrl+K for pro navigation
+ * Command Palette — Enterprise Search (Ctrl+K)
+ * Features: instant results, text highlight, search history, keyboard navigation
  */
 
 
 
+
+const HISTORY_KEY = 'wareops_search_history';
+const MAX_HISTORY = 8;
+const MAX_RESULTS = 12;
 
 let paletteOpen = false;
 let query = '';
 let selectedIndex = 0;
 let results = [];
 
-/**
- * Initializes the global keyboard listener for the Command Palette.
- * Listens for Ctrl+K (or Cmd+K on macOS) to trigger the overlay,
- * and Esc key to dismiss it when active.
- */
+// ---- Search History ----
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function addHistory(label, type) {
+  const h = getHistory().filter(i => i.label !== label);
+  h.unshift({ label, type, ts: Date.now() });
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, MAX_HISTORY)));
+}
+function clearHistory() {
+  localStorage.removeItem(HISTORY_KEY);
+}
+
+// ---- Text Highlight ----
+function highlight(text, q) {
+  if (!q || q.length < 1) return escHtml(text);
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escHtml(text).replace(
+    new RegExp(`(${escaped})`, 'gi'),
+    '<mark style="background:rgba(255,255,255,0.18);color:var(--text-primary);border-radius:2px;padding:0 1px;">$1</mark>'
+  );
+}
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---- Type Color Map ----
+const TYPE_COLORS = {
+  page:      { bg: 'rgba(255,255,255,0.07)', color: 'var(--text-muted)' },
+  action:    { bg: 'rgba(16,185,129,0.12)',  color: '#10b981' },
+  item:      { bg: 'rgba(6,182,212,0.12)',   color: '#06b6d4' },
+  warehouse: { bg: 'rgba(139,92,246,0.12)',  color: '#8b5cf6' },
+  workforce: { bg: 'rgba(245,158,11,0.12)',  color: '#f59e0b' },
+  billing:   { bg: 'rgba(244,63,94,0.12)',   color: '#f43f5e' },
+  customer:  { bg: 'rgba(99,102,241,0.12)',  color: '#818cf8' },
+  table:     { bg: 'rgba(14,165,233,0.12)',  color: '#0ea5e9' },
+  history:   { bg: 'rgba(113,113,122,0.12)', color: '#71717a' },
+  insight:   { bg: 'transparent',            color: 'var(--text-muted)' },
+};
+
 function initPalette() {
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -2509,223 +3094,282 @@ function initPalette() {
   });
 }
 
-/**
- * Toggles the Command Palette visibility.
- * Handles overlay setup, initial query/selection state, element focusing,
- * and cleans up overlay elements from the DOM when closing.
- */
 function togglePalette() {
   paletteOpen = !paletteOpen;
   if (paletteOpen) {
     query = '';
     selectedIndex = 0;
     renderPalette();
-    document.getElementById('palette-input')?.focus();
+    requestAnimationFrame(() => document.getElementById('palette-input')?.focus());
   } else {
-    document.getElementById('palette-overlay')?.remove();
+    const overlay = document.getElementById('palette-overlay');
+    if (overlay) {
+      overlay.classList.add('palette-closing');
+      setTimeout(() => overlay.remove(), 150);
+    }
   }
 }
 
-/**
- * Creates and appends the Command Palette overlay element to the DOM body.
- * Mounts the search bar, results list, shortcuts footer, and attaches key/mouse event listeners.
- * @private
- */
 function renderPalette() {
+  // Remove existing if any
+  document.getElementById('palette-overlay')?.remove();
+
   const overlay = document.createElement('div');
   overlay.id = 'palette-overlay';
-  overlay.className = 'palette-overlay animate-fadeIn';
+  overlay.className = 'palette-overlay';
   overlay.innerHTML = `
-    <div class="palette-container animate-scaleUp">
+    <div class="palette-container" id="palette-container">
       <div class="palette-search">
-        <span class="palette-search-icon">🔍</span>
-        <input type="text" id="palette-input" placeholder="Search commands, items, or pages..." autocomplete="off" />
+        <span class="palette-search-icon">${getSvgIcon('search', 18)}</span>
+        <input type="text" id="palette-input" class="palette-input"
+          placeholder="Search inventory, users, invoices, reports..."
+          autocomplete="off" spellcheck="false" />
         <span class="palette-search-kb">ESC</span>
       </div>
       <div id="palette-results" class="palette-results"></div>
       <div class="palette-footer">
-        <span><b>↑↓</b> to navigate</span>
-        <span><b>↵</b> to select</span>
-        <span><b>ESC</b> to close</span>
+        <span>${getSvgIcon('chevron_down', 12)}<b style="margin-left:2px">↑↓</b> Navigate</span>
+        <span>↵ Open</span>
+        <span>ESC Close</span>
+        <button id="palette-clear-history" style="margin-left:auto;background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;font-family:var(--font-sans);padding:0;opacity:0.7;">Clear history</button>
       </div>
     </div>
   `;
 
   document.body.appendChild(overlay);
+
+  // Click outside to close
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) togglePalette();
   });
 
+  // Clear history
+  overlay.querySelector('#palette-clear-history')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearHistory();
+    updateResults();
+  });
+
   const input = overlay.querySelector('#palette-input');
+
   input.addEventListener('input', (e) => {
-    query = e.target.value.toLowerCase();
+    query = e.target.value.toLowerCase().trim();
     selectedIndex = 0;
     updateResults();
   });
 
   input.addEventListener('keydown', (e) => {
+    const navigable = results.filter(r => r.type !== 'divider' && r.type !== 'insight');
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      let next = (selectedIndex + 1) % results.length;
-      while (results[next]?.type === 'divider' || results[next]?.type === 'insight') {
-        next = (next + 1) % results.length;
-        if (next === selectedIndex) break;
-      }
+      let next = selectedIndex;
+      do { next = (next + 1) % results.length; }
+      while ((results[next]?.type === 'divider') && next !== selectedIndex);
       selectedIndex = next;
       renderResults();
+      scrollActiveIntoView();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      let prev = (selectedIndex - 1 + results.length) % results.length;
-      while (results[prev]?.type === 'divider' || results[prev]?.type === 'insight') {
-        prev = (prev - 1 + results.length) % results.length;
-        if (prev === selectedIndex) break;
-      }
+      let prev = selectedIndex;
+      do { prev = (prev - 1 + results.length) % results.length; }
+      while ((results[prev]?.type === 'divider') && prev !== selectedIndex);
       selectedIndex = prev;
       renderResults();
+      scrollActiveIntoView();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (results[selectedIndex]) executeCommand(results[selectedIndex]);
+      const r = results[selectedIndex];
+      if (r && r.type !== 'divider' && r.type !== 'insight') executeCommand(r);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      let next = selectedIndex;
+      do { next = (next + 1) % results.length; }
+      while ((results[next]?.type === 'divider') && next !== selectedIndex);
+      selectedIndex = next;
+      renderResults();
     }
   });
 
   updateResults();
 }
 
-/**
- * Queries active store collections (items, bills, warehouses) to filter items
- * matching the query prefix. Populates default quick insights when query is empty.
- * @private
- */
+function scrollActiveIntoView() {
+  const activeEl = document.querySelector('.palette-item.active');
+  if (activeEl) activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
 function updateResults() {
   const user = getCurrentUser();
-  const items = getItems();
-  const whs = getWarehouses();
-  const bills = getBills();
+  if (!user) return;
 
-  const commands = [
-    { type: 'page', label: 'Go to Dashboard', path: '/dashboard', icon: getSvgIcon('dashboard', 16) },
-    { type: 'page', label: 'Manage Inventory', path: '/items', icon: getSvgIcon('items', 16) },
-    { type: 'page', label: 'Billing & Invoices', path: '/billing', icon: getSvgIcon('billing', 16) },
-    { type: 'page', label: 'Analytics Reports', path: '/analytics', icon: getSvgIcon('analytics', 16) },
-    { type: 'action', label: 'Create New Bill', action: 'billing', icon: getSvgIcon('plus', 16) },
-    { type: 'action', label: 'Add New Item', action: 'items', icon: getSvgIcon('plus', 16) },
-  ];
-
-  if (user.role === 'super_admin') {
-    commands.push({ type: 'page', label: 'Manage Warehouses', path: '/warehouses', icon: getSvgIcon('warehouses', 16) });
-    commands.push({ type: 'page', label: 'User Management', path: '/workforce', icon: getSvgIcon('workforce', 16) });
-    commands.push({ type: 'page', label: 'Audit Logs', path: '/audit', icon: getSvgIcon('audit', 16) });
-  }
+  const items    = getItems();
+  const whs      = getWarehouses();
+  const bills    = getBills();
+  const allUsers = getAllUsers();
+  const tables   = getStore().tables || [];
+  const isAdmin  = ['super_admin','admin'].includes(user.role);
+  const isSA     = user.role === 'super_admin';
 
   const matches = [];
 
-  // Show Quick Insights if no query
   if (!query) {
-    const totalRev = bills.reduce((sum, b) => sum + (b.total || 0), 0);
-    const health = getStockHealth();
-    matches.push({ type: 'insight', label: 'Quick Insight: Revenue', sub: `Total across all warehouses: ${formatCurrency(totalRev)}`, icon: getSvgIcon('revenue', 16) });
-    matches.push({ type: 'insight', label: 'Quick Insight: Inventory', sub: `Total items tracked: ${formatNumber(items.length)}`, icon: getSvgIcon('items', 16) });
-    matches.push({ type: 'insight', label: 'Quick Insight: Stock Health', sub: `Current status: ${health}% healthy`, icon: getSvgIcon('check', 16) });
-    matches.push({ type: 'divider', label: 'Suggested Commands' });
+    // ── Show search history ──
+    const history = getHistory();
+    if (history.length > 0) {
+      matches.push({ type: 'divider', label: 'Recent Searches' });
+      history.slice(0, 5).forEach(h => {
+        matches.push({
+          type: 'history',
+          label: h.label,
+          sub: capitalize(h.type || 'page'),
+          icon: getSvgIcon('refresh', 14),
+          _hist: h
+        });
+      });
+    }
+
+    // ── Quick Stats ──
+    const totalRev = bills.reduce((s, b) => s + (b.total || 0), 0);
+    const health   = getStockHealth();
+    matches.push({ type: 'divider', label: 'Quick Insights' });
+    matches.push({ type: 'insight', label: `Revenue: ${formatCurrency(totalRev)}`, sub: `Across ${whs.length} warehouse${whs.length !== 1 ? 's' : ''}`, icon: getSvgIcon('revenue', 16) });
+    matches.push({ type: 'insight', label: `Inventory: ${formatNumber(items.length)} items`, sub: `Stock health: ${health}%`, icon: getSvgIcon('items', 16) });
+    if (isSA) matches.push({ type: 'insight', label: `Team: ${allUsers.length} members`, sub: `Across all roles`, icon: getSvgIcon('workforce', 16) });
+
+    // ── Suggested commands ──
+    matches.push({ type: 'divider', label: 'Quick Actions' });
+    matches.push({ type: 'page',   label: 'Dashboard',       path: '/dashboard', icon: getSvgIcon('dashboard', 16) });
+    matches.push({ type: 'action', label: 'New Invoice',     action: 'billing',  icon: getSvgIcon('billing', 16) });
+    matches.push({ type: 'page',   label: 'Inventory',       path: '/items',     icon: getSvgIcon('items', 16) });
+    matches.push({ type: 'page',   label: 'Analytics',       path: '/analytics', icon: getSvgIcon('analytics', 16) });
+    if (isSA) matches.push({ type: 'page', label: 'Settings', path: '/settings', icon: getSvgIcon('settings', 16) });
+
+    results = matches.slice(0, 20);
+    renderResults();
+    return;
   }
 
-  // Filter commands
-  commands.forEach(c => {
-    if (c.label.toLowerCase().includes(query)) matches.push(c);
+  // ── NAVIGATION COMMANDS ──
+  const pages = [
+    { label: 'Dashboard',       path: '/dashboard', icon: getSvgIcon('dashboard', 16) },
+    { label: 'Inventory',       path: '/items',     icon: getSvgIcon('items', 16) },
+    { label: 'Billing',         path: '/billing',   icon: getSvgIcon('billing', 16) },
+    { label: 'Analytics',       path: '/analytics', icon: getSvgIcon('analytics', 16) },
+    { label: 'Tables',          path: '/tables',    icon: getSvgIcon('tables', 16) },
+    { label: 'Registry Ledger', path: '/registry',  icon: getSvgIcon('audit', 16) },
+    { label: 'CRM Customers',   path: '/customers', icon: getSvgIcon('customer', 16) },
+  ];
+  if (isAdmin) {
+    pages.push({ label: 'Workforce',    path: '/workforce', icon: getSvgIcon('workforce', 16) });
+    pages.push({ label: 'Warehouses',   path: '/warehouses', icon: getSvgIcon('warehouses', 16) });
+    pages.push({ label: 'Audit Logs',   path: '/audit',     icon: getSvgIcon('audit', 16) });
+    pages.push({ label: 'Settings',     path: '/settings',  icon: getSvgIcon('settings', 16) });
+  }
+  pages.forEach(p => {
+    if (p.label.toLowerCase().includes(query)) matches.push({ type: 'page', ...p });
   });
 
-  // Filter items (Inventory)
-  if (query.length > 1) {
-    items.forEach(i => {
-      if (i.name.toLowerCase().includes(query) || i.sku.toLowerCase().includes(query)) {
-        matches.push({ type: 'item', label: i.name, sub: `SKU: ${i.sku} · ${formatCurrency(i.price)}`, id: i.id, icon: getSvgIcon('items', 16) });
-      }
-    });
+  // ── INVENTORY ──
+  const itemMatches = items.filter(i =>
+    (i.name || '').toLowerCase().includes(query) ||
+    (i.sku  || '').toLowerCase().includes(query) ||
+    (i.category || '').toLowerCase().includes(query)
+  ).slice(0, 4);
+  itemMatches.forEach(i => matches.push({
+    type: 'item',
+    label: i.name,
+    sub: `SKU: ${i.sku || '—'} · ${formatCurrency(i.price)} · Stock: ${i.stock || 0}`,
+    id: i.id,
+    icon: getSvgIcon('items', 16)
+  }));
+
+  // ── WAREHOUSES ──
+  if (isSA) {
+    whs.filter(w => (w.name || '').toLowerCase().includes(query) || (w.address || '').toLowerCase().includes(query))
+      .slice(0, 3)
+      .forEach(w => matches.push({
+        type: 'warehouse', label: w.name, sub: w.address, id: w.id, icon: getSvgIcon('warehouses', 16)
+      }));
   }
 
-  // Filter warehouses
-  if (user.role === 'super_admin' && query.length > 1) {
-    whs.forEach(w => {
-      if (w.name.toLowerCase().includes(query)) {
-        matches.push({ type: 'warehouse', label: w.name, sub: w.address, id: w.id, icon: getSvgIcon('warehouses', 16) });
-      }
-    });
+  // ── WORKFORCE ──
+  if (isAdmin) {
+    allUsers.filter(u =>
+      (u.name  || '').toLowerCase().includes(query) ||
+      (u.email || '').toLowerCase().includes(query)
+    ).slice(0, 3).forEach(u => matches.push({
+      type: 'workforce',
+      label: u.name,
+      sub: `${capitalize((u.role || '').replace('_', ' '))} · ${u.email}`,
+      id: u.id,
+      icon: getSvgIcon('workforce', 16)
+    }));
   }
 
-  // Filter workforce (User Management)
-  if (query.length > 1) {
-    const allUsers = getAllUsers();
-    allUsers.forEach(u => {
-      if (u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query)) {
-        matches.push({ type: 'workforce', label: u.name, sub: `${capitalize(u.role.replace('_', ' '))} · ${u.email}`, id: u.id, icon: getSvgIcon('workforce', 16) });
-      }
-    });
-  }
+  // ── BILLING ──
+  bills.filter(b =>
+    (b.billNo   || '').toLowerCase().includes(query) ||
+    (b.customer || '').toLowerCase().includes(query)
+  ).slice(0, 3).forEach(b => matches.push({
+    type: 'billing',
+    label: b.billNo,
+    sub: `${b.customer} · ${formatCurrency(b.total)}`,
+    id: b.id,
+    icon: getSvgIcon('billing', 16)
+  }));
 
-  // Filter dynamic tables
-  if (query.length > 1) {
-    const tables = getStore().tables || [];
-    tables.forEach(t => {
-      const title = t.displayName || t.name;
-      if (title.toLowerCase().includes(query)) {
-        matches.push({ type: 'table', label: title, sub: `Custom Table · ${t.columns?.length || 0} columns`, id: t.id, icon: getSvgIcon('tables', 16) });
-      }
-    });
-  }
-
-  // Filter billing invoices
-  if (query.length > 1) {
-    bills.forEach(b => {
-      if (b.billNo.toLowerCase().includes(query) || b.customer.toLowerCase().includes(query)) {
-        matches.push({ type: 'billing', label: b.billNo, sub: `Invoice · ${b.customer} · ${formatCurrency(b.total)}`, id: b.id, icon: getSvgIcon('billing', 16) });
-      }
-    });
-  }
-
-  // Filter CRM Customers
-  if (query.length > 1) {
-    const uniqueCustomers = [];
-    const seenCusts = new Set();
-    bills.forEach(b => {
-      if (b.customer && !seenCusts.has(b.customer.toLowerCase())) {
-        seenCusts.add(b.customer.toLowerCase());
-        uniqueCustomers.push({
-          name: b.customer,
-          email: b.customerEmail || 'No email',
-          phone: b.customerPhone || 'No phone'
+  // ── CUSTOMERS ──
+  const seenC = new Set();
+  bills.forEach(b => {
+    if (b.customer && !seenC.has(b.customer.toLowerCase())) {
+      seenC.add(b.customer.toLowerCase());
+      if (b.customer.toLowerCase().includes(query) || (b.customerEmail || '').toLowerCase().includes(query)) {
+        matches.push({
+          type: 'customer',
+          label: b.customer,
+          sub: `CRM · ${b.customerEmail || 'No email'} · ${b.customerPhone || ''}`,
+          id: b.customer,
+          icon: getSvgIcon('customer', 16)
         });
       }
-    });
-    uniqueCustomers.forEach(cust => {
-      if (cust.name.toLowerCase().includes(query) || cust.email.toLowerCase().includes(query)) {
-        matches.push({ type: 'customer', label: cust.name, sub: `CRM Customer · ${cust.email} · ${cust.phone}`, id: cust.name, icon: getSvgIcon('customer', 16) });
-      }
-    });
-  }
+    }
+  });
 
-  results = matches.slice(0, 10);
-  
-  // Ensure selectedIndex is valid for new results
-  if (selectedIndex >= results.length) selectedIndex = 0;
-  if (results.length > 0 && (results[selectedIndex]?.type === 'divider' || results[selectedIndex]?.type === 'insight')) {
-    const next = results.findIndex(r => r.type !== 'divider' && r.type !== 'insight');
-    if (next !== -1) selectedIndex = next;
+  // ── TABLES ──
+  tables.filter(t => (t.displayName || t.name || '').toLowerCase().includes(query))
+    .slice(0, 2)
+    .forEach(t => matches.push({
+      type: 'table',
+      label: t.displayName || t.name,
+      sub: `Table · ${t.columns?.length || 0} columns`,
+      id: t.id,
+      icon: getSvgIcon('tables', 16)
+    }));
+
+  results = matches.slice(0, MAX_RESULTS);
+
+  // ensure selectedIndex is on a navigable result
+  if (results.length > 0) {
+    while (results[selectedIndex]?.type === 'divider' || results[selectedIndex]?.type === 'insight') {
+      selectedIndex = (selectedIndex + 1) % results.length;
+    }
   }
 
   renderResults();
 }
 
-/**
- * Renders the compiled search results matching the active query.
- * Focuses active selections and mounts click event listeners on items.
- * @private
- */
 function renderResults() {
   const container = document.getElementById('palette-results');
   if (!container) return;
 
   if (results.length === 0) {
-    container.innerHTML = `<div class="palette-no-results">No matches found for "${query}"</div>`;
+    container.innerHTML = `
+      <div style="padding:40px;text-align:center;color:var(--text-muted)">
+        <div style="margin-bottom:8px;opacity:0.4">${getSvgIcon('search', 32)}</div>
+        <div style="font-size:14px;font-weight:500">No results for "<em>${escHtml(query)}</em>"</div>
+        <div style="font-size:12px;margin-top:4px;opacity:0.7">Try a different keyword</div>
+      </div>`;
     return;
   }
 
@@ -2733,57 +3377,85 @@ function renderResults() {
     if (res.type === 'divider') {
       return `<div class="palette-divider">${res.label}</div>`;
     }
+    if (res.type === 'insight') {
+      return `
+        <div class="palette-insight">
+          <span class="palette-item-icon" style="background:rgba(255,255,255,0.04)">${res.icon}</span>
+          <div class="palette-item-info">
+            <div class="palette-item-label" style="font-weight:600">${res.label}</div>
+            ${res.sub ? `<div class="palette-item-sub">${res.sub}</div>` : ''}
+          </div>
+        </div>`;
+    }
+
+    const tc = TYPE_COLORS[res.type] || TYPE_COLORS.page;
+    const isActive = i === selectedIndex;
+    const isHistory = res.type === 'history';
     return `
-      <div class="palette-item ${i === selectedIndex ? 'active' : ''}" data-index="${i}">
-        <span class="palette-item-icon">${res.icon}</span>
+      <div class="palette-item ${isActive ? 'active' : ''}" data-index="${i}" role="option" aria-selected="${isActive}">
+        <span class="palette-item-icon" style="background:${tc.bg};color:${tc.color}">${res.icon}</span>
         <div class="palette-item-info">
-          <div class="palette-item-label">${res.label}</div>
-          ${res.sub ? `<div class="palette-item-sub">${res.sub}</div>` : ''}
+          <div class="palette-item-label">${highlight(res.label, query)}</div>
+          ${res.sub ? `<div class="palette-item-sub">${highlight(res.sub, query)}</div>` : ''}
         </div>
-        <span class="palette-item-type">${res.type}</span>
-      </div>
-    `;
+        <span class="palette-item-type" style="color:${tc.color};background:${tc.bg}">
+          ${isHistory ? '↩ recent' : res.type}
+        </span>
+      </div>`;
   }).join('');
 
   container.querySelectorAll('.palette-item').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      const idx = parseInt(el.dataset.index);
+      if (results[idx]?.type !== 'divider' && results[idx]?.type !== 'insight') {
+        selectedIndex = idx;
+        renderResults();
+      }
+    });
     el.addEventListener('click', () => {
-      selectedIndex = parseInt(el.dataset.index);
-      executeCommand(results[selectedIndex]);
+      const idx = parseInt(el.dataset.index);
+      if (results[idx]?.type !== 'divider' && results[idx]?.type !== 'insight') {
+        selectedIndex = idx;
+        executeCommand(results[selectedIndex]);
+      }
     });
   });
 }
 
-/**
- * Resolves actions, page routing, and deep-linking targets selected from the palette.
- * Cleans up navigation state and calls callbacks for modal actions.
- * @param {Object} cmd - The matched command, action, or item payload.
- * @private
- */
 function executeCommand(cmd) {
-  if (cmd.type === 'divider' || cmd.type === 'insight') return;
+  if (!cmd || cmd.type === 'divider' || cmd.type === 'insight') return;
+
+  // Save to history (except dividers/insights)
+  addHistory(cmd.label, cmd.type);
+
   togglePalette();
-  if (cmd.type === 'page') {
-    navigate(cmd.path);
-  } else if (cmd.type === 'action') {
-    if (cmd.action === 'billing') {
-      navigate('/billing');
-      setTimeout(() => window._showBillModal?.(), 300);
-    } else if (cmd.action === 'items') {
-      navigate('/items');
-      setTimeout(() => window._showItemModal?.(), 300);
-    }
-  } else if (cmd.type === 'item') {
-    navigate('/items');
-  } else if (cmd.type === 'warehouse') {
-    navigate('/warehouses/' + cmd.id);
-  } else if (cmd.type === 'workforce') {
-    navigate('/workforce');
-  } else if (cmd.type === 'table') {
-    navigate('/tables');
-  } else if (cmd.type === 'billing') {
-    navigate('/billing');
-  } else if (cmd.type === 'customer') {
-    navigate('/customers');
+
+  if (cmd.type === 'history' && cmd._hist) {
+    // Re-execute the historical item as best we can
+    const h = cmd._hist;
+    if (h.path) navigate(h.path);
+    else navigate('/dashboard');
+    return;
+  }
+
+  switch (cmd.type) {
+    case 'page':      navigate(cmd.path); break;
+    case 'action':
+      if (cmd.action === 'billing') {
+        navigate('/billing');
+        setTimeout(() => window._showBillModal?.(), 300);
+      } else if (cmd.action === 'items') {
+        navigate('/items');
+        setTimeout(() => window._showItemModal?.(), 300);
+      }
+      break;
+    case 'item':      navigate('/items'); break;
+    case 'warehouse': navigate('/warehouses/' + cmd.id); break;
+    case 'workforce': navigate('/workforce'); break;
+    case 'table':     navigate('/tables'); break;
+    case 'billing':   navigate('/billing'); break;
+    case 'customer':  navigate('/customers'); break;
+    default:          navigate('/dashboard');
   }
 }
 
@@ -4221,6 +4893,7 @@ function renderTerms() {
 
 
 
+
 // Track chart instances so we can destroy before re-rendering
 const _dashboardCharts = {};
 
@@ -4241,15 +4914,21 @@ function renderDashboard() {
   const users = getAllUsers();
   const items = getItems();
   const bills = getBills();
-  const logs = getAuditLogs().slice(0, 6);
-  const sub = getSubscription();
+  const logs = getAuditLogs().slice(0, 6);  const sub = getSubscription();
+  const isSA = user.role === 'super_admin';
+
+  // Dynamic capability checks
+  const canViewWarehouses = canDo('warehouses', 'view', user);
+  const canViewBilling = canDo('billing', 'view', user);
+  const canViewWorkforce = canDo('workforce', 'view', user);
+  const canViewInventory = canDo('inventory', 'view', user);
+  const canViewAudit = canDo('audit', 'view', user);
+  const canViewReports = canDo('reports', 'view', user);
 
   const totalRevenue = bills.reduce((s,b)=>s+(b.total||0),0);
   const totalTax    = bills.reduce((s,b)=>s+(b.tax||0),0);
   const totalStock  = items.reduce((s,i)=>s+(i.stock||0),0);
   const activeUsers = users.filter(u=>u.status==='active').length;
-  const isSA = user.role === 'super_admin';
-  const isAdmin = isSA || user.role === 'admin';
 
   // Low stock items
   const lowStock = items.filter(i=>(i.stock||0)<20).slice(0,5);
@@ -4275,6 +4954,10 @@ function renderDashboard() {
     .sort((a, b) => b.priority - a.priority)
     .slice(0, 4);
 
+  // Count visible panels in second row to compute responsive widths
+  const row2Count = 1 + (canViewBilling ? 1 : 0) + (canViewInventory ? 1 : 0);
+  const row2Col = row2Count === 3 ? 'col-4' : row2Count === 2 ? 'col-6' : 'col-12';
+
   renderShell('Dashboard', roleLabel, `
     <div class="animate-slideUp">
 
@@ -4286,21 +4969,21 @@ function renderDashboard() {
           <p style="color:var(--text-muted);font-size:13px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})} · ${roleLabel}</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/warehouses'">${getSvgIcon('warehouses', 14)} Warehouses</button>
-          <button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
-          ${!isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
+          ${isSA ? `<button class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/warehouses'">${getSvgIcon('warehouses', 14)} Warehouses</button>` : ''}
+          ${canDo('billing', 'create', user) ? `<button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
         </div>
       </div>
 
       <!-- KPI Cards — compact row -->
       <div class="stat-grid" style="margin-bottom:20px">
-        ${isSA ? `<div class="stat-card">
+        ${canViewWarehouses ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#6366f1"></div>
           <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value">${whs.length}</div>
           <div class="stat-card-label">Warehouses</div>
           <div class="stat-card-trend trend-up">${sub.plan} plan</div>
         </div>` : ''}
+        ${canViewBilling ? `
         <div class="stat-card">
           <div class="stat-card-glow" style="background:#10b981"></div>
           <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">${getSvgIcon('revenue', 20)}</div>
@@ -4315,20 +4998,21 @@ function renderDashboard() {
           <div class="stat-card-label">Invoices</div>
           <div class="stat-card-trend trend-up">↑ This period</div>
         </div>
-        <div class="stat-card">
+        ` : ''}
+        ${canViewWorkforce ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#06b6d4"></div>
           <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${activeUsers}</div>
           <div class="stat-card-label">Active Users</div>
           <div class="stat-card-trend">${users.length} total</div>
-        </div>
-        <div class="stat-card">
+        </div>` : ''}
+        ${canViewInventory ? `<div class="stat-card">
           <div class="stat-card-glow" style="background:#f59e0b"></div>
           <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
           <div class="stat-card-label">Stock Units</div>
           <div class="stat-card-trend ${lowStock.length>0?'trend-down':'trend-up'}">${lowStock.length} low stock</div>
-        </div>
+        </div>` : ''}
         ${isSA ? `<div class="stat-card" style="cursor:pointer" onclick="location.hash='#/subscription'">
           <div class="stat-card-glow" style="background:#f43f5e"></div>
           <div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">${getSvgIcon('subscription', 20)}</div>
@@ -4339,10 +5023,12 @@ function renderDashboard() {
       </div>
 
       <!-- Main content grid -->
+      ${(canViewBilling || canViewReports || canViewAudit) ? `
       <div class="dashboard-grid">
 
         <!-- Revenue Chart -->
-        <div class="chart-card col-8">
+        ${(canViewBilling || canViewReports) ? `
+        <div class="chart-card ${canViewAudit ? 'col-8' : 'col-12'}">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Trend</div>
@@ -4355,9 +5041,11 @@ function renderDashboard() {
           </div>
           <div class="chart-container" style="height:180px"><canvas id="revenue-chart"></canvas></div>
         </div>
+        ` : ''}
 
         <!-- Activity Feed -->
-        <div class="chart-card col-4">
+        ${canViewAudit ? `
+        <div class="chart-card ${(canViewBilling || canViewReports) ? 'col-4' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('clock', 18)} Activity</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/audit'" style="font-size:11px">All →</button>
@@ -4375,14 +5063,16 @@ function renderDashboard() {
               `).join('')}
           </div>
         </div>
+        ` : ''}
       </div>
+      ` : ''}
 
       <!-- Second row -->
       <div class="dashboard-grid">
 
         <!-- Warehouse Summary -->
-        ${isSA ? `
-        <div class="chart-card col-4">
+        ${canViewWarehouses ? `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} Warehouses</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/warehouses'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -4400,7 +5090,8 @@ function renderDashboard() {
             `).join('')}
             ${whs.length === 0 ? `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px">No warehouses yet</div>` : ''}
           </div>
-        </div>` : `<div class="chart-card">
+        </div>` : `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('warehouses', 18)} My Warehouse</div>
           </div>
@@ -4417,7 +5108,8 @@ function renderDashboard() {
         </div>`}
 
         <!-- Billing Quick Stats -->
-        <div class="chart-card col-4">
+        ${canViewBilling ? `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('billing', 18)} Billing Stats</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/billing'" style="font-size:11px">View →</button>
@@ -4443,9 +5135,11 @@ function renderDashboard() {
             </div>
           `).join('')}
         </div>
+        ` : ''}
 
         <!-- Low Stock Alerts -->
-        <div class="chart-card col-4">
+        ${canViewInventory ? `
+        <div class="chart-card ${row2Col}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px;color:var(--accent-rose)">${getSvgIcon('warning', 18)} Low Stock</div>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
@@ -4462,23 +5156,26 @@ function renderDashboard() {
             <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">Quick Actions</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               ${[
-                { icon:'items', label:'Add Item',   href:'/items'     },
-                { icon:'billing', label:'New Bill',   href:'/billing'   },
-                { icon:'workforce', label:'Workforce',  href:'/workforce' },
-                { icon:'analytics', label:'Reports',    href:'/analytics' },
-              ].filter(a=>isAdmin || (a.href!=='/workforce')).map(a=>`
+                { icon:'items', label:'Add Item',   href:'/items', mod: 'inventory' },
+                { icon:'billing', label:'New Bill',   href:'/billing', mod: 'billing' },
+                { icon:'workforce', label:'Workforce',  href:'/workforce', mod: 'workforce' },
+                { icon:'analytics', label:'Reports',    href:'/analytics', mod: 'reports' },
+              ].filter(a => canDo(a.mod, 'view', user) || (a.mod === 'billing' && canDo('billing', 'create', user))).map(a=>`
                 <button class="btn btn-secondary btn-sm" onclick="location.hash='#${a.href}'" style="font-size:11px;padding:6px 8px;justify-content:flex-start;gap:6px">${getSvgIcon(a.icon, 14)} ${a.label}</button>
               `).join('')}
             </div>
           </div>
         </div>
+        ` : ''}
       </div>
 
       <!-- Third Row -->
+      ${(canViewInventory || canViewBilling) ? `
       <div class="dashboard-grid">
         
         <!-- Smart Restock Recommender -->
-        <div class="chart-card col-5">
+        ${canViewInventory ? `
+        <div class="chart-card ${canViewBilling ? 'col-5' : 'col-12'}">
           <div class="chart-card-header">
             <div>
               <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('bulb', 18)} Restock Recommender</div>
@@ -4502,9 +5199,11 @@ function renderDashboard() {
               `).join('')}
           </div>
         </div>
+        ` : ''}
 
         <!-- Revenue Summary -->
-        <div class="chart-card col-7">
+        ${canViewBilling ? `
+        <div class="chart-card ${canViewInventory ? 'col-7' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue Summary</div>
           </div>
@@ -4523,12 +5222,15 @@ function renderDashboard() {
             </div>
           </div>
         </div>
+        ` : ''}
       </div>
+      ` : ''}
 
-      <!-- Workforce Summary -->
-      ${isAdmin ? `
+      <!-- Fourth Row: Workforce & Distribution -->
+      ${canViewWorkforce || (canViewReports && canViewWarehouses) ? `
       <div class="dashboard-grid">
-        <div class="chart-card col-6">
+        ${canViewWorkforce ? `
+        <div class="chart-card ${(canViewReports && canViewWarehouses) ? 'col-6' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 18)} Workforce Summary</div>
             <button class="btn btn-primary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px;padding:4px 10px">Manage</button>
@@ -4551,18 +5253,20 @@ function renderDashboard() {
           <div style="display:flex;flex-direction:column;gap:6px">
             ${users.slice(0,4).map(u=>`
               <div style="display:flex;align-items:center;gap:8px">
-                <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0">${u.avatar}</div>
+                <div style="flex-shrink:0">${renderAvatarContainer(u.avatar, u.name, 28)}</div>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.name}</div>
                 </div>
-                <span style="font-size:10px;color:var(--text-muted)">${u.role}</span>
+                <span style="font-size:10px;color:var(--text-muted)">${u.role.charAt(0).toUpperCase() + u.role.slice(1).replace('_', ' ')}</span>
               </div>
             `).join('')}
           </div>
         </div>
+        ` : ''}
 
         <!-- Warehouse Distribution -->
-        <div class="chart-card col-6">
+        ${canViewReports && canViewWarehouses ? `
+        <div class="chart-card ${canViewWorkforce ? 'col-6' : 'col-12'}">
           <div class="chart-card-header">
             <div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 18)} Revenue by Warehouse</div>
           </div>
@@ -4578,23 +5282,19 @@ function renderDashboard() {
               </div>`;
             }).join('')}
           </div>
-        </div>` : `
-        <div class="chart-card col-6">
-          <div class="chart-card-header"><div class="chart-card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('tables', 18)} My Tables</div></div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/tables'" style="width:100%">📋 View My Tables</button>
-            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/analytics'" style="width:100%">📈 View Reports</button>
-            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/items'" style="width:100%">📦 Manage Inventory</button>
-          </div>
-        </div>`}
+        </div>
+        ` : ''}
       </div>
+      ` : ''}
 
     </div>
 
     <!-- Floating Action Button for Quick Invoicing -->
+    ${canDo('billing', 'create', user) ? `
     <button class="fab" onclick="location.hash='#/billing'" title="Quick Invoice">
       <span style="display:flex;align-items:center;justify-content:center;color:white">${getSvgIcon('billing', 24)}</span>
     </button>
+    ` : ''}
   `);
 
   setTimeout(() => initDashboardCharts(bills, whs), 100);
@@ -4850,7 +5550,7 @@ function renderWarehouseGrid(whs, allUsers) {
       return `
       <div class="warehouse-card animate-slideUp" data-wh-id="${wh.id}" style="cursor:pointer" title="Click to view warehouse dashboard">
         <div class="warehouse-card-top">
-          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0">${renderWarehouseLogo(wh.logo, 24)}</div>
+          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0;overflow:hidden">${renderWarehouseLogo(wh.logo, 40)}</div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             <span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'} badge-dot"> ${wh.status}</span>
             <div style="display:flex;gap:4px">
@@ -4913,7 +5613,7 @@ function renderWarehouseTable(whs, allUsers) {
               const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
               return `
                 <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
-                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:6px;width:32px;height:32px;overflow:hidden">${renderWarehouseLogo(wh.logo, 20)}</div></td>
+                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:6px;width:32px;height:32px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 32)}</div></td>
                   <td data-label="Name">
                     <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
                     <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('location', 11)} ${wh.address}</div>
@@ -5249,7 +5949,7 @@ function renderWarehouseDetail(whId) {
       <div class="page-header">
         <div class="page-header-left">
           <div style="display:flex;align-items:center;gap:14px">
-            <div style="display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 36)}</div>
+            <div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 60)}</div>
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
                 <h1 class="page-title" style="margin:0">${wh.name}</h1>
@@ -5262,8 +5962,7 @@ function renderWarehouseDetail(whId) {
         <div class="page-header-actions" style="align-items:center">
           ${wh.barcode ? `
           <div style="display:flex;align-items:center;gap:8px;background:white;padding:4px 8px;border:1px solid var(--border-default);border-radius:6px;margin-right:12px;box-shadow:var(--shadow-sm)">
-            <img src="http://localhost:8000/api/v1/registry/barcode?code=${wh.barcode}" style="height:28px" />
-            <div style="font-family:var(--font-mono);font-size:9px;color:#1f2937;font-weight:700">${wh.barcode}</div>
+            ${generateBarcodeSVG(wh.barcode, { height: 28, color: '#111', showLabel: true })}
           </div>
           ` : ''}
           ${isSA?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/warehouses'">← Warehouses</button>`:''}
@@ -5462,8 +6161,9 @@ function renderWarehouseDetail(whId) {
 
 // ===== pages/workforce.js =====
 /**
- * Workforce Management Page — User CRUD with role assignment
+ * Workforce Management Page — User CRUD with role assignment, view modes, and user profile panel
  */
+
 
 
 
@@ -5474,6 +6174,7 @@ let roleFilter = '';
 let wf_whFilter = '';
 let wf_page = 1;
 const wf_PER_PAGE = 10;
+let wf_viewMode = localStorage.getItem('wareops_wf_view') || 'table'; // table | card | grid
 
 function renderWorkforce() {
   const user = getCurrentUser();
@@ -5490,6 +6191,7 @@ function renderWorkforce() {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          ${user.role === 'super_admin' ? `<button class="btn btn-ghost btn-sm" onclick="location.hash='#/roles'">${getSvgIcon('workforce', 13)} Roles</button>` : ''}
           ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
       </div>
@@ -5516,9 +6218,15 @@ function renderWorkforce() {
             ${whs.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
           </select>
         </div>
+        <!-- View Mode Toggle -->
+        <div class="view-mode-toggle" id="wf-view-toggle">
+          <button class="view-mode-btn ${wf_viewMode==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
+          <button class="view-mode-btn ${wf_viewMode==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
+          <button class="view-mode-btn ${wf_viewMode==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
+        </div>
       </div>
 
-      <!-- Table -->
+      <!-- User List Container -->
       <div id="workforce-table-container"></div>
       <div id="workforce-pagination" style="margin-top:0"></div>
     </div>
@@ -5537,7 +6245,18 @@ function renderWorkforce() {
   document.getElementById('wf-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('role-filter')?.addEventListener('change', e => { roleFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
   document.getElementById('wh-filter-wf')?.addEventListener('change', e => { wf_whFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
+
+  // View mode buttons
+  document.getElementById('wf-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      wf_viewMode = btn.dataset.view;
+      localStorage.setItem('wareops_wf_view', wf_viewMode);
+      document.querySelectorAll('#wf-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === wf_viewMode));
+      renderWorkforceTable();
+    });
+  });
 }
+
 
 function renderWorkforceStats() {
   const users = getAllUsers();
@@ -5589,59 +6308,32 @@ function renderWorkforceTable() {
     return;
   }
 
-  container.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>Warehouse</th>
-          <th>Status</th>
-          <th>Assigned Date</th>
-          <th>Actions</th>
-        </tr></thead>
-        <tbody>
-          ${wf_pageUsers.map(u => {
-            const wh = whs.find(w => w.id === u.warehouseId);
-            return `<tr>
-              <td data-label="Name">
-                <div style="display:flex;align-items:center;gap:10px">
-                  <div style="width:32px;height:32px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0;overflow:hidden">${renderAvatar(u.avatar)}</div>
-                  <div>
-                    <div class="primary-cell">${u.name}</div>
-                    <div class="sub-cell">ID: ${u.id.slice(0,8)}</div>
-                  </div>
-                </div>
-              </td>
-              <td data-label="Email"><span style="font-family:var(--font-mono);font-size:12px">${u.email}</span></td>
-              <td data-label="Role">${roleBadge(u.role)}</td>
-              <td data-label="Warehouse"><span class="badge badge-info">${wh ? wh.name : '—'}</span></td>
-              <td data-label="Status">${statusBadge(u.status)}</td>
-              <td data-label="Assigned">${formatDate(u.assignedAt || u.createdAt)}</td>
-              <td data-label="Actions">
-                ${['super_admin', 'admin'].includes(currentUser.role) ? `
-                 <div class="table-actions">
-                   <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                   <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
-                 </div>` : '—'}
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+  if (wf_viewMode === 'card') {
+    renderCardView(wf_pageUsers, whs, currentUser, container);
+  } else if (wf_viewMode === 'grid') {
+    renderGridView(wf_pageUsers, whs, currentUser, container);
+  } else {
+    renderTableView(wf_pageUsers, whs, currentUser, container, start, total);
+  }
+
+  // Pagination
+  const paginationEl = document.getElementById('workforce-pagination');
+  if (paginationEl && wf_viewMode !== 'table') {
+    paginationEl.innerHTML = `
       <div class="table-pagination">
         <div class="pagination-info">Showing ${start+1}–${Math.min(start+wf_PER_PAGE,total)} of ${total} users</div>
         <div class="pagination-controls">
           <button class="wf_page-btn" id="pg-prev" ${wf_page<=1?'disabled':''}>‹</button>
-          ${Array.from({length:wf_pages},(_, i)=>`<button class="wf_page-btn ${wf_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
+          ${Array.from({length:wf_pages},(_,i)=>`<button class="wf_page-btn ${wf_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
           <button class="wf_page-btn" id="pg-next" ${wf_page>=wf_pages?'disabled':''}>›</button>
         </div>
-      </div>
-    </div>
-  `;
+      </div>`;
+  }
 
-  // Events
+  bindProfileButtons(container);
+  bindPaginationButtons(container, paginationEl, wf_pages);
+
+  // Edit/Delete
   container.querySelectorAll('.action-btn.edit[data-uid]').forEach(btn => {
     btn.addEventListener('click', () => {
       const u = getAllUsers().find(u => u.id === btn.dataset.uid);
@@ -5663,12 +6355,244 @@ function renderWorkforceTable() {
       }
     });
   });
-  container.querySelectorAll('.wf_page-btn[data-pg]').forEach(btn => {
-    btn.addEventListener('click', () => { wf_page = parseInt(btn.dataset.pg); renderWorkforceTable(); });
-  });
-  container.querySelector('#pg-prev')?.addEventListener('click', () => { if (wf_page > 1) { wf_page--; renderWorkforceTable(); } });
-  container.querySelector('#pg-next')?.addEventListener('click', () => { if (wf_page < wf_pages) { wf_page++; renderWorkforceTable(); } });
 }
+
+function renderTableView(pageUsers, whs, currentUser, container, start, total) {
+  const wf_pages = Math.ceil(total / wf_PER_PAGE);
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Warehouse</th>
+          <th>Status</th>
+          <th>Assigned Date</th>
+          <th>Actions</th>
+        </tr></thead>
+        <tbody>
+          ${pageUsers.map(u => {
+            const wh = whs.find(w => w.id === u.warehouseId);
+            return `<tr>
+                <td data-label="Name">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div class="wf-avatar-cell" data-uid="${u.id}" style="cursor:pointer" title="View Profile">
+                    ${renderAvatarContainer(u.avatar, u.name, 32)}
+                  </div>
+                  <div>
+                    <div class="primary-cell">${u.name}</div>
+                    <div class="sub-cell">ID: ${u.id.slice(0,8)}</div>
+                  </div>
+                </div>
+              </td>
+              <td data-label="Email"><span style="font-family:var(--font-mono);font-size:12px">${u.email}</span></td>
+              <td data-label="Role">${roleBadge(u.role)}</td>
+              <td data-label="Warehouse"><span class="badge badge-info">${wh ? wh.name : '—'}</span></td>
+              <td data-label="Status">${statusBadge(u.status)}</td>
+              <td data-label="Assigned">${formatDate(u.assignedAt || u.createdAt)}</td>
+              <td data-label="Actions">
+                <div class="table-actions">
+                  <button class="action-btn view profile-btn" data-uid="${u.id}" title="View Profile">${getSvgIcon('view', 14)}</button>
+                  ${['super_admin', 'admin'].includes(currentUser.role) ? `
+                   <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                   <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                  ` : ''}
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div class="table-pagination">
+        <div class="pagination-info">Showing ${start+1}–${Math.min(start+wf_PER_PAGE,total)} of ${total} users</div>
+        <div class="pagination-controls">
+          <button class="wf_page-btn" id="pg-prev" ${wf_page<=1?'disabled':''}>‹</button>
+          ${Array.from({length:wf_pages},(_,i)=>`<button class="wf_page-btn ${wf_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
+          <button class="wf_page-btn" id="pg-next" ${wf_page>=wf_pages?'disabled':''}>›</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCardView(pageUsers, whs, currentUser, container) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-bottom:16px">
+      ${pageUsers.map(u => {
+        const wh = whs.find(w => w.id === u.warehouseId);
+        return `
+          <div class="card" style="padding:0;overflow:hidden;transition:transform 0.15s,box-shadow 0.15s" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-lg)'" onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div style="height:4px;background:var(--gradient-brand)"></div>
+            <div style="padding:20px">
+              <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+                <div class="wf-avatar-cell" data-uid="${u.id}" style="cursor:pointer;flex-shrink:0" title="View Profile">
+                  ${renderAvatarContainer(u.avatar, u.name, 48)}
+                </div>
+                <div style="min-width:0">
+                  <div style="font-size:15px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.name}</div>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${u.email}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+                ${roleBadge(u.role)}
+                ${statusBadge(u.status)}
+                <span class="badge badge-info">${wh ? wh.name : '—'}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">Since ${formatDate(u.assignedAt || u.createdAt)}</div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-secondary btn-xs profile-btn" data-uid="${u.id}">${getSvgIcon('view', 12)} Profile</button>
+                ${['super_admin','admin'].includes(currentUser.role) ? `
+                  <button class="action-btn edit btn-xs" data-uid="${u.id}">${getSvgIcon('edit', 12)}</button>
+                  <button class="action-btn delete btn-xs" data-uid="${u.id}">${getSvgIcon('trash', 12)}</button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderGridView(pageUsers, whs, currentUser, container) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:16px">
+      ${pageUsers.map(u => {
+        const wh = whs.find(w => w.id === u.warehouseId);
+        return `
+          <div class="card" style="padding:20px 16px;text-align:center;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s" 
+            onmouseenter="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow-lg)'" 
+            onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div class="wf-avatar-cell" data-uid="${u.id}" style="display:inline-block;cursor:pointer;margin-bottom:12px" title="View Profile">
+              ${renderAvatarContainer(u.avatar, u.name, 56)}
+            </div>
+            <div style="font-size:13px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.name}</div>
+            <div style="margin:6px 0">${roleBadge(u.role)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${wh ? wh.name : '—'}</div>
+            <div style="margin-top:10px;display:flex;gap:6px;justify-content:center">
+              <button class="action-btn view btn-xs profile-btn" data-uid="${u.id}" title="Profile">${getSvgIcon('view', 12)}</button>
+              ${['super_admin','admin'].includes(currentUser.role) ? `
+                <button class="action-btn edit btn-xs" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 12)}</button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function bindProfileButtons(container) {
+  const allUsers = getAllUsers();
+  container.querySelectorAll('.profile-btn, .wf-avatar-cell').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const uid = el.dataset.uid;
+      const u = allUsers.find(u => u.id === uid);
+      if (u) showUserProfilePanel(u);
+    });
+  });
+}
+
+function bindPaginationButtons(container, paginationEl, wf_pages) {
+  const allContainers = [container, paginationEl];
+  allContainers.forEach(el => {
+    if (!el) return;
+    el.querySelectorAll('.wf_page-btn[data-pg]').forEach(btn => {
+      btn.addEventListener('click', () => { wf_page = parseInt(btn.dataset.pg); renderWorkforceTable(); });
+    });
+    el.querySelector('#pg-prev')?.addEventListener('click', () => { if (wf_page > 1) { wf_page--; renderWorkforceTable(); } });
+    el.querySelector('#pg-next')?.addEventListener('click', () => { if (wf_page < wf_pages) { wf_page++; renderWorkforceTable(); } });
+  });
+}
+
+function showUserProfilePanel(u) {
+  const whs = getWarehouses();
+  const allRoles = getAllRoles();
+  const wh = whs.find(w => w.id === u.warehouseId);
+  const perms = resolvePermissions(u);
+  const roleObj = allRoles.find(r => r.id === u.role || r.key === u.role);
+  const logs = getAuditLogs().filter(l => l.userId === u.id).slice(0, 6);
+
+  // Permission summary rows
+  const permRows = Object.entries(perms).filter(([,v]) => v.view).map(([mod]) => `
+    <div style="display:flex;align-items:center;gap:6px;padding:3px 0">
+      <div style="width:6px;height:6px;border-radius:50%;background:var(--accent-emerald);flex-shrink:0"></div>
+      <span style="font-size:12px;color:var(--text-secondary);text-transform:capitalize">${mod}</span>
+    </div>
+  `).join('');
+
+  const body = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <!-- Left: User Info -->
+      <div>
+        <div style="text-align:center;padding:20px 0 16px;border-bottom:1px solid var(--border-subtle);margin-bottom:16px">
+          <div style="display:inline-block;margin-bottom:12px">${renderAvatarContainer(u.avatar, u.name, 72)}</div>
+          <div style="font-size:18px;font-weight:800;color:var(--text-primary)">${u.name}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${u.email}</div>
+          <div style="margin-top:10px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+            ${roleBadge(u.role)}
+            ${statusBadge(u.status)}
+          </div>
+        </div>
+        <div style="font-size:12px;line-height:1.8;color:var(--text-secondary)">
+          <div><strong>Role:</strong> ${roleObj ? roleObj.name : u.role}</div>
+          <div><strong>Warehouse:</strong> ${wh ? wh.name : '—'}</div>
+          <div><strong>User ID:</strong> <span style="font-family:var(--font-mono)">${u.id.slice(0,12)}...</span></div>
+          <div><strong>Joined:</strong> ${formatDate(u.assignedAt || u.createdAt)}</div>
+          ${u.barcode ? `<div><strong>Barcode:</strong> <span style="font-family:var(--font-mono);font-size:11px">${u.barcode}</span></div>` : ''}
+        </div>
+
+        <div style="margin-top:16px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Module Access</div>
+          <div style="columns:2;column-gap:16px">${permRows || '<span style="font-size:12px;color:var(--text-muted)">No module access</span>'}</div>
+        </div>
+      </div>
+
+      <!-- Right: Activity -->
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:12px">Recent Activity</div>
+        ${logs.length === 0 ? `<div style="font-size:13px;color:var(--text-muted);text-align:center;padding:24px">No recent activity</div>` : 
+          logs.map(l => `
+            <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle)">
+              <div style="width:6px;height:6px;border-radius:50%;background:var(--accent-indigo);flex-shrink:0;margin-top:5px"></div>
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text-primary)">${l.action.replace(/_/g,' ')}</div>
+                <div style="font-size:11px;color:var(--text-muted)">${l.description}</div>
+                <div style="font-size:10px;color:var(--text-disabled);margin-top:2px">${formatDateTime(l.timestamp)}</div>
+              </div>
+            </div>
+          `).join('')
+        }
+
+        ${wh ? `
+          <div style="margin-top:20px;padding:14px;background:var(--glass-bg);border-radius:var(--radius-md);border:1px solid var(--border-subtle)">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Assigned Warehouse</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${wh.name}</div>
+            ${wh.address ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${wh.address}</div>` : ''}
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${wh.staffCount || 0} staff · ${wh.items || 0} items</div>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+
+  const footer = `
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" id="pp-close">Close</button>
+      ${['super_admin','admin'].includes(getCurrentUser()?.role) ? `<button class="btn btn-primary" id="pp-edit" data-uid="${u.id}">Edit User</button>` : ''}
+    </div>
+  `;
+
+  const modal = createModal({ title: `User Profile — ${u.name}`, body, footer, width: '820px' });
+  modal.el.querySelector('#pp-close')?.addEventListener('click', modal.close);
+  modal.el.querySelector('#pp-edit')?.addEventListener('click', () => {
+    modal.close();
+    showUserModal(u);
+  });
+}
+
 
 function showUserModal(u) {
   const isEdit = !!u;
@@ -5684,8 +6608,8 @@ function showUserModal(u) {
   const body = `
     <form id="user-modal-form">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border-subtle)">
-        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
-          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}
+        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;${m_avatar && (m_avatar.startsWith('data:image/') || m_avatar.startsWith('http')) ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
+          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%") || (u?.name ? u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() : '?')}
         </div>
         <div style="flex:1">
           <div style="display:flex;gap:8px">
@@ -5697,8 +6621,9 @@ function showUserModal(u) {
         </div>
         ${u?.barcode ? `
         <div style="text-align:right">
-          <img src="${barcodeUrl}" style="height:36px;background:white;padding:2px;border:1px solid var(--border-default);border-radius:4px;display:block" />
-          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);margin-top:2px;text-align:center">${u.barcode}</div>
+          <div style="background:white;padding:4px;border-radius:4px;display:inline-block;border:1px solid var(--border-default);">
+            ${generateBarcodeSVG(u.barcode, { height: 32, color: '#111', showLabel: true })}
+          </div>
         </div>
         ` : ''}
       </div>
@@ -5740,6 +6665,53 @@ function showUserModal(u) {
           <option value="inactive" ${u?.status==='inactive'?'selected':''}>Inactive</option>
         </select>
       </div>` : ''}
+
+      ${isEdit && currentUser.role === 'super_admin' ? `
+      <!-- User-Level Permission Overrides -->
+      <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:14px;margin-top:4px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em">User-Level Permission Overrides</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Overrides take priority over role defaults. Only set what differs.</div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-xs" id="m-u-clear-overrides">Clear All</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border-subtle)">
+                <th style="text-align:left;padding:4px 6px;color:var(--text-muted);font-weight:600">Module</th>
+                ${ALL_ACTIONS.map(a => `<th style="text-align:center;padding:4px 3px;color:var(--text-muted);font-weight:600;font-size:10px;text-transform:uppercase">${a.slice(0,3)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${ALL_MODULES.map(mod => {
+                const rolePerms = resolvePermissions(u);
+                const overrides = u?.permissionOverrides?.[mod.key] || {};
+                return `<tr style="border-bottom:1px solid var(--border-subtle)">
+                  <td style="padding:4px 6px;font-weight:600;color:var(--text-secondary)">${mod.label}</td>
+                  ${ALL_ACTIONS.map(action => {
+                    // tri-state: override-true (checked+data-ov), override-false (unchecked+data-ov), inherit (no data-ov)
+                    const hasOverride = mod.key in (u?.permissionOverrides || {}) && action in overrides;
+                    const isChecked = hasOverride ? overrides[action] : rolePerms[mod.key]?.[action];
+                    return `<td style="text-align:center;padding:4px 2px">
+                      <input type="checkbox" class="user-perm-ov" data-mod="${mod.key}" data-action="${action}"
+                        ${isChecked ? 'checked' : ''}
+                        ${hasOverride ? 'data-override="1"' : ''}
+                        style="width:13px;height:13px;cursor:pointer;accent-color:${hasOverride ? 'var(--accent-amber)' : 'var(--accent-emerald)'}" />
+                    </td>`;
+                  }).join('')}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:8px">
+          <span style="color:var(--accent-amber)">●</span> Amber = user override active &nbsp;
+          <span style="color:var(--accent-emerald)">●</span> Green = inherited from role
+        </div>
+      </div>` : ''}
+
       <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:8px;padding:12px;font-size:12px;color:var(--text-muted)">
         ℹ️ Auto-generated: Created date, assignment timestamp, and audit trail will be recorded automatically.
       </div>
@@ -5758,6 +6730,23 @@ function showUserModal(u) {
     modal.el.querySelector('#m-u-photo-input')?.click();
   });
 
+  // Clear all overrides button
+  modal.el.querySelector('#m-u-clear-overrides')?.addEventListener('click', () => {
+    modal.el.querySelectorAll('.user-perm-ov').forEach(cb => {
+      cb.removeAttribute('data-override');
+      cb.style.accentColor = 'var(--accent-emerald)';
+    });
+    showToast('Overrides cleared', 'All permissions will inherit from role', 'info');
+  });
+
+  // Live accent color toggle as user edits
+  modal.el.addEventListener('change', (e) => {
+    if (e.target.classList.contains('user-perm-ov')) {
+      e.target.setAttribute('data-override', '1');
+      e.target.style.accentColor = 'var(--accent-amber)';
+    }
+  });
+
   modal.el.querySelector('#m-u-photo-input')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -5771,6 +6760,8 @@ function showUserModal(u) {
       m_avatar = base64;
       const preview = modal.el.querySelector('#m-u-avatar-preview');
       if (preview) {
+        preview.style.background = 'transparent';
+        preview.style.border = '1px solid var(--border-default)';
         preview.innerHTML = `<img src="${base64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`;
       }
     };
@@ -5783,6 +6774,8 @@ function showUserModal(u) {
     m_avatar = fallbackInitials;
     const preview = modal.el.querySelector('#m-u-avatar-preview');
     if (preview) {
+      preview.style.background = 'var(--gradient-brand)';
+      preview.style.border = 'none';
       preview.innerHTML = fallbackInitials;
     }
   });
@@ -5800,7 +6793,22 @@ function showUserModal(u) {
     }
 
     if (isEdit) {
-      const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value, avatar: m_avatar };
+      // Collect user-level permission overrides (super_admin only)
+      let permissionOverrides = u?.permissionOverrides || {};
+      if (currentUser.role === 'super_admin') {
+        permissionOverrides = {};
+        const rolePerms = resolvePermissions(u);
+        modal.el.querySelectorAll('.user-perm-ov').forEach(cb => {
+          const mod = cb.dataset.mod;
+          const action = cb.dataset.action;
+          const roleDefault = !!(rolePerms[mod]?.[action]);
+          if (cb.checked !== roleDefault) {
+            if (!permissionOverrides[mod]) permissionOverrides[mod] = {};
+            permissionOverrides[mod][action] = cb.checked;
+          }
+        });
+      }
+      const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value, avatar: m_avatar, permissionOverrides };
       const result = await updateUser(u.id, data);
       if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User updated', `${name}'s details updated`, 'success');
@@ -5831,6 +6839,7 @@ let categoryFilter = '';
 let it_whFilter = '';
 let it_page = 1;
 const it_PER_PAGE = 10;
+let it_layout = localStorage.getItem('wareops_items_layout') || 'table';
 
 const CATEGORIES = ['Electronics','Furniture','Apparel','Food & Beverage','Tools','Medical','Automotive','Books','Sports','Other'];
 
@@ -5878,6 +6887,12 @@ function renderItems() {
             <option value="">All Warehouses</option>
             ${whs.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
           </select>` : ''}
+          <!-- View Mode Toggle -->
+          <div class="view-mode-toggle" id="it-view-toggle" style="margin-left: 8px;">
+            <button class="view-mode-btn ${it_layout==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
+            <button class="view-mode-btn ${it_layout==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
+            <button class="view-mode-btn ${it_layout==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
+          </div>
         </div>
       </div>
 
@@ -5901,7 +6916,21 @@ function renderItems() {
   document.getElementById('cat-filter')?.addEventListener('change', e => { categoryFilter = e.target.value; it_page = 1; renderItemsTable(); });
   document.getElementById('wh-filter-item')?.addEventListener('change', e => { it_whFilter = e.target.value; it_page = 1; renderItemsTable(); });
 
+  // View mode buttons
+  document.getElementById('it-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      it_layout = btn.dataset.view;
+      localStorage.setItem('wareops_items_layout', it_layout);
+      document.querySelectorAll('#it-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === it_layout));
+      renderItemsTable();
+    });
+  });
+
   window._showItemModal = (item) => showItemModal(item);
+  window._showItemCardModalById = (id) => {
+    const item = getItems().find(i => i.id === id);
+    if (item) showItemCardModal(item);
+  };
   
   // Realtime WebSocket auto-refresh for inventory
   window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
@@ -5947,6 +6976,18 @@ function renderItemsTable() {
     return;
   }
 
+  if (it_layout === 'card') {
+    renderItemsCardView(it_pageItems, whs, canEdit, container, start, total, it_pages);
+  } else if (it_layout === 'grid') {
+    renderItemsGridView(it_pageItems, whs, canEdit, container, start, total, it_pages);
+  } else {
+    renderItemsTableView(it_pageItems, whs, canEdit, container, start, total, it_pages);
+  }
+
+  bindItemsEvents(container, it_pages);
+}
+
+function renderItemsTableView(pageItems, whs, canEdit, container, start, total, it_pages) {
   container.innerHTML = `
     <div class="table-wrap">
       <table>
@@ -5956,13 +6997,21 @@ function renderItemsTable() {
           ${canEdit ? '<th>Actions</th>' : ''}
         </tr></thead>
         <tbody>
-          ${it_pageItems.map(item => {
+          ${pageItems.map(item => {
             const wh = whs.find(w=>w.id===item.warehouseId);
             const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+            const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
             return `<tr>
               <td data-label="Item">
-                <div class="primary-cell clickable-item-name" data-iid="${item.id}" style="cursor:pointer;color:var(--text-brand);text-decoration:underline;text-underline-offset:4px;" title="View Product Card">${item.name}</div>
-                <div class="sub-cell">Added ${formatDate(item.createdAt)}</div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div class="clickable-item-name" data-iid="${item.id}" style="cursor:pointer;flex-shrink:0" title="View Product Card">
+                    ${renderEntityImage(itemImg, 'inventory', item.name, 36)}
+                  </div>
+                  <div>
+                    <div class="primary-cell clickable-item-name" data-iid="${item.id}" style="cursor:pointer;color:var(--text-brand);text-decoration:underline;text-underline-offset:4px;" title="View Product Card">${item.name}</div>
+                    <div class="sub-cell">Added ${formatDate(item.createdAt)}</div>
+                  </div>
+                </div>
               </td>
               <td data-label="SKU"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">${item.sku||'—'}</span></td>
               <td data-label="Category"><span class="badge badge-brand">${item.category}</span></td>
@@ -5980,7 +7029,7 @@ function renderItemsTable() {
         </tbody>
       </table>
       <div class="table-pagination">
-        <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total}</div>
+        <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total} items</div>
         <div class="pagination-controls">
           <button class="it_page-btn" id="ip-prev" ${it_page<=1?'disabled':''}>‹</button>
           ${Array.from({length:it_pages},(_,i)=>`<button class="it_page-btn ${it_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
@@ -5989,13 +7038,147 @@ function renderItemsTable() {
       </div>
     </div>
   `;
+}
+
+function renderItemsGridView(pageItems, whs, canEdit, container, start, total, it_pages) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:16px">
+      ${pageItems.map(item => {
+        const wh = whs.find(w=>w.id===item.warehouseId);
+        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
+        return `
+          <div class="card clickable-card" data-iid="${item.id}" style="padding:16px;display:flex;flex-direction:column;justify-content:space-between;transition:transform 0.15s,box-shadow 0.15s;cursor:pointer" 
+               onmouseenter="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow-lg)'" 
+               onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div>
+              <div style="display:flex;justify-content:center;margin-bottom:12px;background:var(--bg-elevated);border-radius:6px;padding:8px">
+                ${renderEntityImage(itemImg, 'inventory', item.name, 72)}
+              </div>
+              <div style="font-size:14px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.name}</div>
+              <div style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted);margin:4px 0">${item.sku||'—'}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+                <strong style="color:var(--text-primary);font-size:14px">${formatCurrency(item.price||0)}</strong>
+                <span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span>
+              </div>
+            </div>
+            <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center">
+              <span class="badge badge-brand" style="font-size:10px">${item.category}</span>
+              <div style="display:flex;gap:6px">
+                <button class="action-btn view profile-btn" data-iid="${item.id}" title="View Details" style="padding: 4px;">${getSvgIcon('view', 12)}</button>
+                ${canEdit ? `
+                  <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                  <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="table-pagination" style="margin-top: 16px;">
+      <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total} items</div>
+      <div class="pagination-controls">
+        <button class="it_page-btn" id="ip-prev" ${it_page<=1?'disabled':''}>‹</button>
+        ${Array.from({length:it_pages},(_,i)=>`<button class="it_page-btn ${it_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
+        <button class="it_page-btn" id="ip-next" ${it_page>=it_pages?'disabled':''}>›</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderItemsCardView(pageItems, whs, canEdit, container, start, total, it_pages) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin-bottom:16px">
+      ${pageItems.map(item => {
+        const wh = whs.find(w=>w.id===item.warehouseId);
+        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
+        const barcodeStr = item.barcode || item.sku || `ITEM-${item.id.slice(-6)}`;
+        const barcodeSVG = generateBarcodeSVG(barcodeStr, { height: 30, showLabel: false });
+        return `
+          <div class="card clickable-card" data-iid="${item.id}" style="padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;transition:transform 0.15s,box-shadow 0.15s" 
+               onmouseenter="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow-lg)'" 
+               onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div>
+              <div style="height: 180px; width: 100%; overflow: hidden; position: relative; background: var(--bg-elevated); display: flex; align-items: center; justify-content: center;">
+                ${itemImg ? `<img src="${itemImg}" style="width: 100%; height: 100%; object-fit: cover;" alt="${item.name}" />` : `<div style="color: var(--text-muted);">${getSvgIcon('items', 48)}</div>`}
+              </div>
+              <div style="padding: 16px 16px 0 16px;">
+                <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.name}</div>
+                <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:12px">${item.sku||'—'}</div>
+                
+                <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--border-subtle);padding-top:10px;">
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Warehouse</span>
+                    <strong style="color:var(--text-primary)">${wh?.name || '—'}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Category</span>
+                    <strong style="color:var(--text-primary)">${item.category}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Price</span>
+                    <strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+                    <span style="color:var(--text-secondary)">Stock Status</span>
+                    <span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div style="padding: 12px 16px 16px 16px;">
+              <!-- Barcode Display -->
+              <div style="background:white;border-radius:4px;border:1px solid var(--border-subtle);padding:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:12px;">
+                <div style="width:100%;display:flex;justify-content:center;mix-blend-mode:multiply;">
+                  ${barcodeSVG}
+                </div>
+                <span style="font-family:var(--font-mono);font-size:9px;color:#555;margin-top:2px;letter-spacing:1px">${barcodeStr}</span>
+              </div>
+              
+              <!-- Actions -->
+              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-subtle);padding-top:10px;">
+                <button class="btn btn-secondary btn-xs clickable-card" data-iid="${item.id}" style="font-size:11px;">${getSvgIcon('view', 12)} View Details</button>
+                <div style="display:flex;gap:6px">
+                  ${canEdit ? `
+                    <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                    <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="table-pagination" style="margin-top: 16px;">
+      <div class="pagination-info">Showing ${start+1}–${Math.min(start+it_PER_PAGE,total)} of ${total} items</div>
+      <div class="pagination-controls">
+        <button class="it_page-btn" id="ip-prev" ${it_page<=1?'disabled':''}>‹</button>
+        ${Array.from({length:it_pages},(_,i)=>`<button class="it_page-btn ${it_page===i+1?'active':''}" data-pg="${i+1}">${i+1}</button>`).join('')}
+        <button class="it_page-btn" id="ip-next" ${it_page>=it_pages?'disabled':''}>›</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindItemsEvents(container, it_pages) {
+  const user = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   if (canEdit) {
-    container.querySelectorAll('.action-btn.edit[data-iid]').forEach(btn => {
-      btn.addEventListener('click', () => { const item = getItems().find(i=>i.id===btn.dataset.iid); showItemModal(item); });
+    container.querySelectorAll('.edit[data-iid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = getItems().find(i=>i.id===btn.dataset.iid);
+        if (item) showItemModal(item);
+      });
     });
-    container.querySelectorAll('.action-btn.delete[data-iid]').forEach(btn => {
-      btn.addEventListener('click', async () => {
+    container.querySelectorAll('.delete[data-iid]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         const ok = await confirm('Delete this item from inventory?', 'Delete Item');
         if (ok) {
           const res = await deleteItem(btn.dataset.iid);
@@ -6010,15 +7193,38 @@ function renderItemsTable() {
       });
     });
   }
-  container.querySelectorAll('.clickable-item-name[data-iid]').forEach(el => {
-    el.addEventListener('click', () => {
+
+  container.querySelectorAll('.clickable-item-name[data-iid], .clickable-card[data-iid]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (e.target.closest('.edit') || e.target.closest('.delete') || e.target.closest('.btn')) {
+        return;
+      }
       const item = getItems().find(i => i.id === el.dataset.iid);
       if (item) showItemCardModal(item);
     });
   });
-  container.querySelectorAll('.it_page-btn[data-pg]').forEach(btn => { btn.addEventListener('click', () => { it_page=parseInt(btn.dataset.pg); renderItemsTable(); }); });
-  container.querySelector('#ip-prev')?.addEventListener('click', () => { if(it_page>1){it_page--;renderItemsTable();} });
-  container.querySelector('#ip-next')?.addEventListener('click', () => { if(it_page<it_pages){it_page++;renderItemsTable();} });
+
+  container.querySelectorAll('.it_page-btn[data-pg]').forEach(btn => { 
+    btn.addEventListener('click', () => { 
+      it_page = parseInt(btn.dataset.pg); 
+      renderItemsTable(); 
+    }); 
+  });
+  
+  container.querySelector('#ip-prev')?.addEventListener('click', () => { 
+    if (it_page > 1) { 
+      it_page--; 
+      renderItemsTable(); 
+    } 
+  });
+  
+  container.querySelector('#ip-next')?.addEventListener('click', () => { 
+    if (it_page < it_pages) { 
+      it_page++; 
+      renderItemsTable(); 
+    } 
+  });
 }
 
 function showItemModal(item) {
@@ -6595,6 +7801,7 @@ let _savingRows      = new Set();       // rowIds currently being saved
 let _lockedRows      = new Map();       // rowId → { userId, userName } — locked by another user
 let _pendingCells    = new Map();       // `${rowIndex}:${colId}` → cellEl — dirty cells
 let _debounceSavers  = new Map();       // rowIndex → debounced save fn
+let _activePage      = 1;      // active page tracking
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 async function renderTables() {
@@ -6706,6 +7913,7 @@ async function _renderTableList(user, whs, canManage) {
   document.querySelectorAll('.action-btn.view[data-tid]').forEach(btn => {
     btn.addEventListener('click', async () => {
       _activeTableId = btn.dataset.tid;
+      _activePage = 1;
       await renderTables();
     });
   });
@@ -6751,7 +7959,7 @@ async function _openSpreadsheet(user, canManage) {
   }
 
 
-  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
+  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
 
   const canEdit   = ['super_admin','admin','manager','staff'].includes(user.role);
@@ -6770,6 +7978,7 @@ async function _openSpreadsheet(user, canManage) {
             <span style="font-weight:700;color:var(--text-primary)">${_schema.name}</span>
             <span class="badge badge-muted" style="font-size:11px">${_schema.category}</span>
           </div>
+          <div id="ss-pages-tabs-container" style="display:flex;align-items:center"></div>
           <div id="ss-collab-badges" class="ss-collab-area"></div>
         </div>
         <div class="ss-toolbar-right">
@@ -6781,7 +7990,6 @@ async function _openSpreadsheet(user, canManage) {
             <button class="btn btn-secondary btn-sm" id="ss-export-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('export', 14)} Export CSV</button>
           ` : ''}
           ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('settings', 14)} Edit Schema</button>` : ''}
-          ${canEdit ? `<button class="btn btn-primary btn-sm" id="ss-add-row-btn">+ Add Row</button>` : ''}
         </div>
       </div>
 
@@ -6809,9 +8017,10 @@ async function _openSpreadsheet(user, canManage) {
             </tbody>
           </table>
         </div>
-        <div class="ss-status-bar">
-          <span id="ss-row-count">${_rows.length} rows</span>
+        <div class="ss-status-bar" style="display:flex;align-items:center;justify-content:space-between">
+          <span id="ss-row-count">${_rows.length} active rows (100 rows capacity)</span>
           <span id="ss-selected-info" style="color:var(--text-muted)"></span>
+          <span id="ss-page-meta" style="color:var(--text-muted);font-size:12px;display:flex;align-items:center;gap:12px"></span>
         </div>
       </div>
     </div>
@@ -6826,7 +8035,6 @@ async function _openSpreadsheet(user, canManage) {
     _lockedRows.clear(); _pendingCells.clear(); _debounceSavers.clear();
     renderTables();
   });
-  document.getElementById('ss-add-row-btn')?.addEventListener('click', () => _appendVirtualRow(cols, canEdit, user));
   document.getElementById('ss-schema-btn')?.addEventListener('click', () => _showSchemaModal(_schema, getWarehouses()));
   document.getElementById('ss-import-btn')?.addEventListener('click', () => document.getElementById('ss-csv-file').click());
   document.getElementById('ss-export-btn')?.addEventListener('click', () => _exportCSV());
@@ -6834,6 +8042,8 @@ async function _openSpreadsheet(user, canManage) {
 
   // Attach cell + row events
   _attachGridEvents(cols, canEdit, user);
+  _renderPageTabs(canEdit);
+  _updatePageMeta();
 
   // Connect WebSocket for realtime collaboration
   _subscribeToTableEvents();
@@ -6846,12 +8056,148 @@ function _buildAllRows(cols, canEdit, user) {
   for (let i = 0; i < _rows.length; i++) {
     html += _buildRow(_rows[i], i, cols, canEdit, user, false);
   }
-  // Virtual empty rows
-  const virtualCount = Math.max(VIRTUAL_ROWS, 20);
+  // Virtual empty rows to fill up to exactly 100 capacity
+  const virtualCount = Math.max(0, 100 - _rows.length);
   for (let v = 0; v < virtualCount; v++) {
     html += _buildVirtualRow(_rows.length + v, cols, canEdit);
   }
   return html;
+}
+
+// ─── PAGE SYSTEM UTILITIES ──────────────────────────────────────────────────
+function _renderPageTabs(canEdit) {
+  const container = document.getElementById('ss-pages-tabs-container');
+  if (!container) return;
+
+  const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{
+    page_number: 1,
+    created_at: _schema.createdAt,
+    created_by: _schema.createdBy,
+    permissions: _schema.roles || [],
+    storage_usage: 0
+  }];
+
+  container.innerHTML = `
+    <div class="ss-pages-tabs" style="display:flex;align-items:center;gap:4px;margin-left:16px;background:var(--bg-input);padding:3px;border-radius:8px;border:1px solid var(--border-default)">
+      ${pages.map(p => `
+        <button class="ss-page-tab ${p.page_number === _activePage ? 'active' : ''}" data-page="${p.page_number}" 
+                style="border:none;padding:6px 12px;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;
+                       background:${p.page_number === _activePage ? 'var(--brand-500)' : 'transparent'};
+                       color:${p.page_number === _activePage ? 'white' : 'var(--text-secondary)'};
+                       transition:all 0.15s">
+          Page ${p.page_number}
+        </button>
+      `).join('')}
+      ${canEdit ? `
+        <button class="ss-page-tab-add" id="ss-add-page-btn" title="Add Page" 
+                style="border:none;padding:6px;border-radius:6px;cursor:pointer;background:transparent;
+                       color:var(--brand-500);display:flex;align-items:center;justify-content:center">
+          ${getSvgIcon('plus', 14)}
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  _bindPageEvents(canEdit);
+}
+
+async function _switchPage(pageNumber) {
+  _activePage = pageNumber;
+  
+  // Show smooth loading state in tbody for fast feedback
+  const tbody = document.getElementById('ss-tbody');
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="100" style="text-align:center;padding:48px;color:var(--text-muted)">
+          <span class="ss-save-spinner" style="display:inline-block;margin-right:8px">⟳</span> Loading Page ${pageNumber}…
+        </td>
+      </tr>
+    `;
+  }
+  
+  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
+  _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
+  _updateRowCount();
+  _updatePageMeta();
+  
+  const cols = _schema.columns || [];
+  const user = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  if (tbody) {
+    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
+    _attachGridEvents(cols, canEdit, user);
+  }
+  
+  _renderPageTabs(canEdit);
+}
+
+function _bindPageEvents(canEdit) {
+  document.querySelectorAll('.ss-page-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pageNum = parseInt(btn.dataset.page);
+      if (pageNum !== _activePage) {
+        _switchPage(pageNum);
+      }
+    });
+  });
+
+  document.getElementById('ss-add-page-btn')?.addEventListener('click', async () => {
+    const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{}];
+    const storeSub = localStorage.getItem('wareops_store');
+    let plan = 'enterprise';
+    try {
+      if (storeSub) {
+        const parsed = JSON.parse(storeSub);
+        if (parsed.subscription?.plan) plan = parsed.subscription.plan;
+      }
+    } catch (e) {}
+
+    const maxPages = plan === 'starter' ? 2 : 50;
+    if (pages.length >= maxPages) {
+      showToast('Plan Limit Exceeded', `Starter plan tables are limited to ${maxPages} pages. Please upgrade your subscription.`, 'warning');
+      return;
+    }
+
+    _showSavingIndicator(true);
+    const res = await apiFetch(`/dynamic-tables/${_activeTableId}/pages`, { method: 'POST' });
+    _showSavingIndicator(false);
+
+    if (res?.success && res.data) {
+      _schema = res.data;
+      showToast('Page Created', `Page ${_schema.pages.length} added to table`, 'success');
+      _activePage = _schema.pages.length;
+      _renderPageTabs(canEdit);
+      await _switchPage(_schema.pages.length);
+    } else {
+      showToast('Error', res?.error || 'Could not create new page', 'error');
+    }
+  });
+}
+
+function _updatePageMeta() {
+  const metaEl = document.getElementById('ss-page-meta');
+  if (!metaEl) return;
+  const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{
+    page_number: 1,
+    created_at: _schema.createdAt,
+    created_by: _schema.createdBy,
+    permissions: _schema.roles || [],
+    storage_usage: 0
+  }];
+  const currentPageMeta = pages.find(p => p.page_number === _activePage) || pages[0];
+  const dateStr = currentPageMeta.created_at ? new Date(currentPageMeta.created_at).toLocaleDateString() : '—';
+  const storageStr = currentPageMeta.storage_usage !== undefined ? `${currentPageMeta.storage_usage} B` : '0 B';
+  const rolesStr = (currentPageMeta.permissions || []).length > 0 ? currentPageMeta.permissions.join(', ') : 'All';
+  const ownerStr = currentPageMeta.created_by ? `Owner: ID ${currentPageMeta.created_by.slice(0, 8)}` : 'System';
+
+  metaEl.innerHTML = `
+    <span>📄 Page ${_activePage}</span>
+    <span>📅 Created: ${dateStr}</span>
+    <span>👤 ${ownerStr}</span>
+    <span>🔒 Roles: ${rolesStr}</span>
+    <span>💾 Storage: ${storageStr}</span>
+  `;
 }
 
 function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
@@ -7072,7 +8418,7 @@ async function _saveNewVirtualRow(tr, cols, canEdit, user) {
   if (isBlank) return;
 
   _showSavingIndicator(true);
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`, {
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`, {
     method: 'POST',
     body: JSON.stringify(rowData)
   });
@@ -7213,8 +8559,17 @@ function _handleWsEvent(e) {
   if (!data?.tableId || data.tableId !== _activeTableId) return;
 
   const userId = String(user.id || user._id || '');
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
 
   switch (type) {
+    case 'table_page_created': {
+      if (data.tableId === _activeTableId) {
+        _schema.pages = data.pages;
+        _renderPageTabs(canEdit);
+        _showCollabToast(`Page ${data.pageNumber} was added to this table`);
+      }
+      break;
+    }
     case 'table_row_created': {
       // Another user added a row — refresh rows from server
       if (data.actorId !== userId) {
@@ -7253,8 +8608,10 @@ function _handleWsEvent(e) {
     }
     case 'table_rows_imported': {
       if (data.actorId !== userId) {
-        _refreshRowsFromServer();
-        _showCollabToast(`${data.actorName} imported ${data.inserted} rows`);
+        if (data.page === _activePage) {
+          _refreshRowsFromServer();
+        }
+        _showCollabToast(`${data.actorName} imported ${data.inserted} rows to Page ${data.page || 1}`);
       }
       break;
     }
@@ -7274,7 +8631,7 @@ function _showCollabToast(msg) {
 }
 
 async function _refreshRowsFromServer() {
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`);
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
   if (!res?.success) return;
   _rows = res.data || [];
   _updateRowCount();
@@ -7367,7 +8724,7 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
   if (isBlank) return;
 
   _showSavingIndicator(true);
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows`, {
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`, {
     method: 'POST',
     body: JSON.stringify(rowData)
   });
@@ -7506,7 +8863,7 @@ async function _handleCSVImport(e, cols) {
   }
 
   _showSavingIndicator(true);
-  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/import`, {
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/import?page=${_activePage}`, {
     method: 'POST',
     body: JSON.stringify(rowsData)
   });
@@ -8744,6 +10101,10 @@ function printBill(billId) {
   const invoiceHTML = buildInvoiceHTML(bill, wh, 'print');
 
   const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) {
+    showToast('Popup Blocked', 'Please allow popups in your browser settings to print/export invoices.', 'error');
+    return;
+  }
   win.document.write(`<!DOCTYPE html>
 <html>
 <head>
@@ -9277,7 +10638,8 @@ function updateWhBreakdown(bills, whs, totalRev) {
     const pct = totalRev>0 ? Math.round(rev/totalRev*100) : 0;
     return `
       <div class="revenue-bar" style="margin-bottom:12px">
-        <div class="revenue-bar-label">${wh.logo||'🏭'} ${wh.name}
+        <div class="revenue-bar-label">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;overflow:hidden;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}vertical-align:middle;margin-right:6px;">${renderWarehouseLogo(wh.logo, 20)}</span>${wh.name}
           <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
         </div>
         <div class="revenue-bar-track"><div class="revenue-bar-fill" style="width:${pct}%"></div></div>
@@ -9756,10 +11118,31 @@ function renderSettings() {
           <div class="form-group">
             <label class="form-label">Active Theme</label>
             <select id="s-theme" class="form-control">
-              <option value="enterprise" ${getStore().theme==='enterprise'?'selected':''}>Enterprise Black & White (Default)</option>
-              <option value="classic" ${getStore().theme==='classic'?'selected':''}>Classic Space Neon (Optional)</option>
+              <option value="enterprise" ${getStore().theme==='enterprise'||!getStore().theme?'selected':''}>Grayscale B&W (Default)</option>
+              <option value="dark"       ${getStore().theme==='dark'?'selected':''}>Slate-Blue Premium Dark</option>
+              <option value="light"      ${getStore().theme==='light'?'selected':''}>Enterprise Light</option>
+              <option value="classic"    ${getStore().theme==='classic'?'selected':''}>Classic Space Neon</option>
             </select>
-            <div class="form-hint">Applies theme styling immediately across all dashboards, ledgers, and pages.</div>
+            <div class="form-hint">Theme is applied immediately across all pages. Changes persist after saving.</div>
+          </div>
+          <!-- Live theme preview swatches -->
+          <div style="display:flex;gap:8px;margin-bottom:16px;" id="theme-swatches">
+            <div data-theme="enterprise" class="theme-swatch ${!getStore().theme||getStore().theme==='enterprise'?'swatch-active':''}" title="Grayscale B&W"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#09090b,#18181b);border:2px solid ${!getStore().theme||getStore().theme==='enterprise'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#a1a1aa;font-weight:700">B&W</div>
+            </div>
+            <div data-theme="dark" class="theme-swatch ${getStore().theme==='dark'?'swatch-active':''}" title="Slate-Blue Dark"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#0b0f19,#1e293b);border:2px solid ${getStore().theme==='dark'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#60a5fa;font-weight:700">DARK</div>
+            </div>
+            <div data-theme="light" class="theme-swatch ${getStore().theme==='light'?'swatch-active':''}" title="Enterprise Light"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);border:2px solid ${getStore().theme==='light'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#475569;font-weight:700">LIGHT</div>
+            </div>
+            <div data-theme="classic" class="theme-swatch ${getStore().theme==='classic'?'swatch-active':''}" title="Classic Neon"
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);border:2px solid ${getStore().theme==='classic'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:white;font-weight:700">NEON</div>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
             <button class="btn btn-primary btn-sm" id="save-theme-btn" style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Theme</button>
@@ -9828,6 +11211,33 @@ function renderSettings() {
             ${getSvgIcon('trash', 16)} Reset System Data
           </button>
         </div>
+
+        ${isSuperAdmin ? `
+        <!-- Role Manager Card -->
+        <div class="card col-6" style="border-color:rgba(99,102,241,0.25);background:rgba(99,102,241,0.04)">
+          <div class="card-header">
+            <div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">
+                ${getSvgIcon('workforce', 16)}
+                Role Manager
+                <span class="badge badge-success" style="font-size:10px">Super Admin</span>
+              </div>
+              <div class="card-subtitle">Create custom roles with granular permission matrices</div>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">
+            Define custom roles, configure module-level permissions (View, Create, Edit, Delete, Export, Import, Manage), and assign them to users. Built-in roles remain protected.
+          </p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="location.hash='#/roles'" style="display:flex;align-items:center;gap:6px">
+              ${getSvgIcon('plus', 14)} Create / Edit Roles
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="display:flex;align-items:center;gap:6px">
+              ${getSvgIcon('workforce', 14)} Manage Users
+            </button>
+          </div>
+        </div>
+        ` : ''}
       </div>
     </div>
   `);
@@ -10030,18 +11440,37 @@ function renderSettings() {
     if (msg) { msg.style.display = 'inline-flex'; setTimeout(() => msg.style.display = 'none', 3000); }
   });
 
-  // THEME SAVE — actually persist to store
+  // THEME SAVE — persist to store, apply globally
   document.getElementById('save-theme-btn')?.addEventListener('click', () => {
     const selectedTheme = document.getElementById('s-theme').value;
     const s = getStore();
     s.theme = selectedTheme;
     saveStore();
     applyTheme(selectedTheme);
-    showToast('Theme updated', `Visual theme set to: ${selectedTheme === 'classic' ? 'Classic Space Neon' : 'Enterprise Black & White'}`, 'success');
-    
+    const themeNames = { enterprise: 'Grayscale B&W', dark: 'Slate-Blue Premium Dark', light: 'Enterprise Light', classic: 'Classic Space Neon' };
+    showToast('Theme updated', `Visual theme set to: ${themeNames[selectedTheme] || selectedTheme}`, 'success');
     // Show inline confirmation
     const msg = document.getElementById('theme-saved-msg');
     if (msg) { msg.style.display = 'inline-flex'; setTimeout(() => msg.style.display = 'none', 3000); }
+  });
+
+  // THEME SWATCHES — live preview on click
+  document.querySelectorAll('.theme-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const t = sw.dataset.theme;
+      document.getElementById('s-theme').value = t;
+      applyTheme(t);
+      document.querySelectorAll('.theme-swatch').forEach(s => s.style.borderColor = 'var(--border-default)');
+      sw.style.borderColor = 'var(--accent-emerald)';
+    });
+  });
+
+  // Theme select dropdown change — live preview
+  document.getElementById('s-theme')?.addEventListener('change', (e) => {
+    applyTheme(e.target.value);
+    document.querySelectorAll('.theme-swatch').forEach(s => {
+      s.style.borderColor = s.dataset.theme === e.target.value ? 'var(--accent-emerald)' : 'var(--border-default)';
+    });
   });
 
   // Notification toggles
@@ -10816,6 +12245,7 @@ async function showBarcodePrintSheet() {
 let custSearchQ = '';
 let custPage = 1;
 const custLimit = 10;
+let crm_viewMode = localStorage.getItem('wareops_crm_view') || 'table'; // table | card | grid
 
 function renderCustomers() {
   const user = getCurrentUser();
@@ -10858,6 +12288,12 @@ function renderCustomers() {
           <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
           <input type="text" id="crm-search" placeholder="Search customer name, email, phone, ID..." value="${custSearchQ}" />
         </div>
+        <!-- View Mode Toggle -->
+        <div class="view-mode-toggle" id="crm-view-toggle">
+          <button class="view-mode-btn ${crm_viewMode==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
+          <button class="view-mode-btn ${crm_viewMode==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
+          <button class="view-mode-btn ${crm_viewMode==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
+        </div>
       </div>
 
       <!-- Customer Directory List -->
@@ -10879,6 +12315,16 @@ function renderCustomers() {
     custPage = 1;
     fetchAndRenderCustomers();
   }, 300));
+
+  // View mode toggle
+  document.getElementById('crm-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      crm_viewMode = btn.dataset.view;
+      localStorage.setItem('wareops_crm_view', crm_viewMode);
+      document.querySelectorAll('#crm-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === crm_viewMode));
+      fetchAndRenderCustomers();
+    });
+  });
 }
 
 // Simple debounce helper
@@ -10937,6 +12383,16 @@ async function fetchAndRenderCustomers() {
     return;
   }
 
+  if (crm_viewMode === 'card') {
+    renderCRMCardView(customers, container);
+  } else if (crm_viewMode === 'grid') {
+    renderCRMGridView(customers, container);
+  } else {
+    renderCRMTableView(customers, container, start, total, pages);
+  }
+}
+
+function renderCRMTableView(customers, container, start, total, pages) {
   container.innerHTML = `
     <div class="table-wrap">
       <table>
@@ -11122,6 +12578,623 @@ function showPortfolioModal(c) {
   modal.el.querySelector('#m-port-close')?.addEventListener('click', modal.close);
 }
 
+function renderCRMCardView(customers, container) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px">
+      ${customers.map(c => {
+        const count = c.invoices ? c.invoices.length : 0;
+        const sales = c.invoices ? c.invoices.reduce((sum, inv) => sum + (inv.total || 0), 0) : 0;
+        const initials = c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+        return `
+          <div class="card" style="padding:0;overflow:hidden;transition:transform 0.15s,box-shadow 0.15s"
+            onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-lg)'"
+            onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div style="height:4px;background:linear-gradient(90deg,var(--accent-indigo),var(--accent-sky))"></div>
+            <div style="padding:18px">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+                <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;flex-shrink:0">${initials}</div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:var(--text-primary)">${c.name}</div>
+                  <div style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted)">${c.customer_id}</div>
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+                <div>${c.phone || '—'}</div>
+                <div>${c.email || '—'}</div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px solid var(--border-subtle)">
+                <div>
+                  <span class="badge ${count > 1 ? 'badge-success' : 'badge-secondary'}">${count} Checkout${count !== 1 ? 's' : ''}</span>
+                </div>
+                <div style="font-size:13px;font-weight:700;color:var(--text-primary)">$${sales.toFixed(2)}</div>
+              </div>
+              <button class="btn btn-secondary btn-xs view-portfolio-btn" data-id="${c.customer_id}" style="width:100%;margin-top:10px">${getSvgIcon('view', 12)} View Portfolio</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  container.querySelectorAll('.view-portfolio-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cust = customers.find(x => x.customer_id === btn.dataset.id);
+      if (cust) showPortfolioModal(cust);
+    });
+  });
+}
+
+function renderCRMGridView(customers, container) {
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px">
+      ${customers.map(c => {
+        const count = c.invoices ? c.invoices.length : 0;
+        const sales = c.invoices ? c.invoices.reduce((sum, inv) => sum + (inv.total || 0), 0) : 0;
+        const initials = c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+        return `
+          <div class="card" style="padding:16px;text-align:center;transition:transform 0.15s,box-shadow 0.15s;cursor:pointer"
+            onmouseenter="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow-lg)'"
+            onmouseleave="this.style.transform='';this.style.boxShadow=''">
+            <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:white;margin:0 auto 10px">${initials}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
+            <div style="margin:6px 0"><span class="badge ${count > 1 ? 'badge-success' : 'badge-secondary'}" style="font-size:10px">${count} tx</span></div>
+            <div style="font-size:12px;font-weight:700;color:var(--text-primary)">$${sales.toFixed(0)}</div>
+            <button class="action-btn view view-portfolio-btn" data-id="${c.customer_id}" style="margin-top:8px" title="Portfolio">${getSvgIcon('view', 12)}</button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  container.querySelectorAll('.view-portfolio-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cust = customers.find(x => x.customer_id === btn.dataset.id);
+      if (cust) showPortfolioModal(cust);
+    });
+  });
+}
+
+// ===== pages/roles.js =====
+/**
+ * Role Manager Page — Custom role builder with permission matrix
+ * Route: /roles  (Super Admin only)
+ */
+
+
+
+
+
+
+let activeRoleId = null;
+
+function renderRoles() {
+  const user = getCurrentUser();
+  if (!user || user.role !== 'super_admin') { navigate('/dashboard'); return; }
+
+  renderShell('Role Manager', 'Define roles and permission matrices', buildPageHTML(user));
+  bindEvents();
+  selectRole(activeRoleId || null);
+}
+
+function buildPageHTML(user) {
+  const allRoles = getAllRoles();
+  return `
+    <div class="animate-slideUp">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">Role Manager</h1>
+          <p class="page-subtitle">Create and configure enterprise roles with granular permission matrices</p>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/settings'">← Settings</button>
+          <button class="btn btn-primary" id="new-role-btn">${getSvgIcon('plus', 14)} New Role</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start">
+
+        <!-- Left: Role List -->
+        <div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border-subtle)">
+              <div style="font-size:13px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em">All Roles</div>
+            </div>
+            <div id="role-list" style="max-height:600px;overflow-y:auto">
+              ${renderRoleList(allRoles)}
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Permission Editor -->
+        <div id="permission-editor">
+          <div class="card" style="padding:48px;text-align:center;color:var(--text-muted)">
+            ${getSvgIcon('workforce', 40)}
+            <div style="margin-top:16px;font-size:15px;font-weight:600">Select a role to view or edit its permissions</div>
+            <div style="font-size:13px;margin-top:6px;opacity:0.7">Built-in roles are read-only. Create a custom role to configure permissions.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+function renderRoleList(allRoles) {
+  return allRoles.map(role => `
+    <div class="role-list-item ${activeRoleId === role.id ? 'active' : ''}" data-id="${role.id}"
+      style="display:flex;align-items:center;gap:12px;padding:14px 20px;cursor:pointer;
+             border-left:3px solid ${activeRoleId === role.id ? role.color : 'transparent'};
+             transition:all 0.15s;background:${activeRoleId === role.id ? 'var(--glass-bg)' : 'transparent'}">
+      <div style="width:10px;height:10px;border-radius:50%;background:${role.color};flex-shrink:0;${role.disabled ? 'opacity:0.4' : ''}"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text-primary);${role.disabled ? 'text-decoration:line-through;opacity:0.5' : ''}">${role.name}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${role.isSystem ? 'Built-in' : 'Custom'}</div>
+      </div>
+      ${role.disabled ? `<span class="badge badge-muted" style="font-size:9px">Off</span>` : ''}
+    </div>
+  `).join('');
+}
+
+function renderPermissionMatrix(role) {
+  const isSystem = role.isSystem;
+  const perms = isSystem ? DEFAULT_ROLE_PERMISSIONS[role.key] || {} : (role.permissions || {});
+
+  const presetHTML = !isSystem ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <span style="font-size:12px;color:var(--text-muted);align-self:center;font-weight:600">Presets:</span>
+      ${Object.keys(PERMISSION_PRESETS).map(name => `
+        <button class="btn btn-secondary btn-sm preset-btn" data-preset="${name}">${name}</button>
+      `).join('')}
+    </div>
+  ` : '';
+
+  const rowsHTML = ALL_MODULES.map(mod => {
+    const modPerms = perms[mod.key] || {};
+    return `
+      <tr>
+        <td style="padding:10px 12px;white-space:nowrap">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="color:var(--text-muted)">${getSvgIcon(mod.icon, 14)}</span>
+            <span style="font-size:13px;font-weight:600">${mod.label}</span>
+          </div>
+        </td>
+        ${ALL_ACTIONS.map(action => {
+          const checked = modPerms[action] === true;
+          const id = `perm_${mod.key}_${action}`;
+          return `
+            <td style="text-align:center;padding:10px 6px">
+              <input type="checkbox" id="${id}" name="${id}"
+                data-mod="${mod.key}" data-action="${action}"
+                class="perm-checkbox"
+                ${checked ? 'checked' : ''}
+                ${isSystem ? 'disabled' : ''}
+                style="width:16px;height:16px;cursor:${isSystem ? 'not-allowed' : 'pointer'};accent-color:var(--accent-emerald)" />
+            </td>
+          `;
+        }).join('')}
+        ${!isSystem ? `
+          <td style="text-align:center;padding:10px 6px">
+            <input type="checkbox" class="module-select-all" data-mod="${mod.key}"
+              ${ALL_ACTIONS.every(a => modPerms[a]) ? 'checked' : ''}
+              style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent-sky)"
+              title="Toggle all for ${mod.label}" />
+          </td>
+        ` : '<td></td>'}
+      </tr>
+    `;
+  }).join('');
+
+  const actionColHeaders = ALL_ACTIONS.map(a => `
+    <th style="text-align:center;padding:8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted)">
+      ${a}
+      ${!isSystem ? `<br><input type="checkbox" class="action-select-all" data-action="${a}"
+        style="margin-top:4px;width:14px;height:14px;cursor:pointer;accent-color:var(--accent-amber)" title="Select all ${a}" />` : ''}
+    </th>
+  `).join('');
+
+  // Editable fields for custom roles
+  let editFieldsHTML = '';
+  if (!isSystem) {
+    editFieldsHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:16px;margin-bottom:20px;padding:16px;background:var(--glass-bg);border:1px solid var(--border-subtle);border-radius:var(--radius-md)">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px;font-weight:700;color:var(--text-secondary)">Role Name</label>
+          <input type="text" id="role-name-input" class="form-control" value="${role.name}" placeholder="e.g. Lead Operator" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px;font-weight:700;color:var(--text-secondary)">Description</label>
+          <input type="text" id="role-desc-input" class="form-control" value="${role.description || ''}" placeholder="Scope details" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px;font-weight:700;color:var(--text-secondary)">Color Tag</label>
+          <input type="color" id="role-color-input" class="form-control" value="${role.color || '#71717a'}" style="height:38px;padding:2px;cursor:pointer" />
+        </div>
+      </div>
+    `;
+  }
+
+  // Assigned active users list
+  const allUsers = getStore().users || [];
+  const assignedUsers = allUsers.filter(u => u.role === role.id || u.role === role.key);
+  
+  let assignedUsersHTML = '';
+  if (assignedUsers.length > 0) {
+    assignedUsersHTML = `
+      <div style="margin-bottom:20px;padding:16px;background:var(--glass-bg);border-radius:var(--radius-md);border:1px solid var(--border-subtle)">
+        <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:10px;letter-spacing:0.05em">Assigned Users (${assignedUsers.length})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          ${assignedUsers.map(u => {
+            const initials = u.name ? u.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
+            const avatarHTML = u.avatar ? 
+              `<img src="${u.avatar}" style="width:28px;height:28px;border-radius:50%;object-fit:cover" />` :
+              `<div style="width:28px;height:28px;border-radius:50%;background:var(--accent-indigo);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">${initials}</div>`;
+            const empId = u.employeeId || u.enterprise_id || 'N/A';
+            return `
+              <div style="display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--card-bg);border:1px solid var(--border-subtle);border-radius:20px" title="${u.email}">
+                ${avatarHTML}
+                <div style="text-align:left;line-height:1.2">
+                  <div style="font-size:11px;font-weight:600;color:var(--text-primary)">${u.name || u.email}</div>
+                  <div style="font-size:9px;color:var(--text-muted)">ID: ${empId}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  } else {
+    assignedUsersHTML = `
+      <div style="margin-bottom:20px;padding:12px;background:var(--glass-bg);border-radius:var(--radius-md);border:1px solid var(--border-subtle);font-size:11px;color:var(--text-muted)">
+        No users currently assigned to this role.
+      </div>
+    `;
+  }
+
+  // Sidebar Layout, ordering and visibility
+  let extraSettingsHTML = '';
+  if (!isSystem) {
+    const pageOrder = role.pageOrder || role.page_order || ALL_MODULES.map(m => m.key);
+    const visibility = role.moduleVisibility || role.module_visibility || {};
+    
+    const sortedModules = [...ALL_MODULES].sort((a, b) => {
+      const idxA = pageOrder.indexOf(a.key);
+      const idxB = pageOrder.indexOf(b.key);
+      const valA = idxA === -1 ? 999 : idxA;
+      const valB = idxB === -1 ? 999 : idxB;
+      return valA - valB;
+    });
+
+    extraSettingsHTML = `
+      <div style="margin-top:24px;border-top:1px solid var(--border-subtle);padding-top:20px">
+        <h3 style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:4px">Sidebar Navigation Layout</h3>
+        <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Customize sidebar order and visibility for this role.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:12px">
+          ${sortedModules.map((mod, index) => {
+            const isVisible = visibility[mod.key] !== false;
+            return `
+              <div class="nav-order-item" data-key="${mod.key}" style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--glass-bg);border:1px solid var(--border-subtle);border-radius:var(--radius-md)">
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <button type="button" class="btn-move-up" data-key="${mod.key}" style="border:none;background:none;color:var(--text-muted);cursor:pointer;padding:2px;font-size:10px;line-height:1" title="Move Up">▲</button>
+                  <button type="button" class="btn-move-down" data-key="${mod.key}" style="border:none;background:none;color:var(--text-muted);cursor:pointer;padding:2px;font-size:10px;line-height:1" title="Move Down">▼</button>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mod.label}</div>
+                  <div style="font-size:10px;color:var(--text-muted)">Seq: ${index + 1}</div>
+                </div>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-secondary);flex-shrink:0">
+                  <input type="checkbox" class="nav-visibility-checkbox" data-key="${mod.key}" ${isVisible ? 'checked' : ''} style="width:14px;height:14px;accent-color:var(--accent-sky)" />
+                  Show
+                </label>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card">
+      <div class="card-header" style="gap:12px;flex-wrap:wrap">
+        <div>
+          <div class="card-title" style="display:flex;align-items:center;gap:8px">
+            <div style="width:12px;height:12px;border-radius:3px;background:${role.color}"></div>
+            ${role.name}
+            ${role.isSystem ? `<span class="badge badge-muted" style="font-size:10px">System</span>` : `<span class="badge badge-success" style="font-size:10px">Custom</span>`}
+          </div>
+          <div class="card-subtitle">${role.description || 'Permission matrix for this role'}</div>
+        </div>
+        ${!isSystem ? `
+          <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" id="clone-role-btn" data-id="${role.id}">Clone</button>
+            <button class="btn btn-danger btn-sm" id="delete-role-btn" data-id="${role.id}">Delete</button>
+            <button class="btn btn-secondary btn-sm" id="toggle-role-btn" data-id="${role.id}">${role.disabled ? 'Enable' : 'Disable'}</button>
+            <button class="btn btn-primary btn-sm" id="save-role-btn" data-id="${role.id}">${getSvgIcon('save', 14)} Save</button>
+          </div>
+        ` : `
+          <div style="margin-left:auto">
+            <button class="btn btn-secondary btn-sm" id="clone-role-btn" data-id="${role.id}">Clone as Custom</button>
+          </div>
+        `}
+      </div>
+
+      ${editFieldsHTML}
+      ${assignedUsersHTML}
+      ${presetHTML}
+
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border-subtle)">
+              <th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-muted)">Module</th>
+              ${actionColHeaders}
+              ${!isSystem ? `<th style="text-align:center;padding:8px 6px;font-size:10px;font-weight:700;color:var(--accent-sky)">All</th>` : '<th></th>'}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHTML}
+          </tbody>
+        </table>
+      </div>
+
+      ${extraSettingsHTML}
+
+      ${isSystem ? `
+        <div style="margin-top:20px;padding:14px;background:var(--glass-bg);border-radius:var(--radius-md);border:1px solid var(--border-subtle)">
+          <div style="font-size:12px;color:var(--text-muted)">
+            ${getSvgIcon('warning', 14)} Built-in roles cannot be modified. Clone this role to create a custom variant with adjusted permissions.
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function selectRole(roleId) {
+  activeRoleId = roleId;
+  const allRoles = getAllRoles();
+  const role = allRoles.find(r => r.id === roleId);
+  const editor = document.getElementById('permission-editor');
+  const list = document.getElementById('role-list');
+  if (!editor) return;
+
+  // Update active state in list
+  if (list) list.innerHTML = renderRoleList(allRoles);
+  bindRoleListClicks();
+
+  if (!role) {
+    editor.innerHTML = `
+      <div class="card" style="padding:48px;text-align:center;color:var(--text-muted)">
+        ${getSvgIcon('workforce', 40)}
+        <div style="margin-top:16px;font-size:15px;font-weight:600">Select a role to view its permissions</div>
+      </div>`;
+    return;
+  }
+
+  editor.innerHTML = renderPermissionMatrix(role);
+  bindEditorEvents(role);
+}
+
+function bindEvents() {
+  document.getElementById('new-role-btn')?.addEventListener('click', showNewRoleModal);
+  bindRoleListClicks();
+}
+
+function bindRoleListClicks() {
+  document.querySelectorAll('.role-list-item').forEach(el => {
+    el.addEventListener('click', () => selectRole(el.dataset.id));
+  });
+}
+
+function moveRoleNav(role, key, direction) {
+  const currentOrder = role.pageOrder || role.page_order || ALL_MODULES.map(m => m.key);
+  const allKeys = ALL_MODULES.map(m => m.key);
+  const cleanOrder = currentOrder.filter(k => allKeys.includes(k));
+  allKeys.forEach(k => {
+    if (!cleanOrder.includes(k)) cleanOrder.push(k);
+  });
+  
+  const idx = cleanOrder.indexOf(key);
+  if (idx === -1) return;
+  const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (newIdx < 0 || newIdx >= cleanOrder.length) return;
+  
+  const temp = cleanOrder[idx];
+  cleanOrder[idx] = cleanOrder[newIdx];
+  cleanOrder[newIdx] = temp;
+  
+  role.pageOrder = cleanOrder;
+  role.page_order = cleanOrder;
+  
+  const editor = document.getElementById('permission-editor');
+  if (editor) {
+    editor.innerHTML = renderPermissionMatrix(role);
+    bindEditorEvents(role);
+  }
+}
+
+function bindEditorEvents(role) {
+  // Save
+  document.getElementById('save-role-btn')?.addEventListener('click', () => saveRolePermissions(role));
+
+  // Clone
+  document.getElementById('clone-role-btn')?.addEventListener('click', async () => {
+    try {
+      const newRole = await cloneRole(role.id);
+      if (newRole) {
+        showToast('Role cloned', `"${newRole.name}" created`, 'success');
+        activeRoleId = newRole.id;
+        renderRoles();
+      }
+    } catch (err) {
+      showToast('Error cloning role', err.message, 'error');
+    }
+  });
+
+  // Delete
+  document.getElementById('delete-role-btn')?.addEventListener('click', async () => {
+    const ok = await confirm(`Delete role "${role.name}"? Users with this role will fall back to Employee access.`, 'danger');
+    if (!ok) return;
+    try {
+      await deleteRole(role.id);
+      activeRoleId = null;
+      showToast('Role deleted', role.name, 'warning');
+      renderRoles();
+    } catch (err) {
+      showToast('Error deleting role', err.message, 'error');
+    }
+  });
+
+  // Toggle disable
+  document.getElementById('toggle-role-btn')?.addEventListener('click', async () => {
+    try {
+      await updateRole(role.id, { disabled: !role.disabled });
+      showToast('Role updated', role.disabled ? 'Role enabled' : 'Role disabled', 'info');
+      renderRoles();
+    } catch (err) {
+      showToast('Error updating role', err.message, 'error');
+    }
+  });
+
+  // Navigation ordering movement buttons
+  document.querySelectorAll('.btn-move-up').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      moveRoleNav(role, btn.dataset.key, 'up');
+    });
+  });
+
+  document.querySelectorAll('.btn-move-down').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      moveRoleNav(role, btn.dataset.key, 'down');
+    });
+  });
+
+  // Module "Select All" checkboxes
+  document.querySelectorAll('.module-select-all').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const mod = cb.dataset.mod;
+      document.querySelectorAll(`.perm-checkbox[data-mod="${mod}"]`).forEach(c => { c.checked = cb.checked; });
+    });
+  });
+
+  // Action "Select All" column checkboxes
+  document.querySelectorAll('.action-select-all').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const action = cb.dataset.action;
+      document.querySelectorAll(`.perm-checkbox[data-action="${action}"]`).forEach(c => { c.checked = cb.checked; });
+    });
+  });
+
+  // Preset buttons
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const preset = PERMISSION_PRESETS[btn.dataset.preset];
+      if (!preset) return;
+      const perms = preset();
+      document.querySelectorAll('.perm-checkbox').forEach(cb => {
+        const mod = cb.dataset.mod;
+        const action = cb.dataset.action;
+        cb.checked = !!(perms[mod]?.[action]);
+      });
+      showToast('Preset applied', btn.dataset.preset, 'info');
+    });
+  });
+}
+
+async function saveRolePermissions(role) {
+  const perms = {};
+  ALL_MODULES.forEach(mod => {
+    perms[mod.key] = {};
+    ALL_ACTIONS.forEach(action => {
+      const cb = document.getElementById(`perm_${mod.key}_${action}`);
+      perms[mod.key][action] = cb ? cb.checked : false;
+    });
+  });
+
+  const nameEl = document.getElementById('role-name-input');
+  const descEl = document.getElementById('role-desc-input');
+  const colorEl = document.getElementById('role-color-input');
+  
+  const updates = { permissions: perms };
+  if (nameEl) updates.name = nameEl.value.trim() || role.name;
+  if (descEl) updates.description = descEl.value.trim();
+  if (colorEl) updates.color = colorEl.value;
+
+  const visibility = {};
+  document.querySelectorAll('.nav-visibility-checkbox').forEach(cb => {
+    visibility[cb.dataset.key] = cb.checked;
+  });
+  updates.moduleVisibility = visibility;
+
+  const pageOrder = Array.from(document.querySelectorAll('.nav-order-item')).map(el => el.dataset.key);
+  if (pageOrder.length > 0) {
+    updates.pageOrder = pageOrder;
+  }
+
+  try {
+    await updateRole(role.id, updates);
+    showToast('Role saved', `${updates.name || role.name} permissions updated`, 'success');
+    renderRoles();
+  } catch (err) {
+    showToast('Error saving role', err.message, 'error');
+  }
+}
+
+function showNewRoleModal() {
+  const allBuiltin = BUILTIN_ROLES.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  const body = `
+    <div class="form-group">
+      <label class="form-label">Role Name <span class="req">*</span></label>
+      <input type="text" id="nr-name" class="form-control" placeholder="e.g., Logistics Coordinator" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <input type="text" id="nr-desc" class="form-control" placeholder="Brief description of this role's scope" />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Role Color</label>
+        <input type="color" id="nr-color" class="form-control" value="#06b6d4" style="height:42px;cursor:pointer" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clone Permissions From</label>
+        <select id="nr-clone" class="form-control">
+          <option value="">Empty (No Access)</option>
+          ${allBuiltin}
+        </select>
+      </div>
+    </div>
+  `;
+  const footer = `
+    <button class="btn btn-ghost" id="nr-cancel">Cancel</button>
+    <button class="btn btn-primary" id="nr-create">${getSvgIcon('plus', 14)} Create Role</button>
+  `;
+  const modal = createModal({ title: 'Create New Role', body, footer });
+  modal.el.querySelector('#nr-cancel')?.addEventListener('click', modal.close);
+  modal.el.querySelector('#nr-create')?.addEventListener('click', async () => {
+    const name = modal.el.querySelector('#nr-name').value.trim();
+    if (!name) { showToast('Name required', '', 'error'); return; }
+    const desc = modal.el.querySelector('#nr-desc').value.trim();
+    const color = modal.el.querySelector('#nr-color').value;
+    const cloneFrom = modal.el.querySelector('#nr-clone').value;
+
+    let basePerms = {};
+    if (cloneFrom && DEFAULT_ROLE_PERMISSIONS[cloneFrom]) {
+      basePerms = JSON.parse(JSON.stringify(DEFAULT_ROLE_PERMISSIONS[cloneFrom]));
+    }
+    
+    try {
+      const newRole = await createRole({ name, description: desc, color, permissions: basePerms });
+      modal.close();
+      activeRoleId = newRole.id;
+      showToast('Role created', name, 'success');
+      renderRoles();
+    } catch (err) {
+      showToast('Error creating role', err.message, 'error');
+    }
+  });
+}
+
 // ===== app.js =====
 // Handle unhandled promise rejections and global errors for visible debugging
 window.addEventListener('error', (event) => {
@@ -11142,7 +13215,9 @@ window.addEventListener('unhandledrejection', (event) => {
 
 
 
+
 // Pages
+
 
 
 
@@ -11180,6 +13255,7 @@ const routes = {
   '/terms': renderTerms,
   '/registry': renderRegistry,
   '/customers': renderCustomers,
+  '/roles': renderRoles,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -11238,6 +13314,30 @@ function resolveRoute() {
         safeNavigate('/dashboard');
         return;
       }
+
+      // Granular Page Access Guard check
+      const routeModuleMap = {
+        '/dashboard': 'dashboard',
+        '/warehouses': 'warehouses',
+        '/workforce': 'workforce',
+        '/items': 'inventory',
+        '/tables': 'tables',
+        '/billing': 'billing',
+        '/analytics': 'reports',
+        '/audit': 'audit',
+        '/settings': 'settings',
+        '/customers': 'crm',
+      };
+
+      if (['/registry', '/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
+        safeNavigate('/dashboard');
+        return;
+      }
+
+      if (routeModuleMap[path] && !canDo(routeModuleMap[path], 'view', user)) {
+        safeNavigate('/dashboard');
+        return;
+      }
     }
 
     const handler = routes[path];
@@ -11293,8 +13393,13 @@ async function init() {
     // Bind active currency dynamically for formatting sync
     window.wareops_currency = getActiveCurrency();
 
-    // Apply active global theme preferences
-    applyTheme(getStore().theme);
+    // Apply active global theme — first from localStorage for instant load (no flash),
+    // then confirm from store (handles fresh logins / resets)
+    const cachedTheme = localStorage.getItem('wareops_theme') || 'enterprise';
+    applyTheme(cachedTheme);
+    const storeTheme = getStore().theme;
+    if (storeTheme && storeTheme !== cachedTheme) applyTheme(storeTheme);
+
 
     const user = getCurrentUser();
 
