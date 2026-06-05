@@ -1,9 +1,9 @@
 /**
  * Audit Logs Page
  */
-import { getCurrentUser, apiFetch } from '../modules/store.js';
+import { getCurrentUser, apiFetch, getStore } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { formatDateTime } from '../modules/ui.js';
+import { formatDateTime, renderAvatarContainer } from '../modules/ui.js';
 
 let au_searchQ = '';
 let au_page = 1;
@@ -178,7 +178,9 @@ async function renderAuditTable() {
               const actionClass = ACTION_CLASSES[log.action] || 'badge-muted';
               const actionText = (log.action || 'unknown').toUpperCase().replace(/_/g, ' ');
               const userName = log.userName || 'System';
-              const userInitials = userName.slice(0, 2).toUpperCase();
+              const allUsers = getStore().users || [];
+              const targetUser = allUsers.find(usr => usr.id === log.userId || usr.name === log.userName);
+              const avatarVal = targetUser ? targetUser.avatar : '';
               
               return `
                 <tr style="border-bottom:1px solid var(--border-color);transition:background 0.2s" class="hover-row">
@@ -191,7 +193,7 @@ async function renderAuditTable() {
                   <td data-label="Description" style="padding:12px 16px;font-size:13px;color:var(--text-primary);line-height:1.5">${log.description || ''}</td>
                   <td data-label="User" style="padding:12px 16px">
                     <div style="display:flex;align-items:center;gap:10px">
-                      <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,0.1)">${userInitials}</div>
+                      ${renderAvatarContainer(avatarVal, userName, 28)}
                       <span style="font-size:13px;font-weight:500;color:var(--text-primary)">${userName}</span>
                     </div>
                   </td>

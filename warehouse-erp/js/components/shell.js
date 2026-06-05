@@ -33,9 +33,10 @@ export function renderShell(pageTitle, pageSubtitle, content) {
     <div class="sidebar-section">
       <div class="sidebar-section-label">${section.section}</div>
       ${section.items.map(item => `
-        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" data-tooltip="${item.label}">
+        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" data-tooltip="${item.label}" style="position:relative">
           <span class="sidebar-item-icon">${getSvgIcon(item.icon)}</span>
           <span class="sidebar-item-label">${item.label}</span>
+          ${item.path === '/notifications' && unreadCount > 0 ? `<span style="position:absolute;top:6px;right:8px;min-width:18px;height:18px;padding:0 4px;background:var(--accent-rose);border-radius:9px;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-sidebar, var(--bg-base))">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
         </div>
       `).join('')}
     </div>
@@ -73,7 +74,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
         ${sidebarWidget}
         <div class="sidebar-footer">
           <div class="sidebar-user" id="user-menu-btn" data-tooltip="${user.name} (${capitalize(user.role)})">
-            <div class="sidebar-user-avatar">${renderAvatarContainer(user.avatar, user.name, 36)}</div>
+            <div class="sidebar-user-avatar" style="background:${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? 'transparent' : 'var(--gradient-brand)'};border:${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? '2px solid var(--border-default)' : 'none'}">${renderAvatar(user.avatar, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;')}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
               <div class="sidebar-user-role" style="font-size:11px;color:var(--text-muted);font-weight:500;">${capitalize(user.role.replace('_', ' '))} · ${whAccessText}</div>
@@ -100,7 +101,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
               ${getSvgIcon('bell', 18)}
               ${unreadCount > 0 ? `<span class="badge" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--accent-rose);border-radius:50%;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base)">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
             </div>
-            <div class="icon-btn" data-tooltip="Profile" id="profile-btn" style="overflow:hidden;padding:0;">${renderAvatarContainer(user.avatar, user.name, 34)}</div>
+            <div class="icon-btn" data-tooltip="Profile" id="profile-btn" style="overflow:hidden;padding:0;border-radius:50%;width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? 'transparent' : 'var(--gradient-brand)'}">${renderAvatar(user.avatar, 'width:34px;height:34px;object-fit:cover;border-radius:50%;display:block;')}</div>
           </div>
         </header>
         <div class="page-content" id="page-content">
@@ -354,6 +355,9 @@ function showNotificationDropdown(anchor) {
           </div>
         `).join('')}
     </div>
+    <div style="padding:10px;text-align:center;border-top:1px solid var(--border-subtle)">
+      <button id="go-to-notifications-btn" style="width:100%;padding:8px 0;background:var(--bg-input);border:1px solid var(--border-default);border-radius:6px;font-size:12px;color:var(--text-primary);font-weight:600;cursor:pointer;font-family:var(--font-sans)">Go To Notifications</button>
+    </div>
   `;
 
   document.body.appendChild(dropdown);
@@ -382,6 +386,12 @@ function showNotificationDropdown(anchor) {
     navigate(getCurrentPath());
   });
 
+  dropdown.querySelector('#go-to-notifications-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.remove();
+    navigate('/notifications');
+  });
+
   setTimeout(() => document.addEventListener('click', () => dropdown.remove(), { once: true }), 50);
 }
 
@@ -399,13 +409,22 @@ function showProfileDropdown(anchor) {
   dropdown.className = 'dropdown-menu animate-scaleUp';
   dropdown.style.cssText = 'min-width:220px;';
   
+  dropdown.innerHTML = `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
+      <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${user.name}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
+    </div>
+    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
+    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
+    <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
+    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
+  `;
+
   const isSidebar = anchor.id === 'user-menu-btn';
   
   if (isSidebar) {
-    // Append to body FIRST so we can measure its rendered height
     document.body.appendChild(dropdown);
-    // Force layout calculation
-    dropdown.getBoundingClientRect();
     
     const rect = anchor.getBoundingClientRect();
     const elRect = dropdown.getBoundingClientRect();
@@ -434,21 +453,9 @@ function showProfileDropdown(anchor) {
       preferredAlign: 'right',
       preferredVertical: 'bottom'
     });
+    document.body.appendChild(dropdown);
   }
 
-  dropdown.innerHTML = `
-    <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
-      <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${user.name}</div>
-      <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
-      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
-    </div>
-    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
-    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
-    <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
-    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
-  `;
-
-  document.body.appendChild(dropdown);
 
   dropdown.querySelectorAll('.dropdown-item').forEach(el => {
     el.addEventListener('mouseenter', () => el.style.background = 'rgba(99,102,241,0.08)');

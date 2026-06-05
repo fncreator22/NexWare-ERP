@@ -47,8 +47,46 @@ h1,h2,h3,h4,h5,h6 {
   color: var(--text-primary);
 }
 
-/* Images */
-img { max-width: 100%; display: block; }
+/* ── Images: Global Safety Rules ─────────────────────────────────── */
+/* Prevent default inline baseline gap for all img elements */
+img { max-width: 100%; display: block; vertical-align: middle; }
+
+/* Entity Image Container (renderEntityImage overlay pattern)
+   - position:relative so the absolute <img> overlay is contained
+   - overflow:hidden clips both fallback and photo layers
+   - The <img> inside uses position:absolute inset:0 (set inline)
+   - The .entity-img-fallback span uses position:absolute inset:0 (set inline)
+   These rules are SAFETY NETS only — primary styles are set inline by renderEntityImage */
+.entity-image-container {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+/* Fallback layer must not intercept pointer events */
+.entity-img-fallback {
+  pointer-events: none;
+  user-select: none;
+}
+/* Prevent raw text overflow inside image containers */
+.entity-image-container > span:not(.entity-img-fallback) {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Table cell images: block + centered, constrained size */
+td img, th img {
+  display: block;
+  margin: 0 auto;
+  max-height: 36px;
+  max-width: 80px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
 
 /* Focus */
 :focus-visible {

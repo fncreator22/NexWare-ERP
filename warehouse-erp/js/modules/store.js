@@ -130,7 +130,17 @@ export async function apiFetch(path, options = {}) {
     
     const data = await res.json();
     if (!res.ok) {
-      return { error: data.message || 'An error occurred.' };
+      let errMsg = 'An error occurred.';
+      if (data && data.error && data.error.message) {
+        errMsg = data.error.message;
+      } else if (data && data.detail && Array.isArray(data.detail) && data.detail[0] && data.detail[0].msg) {
+        errMsg = data.detail[0].msg;
+      } else if (data && data.message) {
+        errMsg = data.message;
+      } else if (data && typeof data.detail === 'string') {
+        errMsg = data.detail;
+      }
+      return { error: errMsg };
     }
     return data;
   } catch (err) {
@@ -339,7 +349,10 @@ export function getStockHealth(warehouseId) {
   const s = getStore();
   const items = warehouseId ? s.items.filter(i => i.warehouseId === warehouseId) : s.items;
   if (items.length === 0) return 0;
-  const lowStock = items.filter(i => (i.stock || 0) < 20).length;
+  const lowStock = items.filter(i => {
+    const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+    return (i.stock || 0) < threshold;
+  }).length;
   return Math.round(((items.length - lowStock) / items.length) * 100);
 }
 

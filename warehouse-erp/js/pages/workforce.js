@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, getAllUsers, createUser, updateUser, deleteUser, getWarehouses, getAuditLogs } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce, getSvgIcon, renderAvatar, renderAvatarContainer, generateBarcodeSVG } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce, getSvgIcon, renderAvatar, renderAvatarContainer, generateBarcodeSVG, updateDOMAvatars } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 import { resolvePermissions, getAllRoles, ALL_MODULES, ALL_ACTIONS } from '../modules/permissions.js';
 
@@ -446,8 +446,8 @@ function showUserModal(u) {
   const body = `
     <form id="user-modal-form">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border-subtle)">
-        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;${m_avatar && (m_avatar.startsWith('data:image/') || m_avatar.startsWith('http')) ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
-          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%") || (u?.name ? u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() : '?')}
+        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;${m_avatar && (m_avatar.startsWith('data:') || m_avatar.startsWith('http')) ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
+          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}
         </div>
         <div style="flex:1">
           <div style="display:flex;gap:8px">
@@ -607,14 +607,12 @@ function showUserModal(u) {
   });
 
   modal.el.querySelector('#m-u-remove-photo-btn')?.addEventListener('click', () => {
-    const name = document.getElementById('m-u-name').value.trim() || 'US';
-    const fallbackInitials = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
-    m_avatar = fallbackInitials;
+    m_avatar = '';
     const preview = modal.el.querySelector('#m-u-avatar-preview');
     if (preview) {
       preview.style.background = 'var(--gradient-brand)';
       preview.style.border = 'none';
-      preview.innerHTML = fallbackInitials;
+      preview.innerHTML = `<svg style="width:60%;height:60%;display:block;color:rgba(255,255,255,0.95);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
     }
   });
 
@@ -650,6 +648,10 @@ function showUserModal(u) {
       const result = await updateUser(u.id, data);
       if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User updated', `${name}'s details updated`, 'success');
+      const curUser = getCurrentUser();
+      if (u.id === curUser.id) {
+        updateDOMAvatars(m_avatar, name);
+      }
     } else {
       const password = document.getElementById('m-u-password').value;
       if (!password || password.length < 8) { showToast('Validation', 'Password must be at least 8 characters', 'warning'); return; }

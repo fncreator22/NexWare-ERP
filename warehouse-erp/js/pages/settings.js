@@ -1,6 +1,6 @@
 import { getCurrentUser, getStore, saveStore, getTaxConfig, saveTaxConfig, getBills, getAllUsers, getWarehouses, getItems, getCurrency, saveCurrency, addAuditLog, updateUser } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, getSvgIcon, applyTheme, renderAvatar } from '../modules/ui.js';
+import { showToast, confirm, getSvgIcon, applyTheme, renderAvatar, updateDOMAvatars } from '../modules/ui.js';
 import { exportCSV, exportXLSX, exportPDF } from '../modules/exporter.js';
 
 export function renderSettings() {
@@ -36,13 +36,13 @@ export function renderSettings() {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:20px;margin-bottom:24px">
-            <div style="width:72px;height:72px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white;flex-shrink:0;box-shadow:var(--shadow-brand);overflow:hidden">${renderAvatar(user.avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}</div>
+            <div id="settings-avatar-preview" style="width:72px;height:72px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white;flex-shrink:0;box-shadow:var(--shadow-brand);overflow:hidden">${renderAvatar(user.avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}</div>
             <div>
               <div style="font-size:20px;font-weight:800;margin-bottom:2px">${user.name}</div>
               <div style="font-size:13px;color:var(--text-muted)">${user.email}</div>
               <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
                 <button class="btn btn-secondary btn-xs" id="s-upload-photo-btn" type="button" style="padding:4px 8px;font-size:11px">Upload Photo</button>
-                ${user.avatar?.startsWith('data:image/') ? `<button class="btn btn-danger btn-xs" id="s-remove-photo-btn" type="button" style="padding:4px 8px;font-size:11px;background:var(--accent-rose)">Remove Photo</button>` : ''}
+                ${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? `<button class="btn btn-danger btn-xs" id="s-remove-photo-btn" type="button" style="padding:4px 8px;font-size:11px;background:var(--accent-rose)">Remove Photo</button>` : ''}
               </div>
               <input type="file" id="s-photo-input" accept="image/*" style="display:none" />
             </div>
@@ -368,8 +368,8 @@ export function renderSettings() {
     if (u) {
       u.name = name;
       // If photo is initials, recreate them from the new name
-      if (!u.avatar || !u.avatar.startsWith('data:image/')) {
-        u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+      if (u.avatar && !u.avatar.startsWith('data:') && !u.avatar.startsWith('http')) {
+        u.avatar = '';
       }
       saveStore();
       await updateUser(u.id, { name, avatar: u.avatar });
@@ -402,6 +402,7 @@ export function renderSettings() {
       if (u) {
         u.avatar = base64;
         saveStore();
+        updateDOMAvatars(base64, u.name);
         await updateUser(u.id, { avatar: base64 });
         showToast('Photo uploaded', 'Profile photo updated successfully', 'success');
         renderSettings();
@@ -414,11 +415,11 @@ export function renderSettings() {
     const s = getStore();
     const u = s.users.find(usr => usr.id === s.currentUserId);
     if (u) {
-      const fallbackInitials = u.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
-      u.avatar = fallbackInitials;
+      u.avatar = '';
       saveStore();
-      await updateUser(u.id, { avatar: fallbackInitials });
-      showToast('Photo removed', 'Profile photo reverted to initials', 'success');
+      updateDOMAvatars('', u.name);
+      await updateUser(u.id, { avatar: '' });
+      showToast('Photo removed', 'Profile photo removed successfully', 'success');
       renderSettings();
     }
   });

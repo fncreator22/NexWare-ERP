@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-06-04T22:07:40.412Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-06-05T18:58:21.806Z
 
 
 // ===== modules/store.js =====
@@ -134,7 +134,17 @@ async function apiFetch(path, options = {}) {
     
     const data = await res.json();
     if (!res.ok) {
-      return { error: data.message || 'An error occurred.' };
+      let errMsg = 'An error occurred.';
+      if (data && data.error && data.error.message) {
+        errMsg = data.error.message;
+      } else if (data && data.detail && Array.isArray(data.detail) && data.detail[0] && data.detail[0].msg) {
+        errMsg = data.detail[0].msg;
+      } else if (data && data.message) {
+        errMsg = data.message;
+      } else if (data && typeof data.detail === 'string') {
+        errMsg = data.detail;
+      }
+      return { error: errMsg };
     }
     return data;
   } catch (err) {
@@ -343,7 +353,10 @@ function getStockHealth(warehouseId) {
   const s = getStore();
   const items = warehouseId ? s.items.filter(i => i.warehouseId === warehouseId) : s.items;
   if (items.length === 0) return 0;
-  const lowStock = items.filter(i => (i.stock || 0) < 20).length;
+  const lowStock = items.filter(i => {
+    const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+    return (i.stock || 0) < threshold;
+  }).length;
   return Math.round(((items.length - lowStock) / items.length) * 100);
 }
 
@@ -1537,85 +1550,131 @@ function applyTheme(themeName) {
 
 /**
  * renderAvatar — renders a user avatar as either an <img> (photo) or styled initials span.
- * When avatar is a data URL or http URL  → renders <img> tag
- * When avatar is a string of 1-3 chars (initials) → renders styled initials span
- * When avatar is empty → returns empty string
+ * Falls back to user SVG if no valid image or initials.
  */
 function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
-  if (!avatar) return '';
-  // Check for image URLs (data URI or http/https)
-  if (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://')) {
+  if (avatar && (avatar.startsWith('data:') || avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('http'))) {
     return `<img src="${avatar}" style="${sizeStyle}" alt="Avatar" onerror="this.style.display='none'" />`;
   }
-  // Treat as initials string — render with background transparent (the container provides gradient)
-  return `<span style="font-size:inherit;font-weight:700;color:inherit;line-height:1;">${avatar}</span>`;
+  // Replace fallback initials with a premium user avatar SVG icon
+  if (avatar && avatar.length > 0 && avatar.length <= 3 && !avatar.startsWith('icon:')) {
+    return `<span style="font-size:inherit;font-weight:700;color:white;text-transform:uppercase;">${avatar}</span>`;
+  }
+  return `<svg style="width:60%;height:60%;display:block;color:rgba(255,255,255,0.95);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
 }
 
 /**
  * Centralized entity image resolver.
  * Renders an image if it exists, otherwise renders initials or dynamic icons.
+ *
+ * OVERLAY PATTERN: fallback (initials/icon) is always rendered in the DOM.
+ * The photo <img> is absolutely positioned on top (z-index:1).
+ * On load  → photo covers the fallback layer.
+ * On error → photo hides itself (display:none), fallback shows beneath.
+ *
+ * This eliminates the previous onerror=innerHTML approach which embedded raw HTML
+ * inside an HTML attribute causing attribute shattering: the browser's parser
+ * stopped reading the onerror attribute at the first " inside fallbackHTML,
+ * leaving "PD" initials and "/>" text as stray visible DOM nodes.
+ *
  * @param {string} src - The image URI or base64 data string
- * @param {string} type - Entity type ('workforce' | 'profile' | 'warehouse' | 'inventory' | 'reports' | 'tables' | 'roles')
- * @param {string} fallbackText - Initials or name to generate initials, or icon key
- * @param {number} size - Square/diameter size in pixels (default 40)
- * @param {string} extraStyle - Inline styles to merge
+ * @param {string} type - Entity type ('workforce'|'profile'|'warehouse'|'warehouse_photo'|'inventory'|'company_logo')
+ * @param {string} fallbackText - Name to derive initials from, icon key, or short label
+ * @param {number} size - Square/diameter in px (default 40)
+ * @param {string} extraStyle - Additional inline CSS to merge onto the container
  * @returns {string} HTML string
  */
 function renderEntityImage(src, type, fallbackText = '', size = 40, extraStyle = '') {
-  const isUrl = src && (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://'));
+  const isUrl = src && typeof src === 'string' && (
+    src.startsWith('data:') ||
+    src.startsWith('http://') ||
+    src.startsWith('https://') ||
+    src.startsWith('http')
+  );
   const s = size;
 
-  if (type === 'workforce' || type === 'profile') {
-    // Circular user avatar
-    const initials = fallbackText.length <= 3 && !fallbackText.startsWith('data:') && !fallbackText.startsWith('http')
-      ? fallbackText
-      : (fallbackText ? fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?');
-    const bgStyle = isUrl ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);';
-    
-    return `<div class="entity-avatar-container" style="width:${s}px;height:${s}px;border-radius:50%;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="Avatar" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
-    </div>`;
-  } else if (type === 'warehouse') {
-    // Square card / logo layout
-    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
-    
-    // Dynamic icon matching from renderWarehouseLogo
-    const defaultIcon = `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
-    const icons = {
-      'icon:industrial': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
-      'icon:distribution': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
-      'icon:retail': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
-      'icon:office': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
-      'icon:tech': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
-    };
-    
-    let fallbackIcon = defaultIcon;
-    if (fallbackText && fallbackText.startsWith('icon:')) {
-      fallbackIcon = icons[fallbackText.toLowerCase()] || defaultIcon;
-    }
+  // --- Per-type visual config ---
+  let borderRadius = '8px';
+  let objectFit   = 'cover';
+  let bgFallback  = 'var(--bg-elevated)';
+  let border      = '1px solid var(--border-default)';
 
-    return `<div class="entity-logo-container" style="width:${s}px;height:${s}px;border-radius:8px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="Logo" onerror="this.remove();this.parentElement.innerHTML='${fallbackIcon}'" />` : fallbackIcon}
-    </div>`;
-  } else if (type === 'inventory') {
-    // Square item cards / boxes
-    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
-    const boxIcon = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
-
-    return `<div class="entity-item-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Item" onerror="this.parentElement.style.background='var(--bg-elevated)';this.remove();this.parentElement.innerHTML='${boxIcon}'" />` : boxIcon}
-    </div>`;
-  } else {
-    // Reports, Tables, Role management - general fallback rendering
-    const initials = fallbackText.length <= 3 
-      ? fallbackText 
-      : fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--gradient-brand);';
-
-    return `<div class="entity-general-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Entity" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
-    </div>`;
+  if (type === 'profile' || type === 'workforce' || type === 'avatar') {
+    borderRadius = '50%';
+    bgFallback   = 'var(--gradient-brand)';
+    border       = isUrl ? '2px solid var(--border-default)' : 'none';
+  } else if (type === 'warehouse' || type === 'warehouse_logo' || type === 'logo') {
+    borderRadius = '8px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+  } else if (type === 'warehouse_photo' || type === 'photo') {
+    borderRadius = '8px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+  } else if (type === 'inventory' || type === 'inventory_item' || type === 'item') {
+    borderRadius = '6px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+  } else if (type === 'company_logo') {
+    borderRadius = '4px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+    objectFit    = 'contain';
   }
+
+  // --- Build fallback content (initials / icon SVG) ---
+  let fallbackHTML = '';
+
+  if (type === 'profile' || type === 'workforce' || type === 'avatar') {
+    const raw = fallbackText && typeof fallbackText === 'string' && !fallbackText.startsWith('icon:') ? fallbackText : '';
+    const initials = raw ? raw.split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase() : '';
+    if (initials && /^[A-Z]{1,2}$/.test(initials)) {
+      fallbackHTML = `<span style="font-size:${Math.round(s * 0.38)}px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15);line-height:1;pointer-events:none;user-select:none;">${initials}</span>`;
+    } else {
+      fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:rgba(255,255,255,.9);display:block;pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    }
+  } else if (type === 'warehouse' || type === 'warehouse_logo' || type === 'logo') {
+    const warehouseIcons = {
+      'icon:industrial':   `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
+      'icon:distribution': `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+      'icon:retail':       `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+      'icon:office':       `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
+      'icon:tech':         `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
+    };
+    const defaultWHIcon = warehouseIcons['icon:industrial'];
+    if (fallbackText && typeof fallbackText === 'string') {
+      const ftLower = fallbackText.toLowerCase();
+      if (ftLower.startsWith('icon:')) {
+        fallbackHTML = warehouseIcons[ftLower] || defaultWHIcon;
+      } else if (fallbackText.length <= 4) {
+        fallbackHTML = `<span style="font-size:${Math.round(s*0.55)}px;font-weight:800;color:var(--text-primary);">${fallbackText}</span>`;
+      } else {
+        fallbackHTML = defaultWHIcon;
+      }
+    } else {
+      fallbackHTML = defaultWHIcon;
+    }
+  } else if (type === 'warehouse_photo' || type === 'photo') {
+    fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M3 21h18M3 7v14M21 7v14M12 3v18M12 7h2M12 11h2M12 15h2M8 7h2M8 11h2M8 15h2M16 7h2M16 11h2M16 15h2"/></svg>`;
+  } else if (type === 'inventory' || type === 'inventory_item' || type === 'item') {
+    fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
+  } else if (type === 'company_logo') {
+    fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>`;
+  }
+
+  // --- Render ---
+  const containerStyle = `position:relative;width:${s}px;height:${s}px;border-radius:${borderRadius};border:${border};background:${bgFallback};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}`;
+
+  if (isUrl) {
+    // Fallback is always in DOM (z-index:0). Photo overlaid (z-index:1).
+    // onerror only sets display:none on the <img> — no innerHTML manipulation.
+    return `<div class="entity-image-container type-${type}" style="${containerStyle}">` +
+      `<span class="entity-img-fallback" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">${fallbackHTML}</span>` +
+      `<img src="${src}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${objectFit};border-radius:${borderRadius};display:block;" onerror="this.style.display='none'" />` +
+      `</div>`;
+  }
+
+  return `<div class="entity-image-container type-${type}" style="${containerStyle}">${fallbackHTML}</div>`;
 }
 
 /**
@@ -1626,27 +1685,54 @@ function renderAvatarContainer(avatar, name = '', size = 36, extraStyle = '') {
   return renderEntityImage(avatar, 'workforce', name, size, extraStyle);
 }
 
+/**
+ * renderWarehouseLogo - renders a warehouse branding logo or icon.
+ */
 function renderWarehouseLogo(logo, size = 24) {
-  const s = size;
-  // Handle image uploads (data URIs or external URLs)
-  if (logo && (logo.startsWith('data:image/') || logo.startsWith('http://') || logo.startsWith('https://'))) {
-    return `<img src="${logo}" style="width:${s}px;height:${s}px;object-fit:cover;border-radius:6px;display:block;" alt="Warehouse logo" onerror="this.style.display='none'" />`;
+  return renderEntityImage(logo, 'warehouse', logo, size);
+}
+
+/**
+ * updateDOMAvatars - directly updates all avatar elements currently in active viewport.
+ * Sidebar and topbar profile-btn already have correctly-sized circular containers with
+ * overflow:hidden, so they use renderAvatar (returns just <img> or fallback) rather
+ * than renderAvatarContainer (which would add a second container div).
+ */
+function updateDOMAvatars(avatarUrl, name) {
+  const isUrl = avatarUrl && (avatarUrl.startsWith('data:') || avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://') || avatarUrl.startsWith('http'));
+
+  // 1. Sidebar footer avatar (.sidebar-user-avatar already has 36×36 circular CSS container)
+  const sidebarAvatar = document.querySelector('.sidebar-user-avatar');
+  if (sidebarAvatar) {
+    sidebarAvatar.style.background = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    sidebarAvatar.style.border     = isUrl ? '2px solid var(--border-default)' : 'none';
+    sidebarAvatar.innerHTML = renderAvatar(avatarUrl, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;');
   }
-  const icons = {
-    'icon:industrial': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
-    'icon:distribution': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
-    'icon:retail': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
-    'icon:office': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
-    'icon:tech': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
-  };
-  
-  if (logo && icons[logo]) return icons[logo];
-  if (logo && logo.startsWith('icon:')) {
-    const key = logo.toLowerCase();
-    if (icons[key]) return icons[key];
+
+  // 2. Topbar profile button (#profile-btn already has overflow:hidden circular styling)
+  const topbarProfileBtn = document.getElementById('profile-btn');
+  if (topbarProfileBtn) {
+    topbarProfileBtn.style.background    = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    topbarProfileBtn.style.border        = isUrl ? '2px solid var(--border-default)' : 'none';
+    topbarProfileBtn.style.borderRadius  = '50%';
+    topbarProfileBtn.innerHTML = renderAvatar(avatarUrl, 'width:34px;height:34px;object-fit:cover;border-radius:50%;display:block;');
   }
-  
-  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
+
+  // 3. Settings page avatar preview
+  const settingsPreview = document.querySelector('#settings-avatar-preview');
+  if (settingsPreview) {
+    settingsPreview.style.background = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    settingsPreview.style.border     = isUrl ? '1px solid var(--border-default)' : 'none';
+    settingsPreview.innerHTML = renderAvatar(avatarUrl, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;');
+  }
+
+  // 4. Workforce user modal avatar preview
+  const workforcePreview = document.getElementById('m-u-avatar-preview');
+  if (workforcePreview) {
+    workforcePreview.style.background = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    workforcePreview.style.border     = isUrl ? '1px solid var(--border-default)' : 'none';
+    workforcePreview.innerHTML = renderAvatar(avatarUrl, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;');
+  }
 }
 
 // ---- INLINE BARCODE GENERATOR (Code128 subset B) ----
@@ -1720,6 +1806,16 @@ function generateBarcodeSVG(text, opts = {}) {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(svgW)}" height="${svgH}" viewBox="0 0 ${Math.ceil(svgW)} ${svgH}" role="img" aria-label="Barcode: ${text}">${rects}${labelSVG}</svg>`;
 }
+
+// Global Image Preview Modal Trigger
+window.showImagePreviewModal = function(src) {
+  const modal = createModal({
+    title: 'Image Preview',
+    body: `<div style="text-align:center;padding:12px;background:var(--bg-card);"><img src="${src}" style="max-width:100%;max-height:70vh;object-fit:contain;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);" alt="Preview" /></div>`,
+    footer: `<button class="btn btn-secondary" id="preview-modal-close" style="width:100%">Close Preview</button>`
+  });
+  modal.el.querySelector('#preview-modal-close')?.addEventListener('click', modal.close);
+};
 
 // ===== modules/exporter.js =====
 /**
@@ -2099,17 +2195,18 @@ function exportPDF(entity) {
 // ── MODULE & ACTION DEFINITIONS ──────────────────────────────────────────────
 
 const ALL_MODULES = [
-  { key: 'dashboard',   label: 'Dashboard',    icon: 'dashboard'  },
-  { key: 'inventory',   label: 'Inventory',    icon: 'items'      },
-  { key: 'warehouses',  label: 'Warehouses',   icon: 'warehouses' },
-  { key: 'workforce',   label: 'Workforce',    icon: 'workforce'  },
-  { key: 'billing',     label: 'Billing',      icon: 'billing'    },
-  { key: 'crm',         label: 'CRM',          icon: 'customer'   },
-  { key: 'tables',      label: 'Tables',       icon: 'tables'     },
-  { key: 'reports',     label: 'Reports',      icon: 'analytics'  },
-  { key: 'audit',       label: 'Audit Logs',   icon: 'audit'      },
-  { key: 'settings',    label: 'Settings',     icon: 'settings'   },
-  { key: 'registration', label: 'Registration modules', icon: 'audit' },
+  { key: 'dashboard',      label: 'Dashboard',            icon: 'dashboard'  },
+  { key: 'inventory',      label: 'Inventory',            icon: 'items'      },
+  { key: 'warehouses',     label: 'Warehouses',           icon: 'warehouses' },
+  { key: 'workforce',      label: 'Workforce',            icon: 'workforce'  },
+  { key: 'billing',        label: 'Billing',              icon: 'billing'    },
+  { key: 'crm',            label: 'CRM',                  icon: 'customer'   },
+  { key: 'tables',         label: 'Tables',               icon: 'tables'     },
+  { key: 'reports',        label: 'Reports',              icon: 'analytics'  },
+  { key: 'notifications',  label: 'Notifications',        icon: 'bell'       },
+  { key: 'audit',          label: 'Audit Logs',           icon: 'audit'      },
+  { key: 'settings',       label: 'Settings',             icon: 'settings'   },
+  { key: 'registration',   label: 'Registration modules', icon: 'audit'      },
 ];
 
 const ALL_ACTIONS = ['view','create','edit','delete','export','import','manage'];
@@ -2118,69 +2215,74 @@ const ALL_ACTIONS = ['view','create','edit','delete','export','import','manage']
 
 const DEFAULT_ROLE_PERMISSIONS = {
   super_admin: {
-    dashboard:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    inventory:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    warehouses: { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    workforce:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    billing:    { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    crm:        { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    tables:     { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    reports:    { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    audit:      { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    settings:   { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    registration:{ view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    dashboard:      { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    inventory:      { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    warehouses:     { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    workforce:      { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    billing:        { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    crm:            { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    tables:         { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    reports:        { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    notifications:  { view:true,  create:false, edit:false, delete:true,  export:false, import:false, manage:true  },
+    audit:          { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    settings:       { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    registration:   { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
   },
   admin: {
-    dashboard:  { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
-    inventory:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    warehouses: { view:true,  create:false, edit:true,  delete:false, export:true,  import:false, manage:false },
-    workforce:  { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:false, manage:true  },
-    billing:    { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
-    crm:        { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
-    tables:     { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
-    reports:    { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
-    audit:      { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
-    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    registration:{ view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:true  },
+    dashboard:      { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    inventory:      { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    warehouses:     { view:true,  create:false, edit:true,  delete:false, export:true,  import:false, manage:false },
+    workforce:      { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:false, manage:true  },
+    billing:        { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
+    crm:            { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
+    tables:         { view:true,  create:true,  edit:true,  delete:true,  export:true,  import:true,  manage:true  },
+    reports:        { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    notifications:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    audit:          { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    settings:       { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:   { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:true  },
   },
   manager: {
-    dashboard:  { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
-    inventory:  { view:true,  create:true,  edit:true,  delete:false, export:true,  import:true,  manage:false },
-    warehouses: { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    workforce:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    billing:    { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
-    crm:        { view:true,  create:false, edit:true,  delete:false, export:true,  import:false, manage:false },
-    tables:     { view:true,  create:true,  edit:true,  delete:false, export:true,  import:true,  manage:false },
-    reports:    { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
-    audit:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    registration:{ view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    dashboard:      { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    inventory:      { view:true,  create:true,  edit:true,  delete:false, export:true,  import:true,  manage:false },
+    warehouses:     { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    workforce:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    billing:        { view:true,  create:true,  edit:true,  delete:false, export:true,  import:false, manage:false },
+    crm:            { view:true,  create:false, edit:true,  delete:false, export:true,  import:false, manage:false },
+    tables:         { view:true,  create:true,  edit:true,  delete:false, export:true,  import:true,  manage:false },
+    reports:        { view:true,  create:false, edit:false, delete:false, export:true,  import:false, manage:false },
+    notifications:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    audit:          { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    settings:       { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:   { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
   },
   staff: {
-    dashboard:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    inventory:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    warehouses: { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    workforce:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    billing:    { view:true,  create:true,  edit:false, delete:false, export:false, import:false, manage:false },
-    crm:        { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    tables:     { view:true,  create:false, edit:true,  delete:false, export:false, import:false, manage:false },
-    reports:    { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    audit:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    registration:{ view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    dashboard:      { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    inventory:      { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    warehouses:     { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    workforce:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    billing:        { view:true,  create:true,  edit:false, delete:false, export:false, import:false, manage:false },
+    crm:            { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    tables:         { view:true,  create:false, edit:true,  delete:false, export:false, import:false, manage:false },
+    reports:        { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    notifications:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    audit:          { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    settings:       { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
   },
   employee: {
-    dashboard:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    inventory:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    warehouses: { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    workforce:  { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    billing:    { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    crm:        { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    tables:     { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    reports:    { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    audit:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    settings:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
-    registration:{ view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    dashboard:      { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    inventory:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    warehouses:     { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    workforce:      { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    billing:        { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    crm:            { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    tables:         { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    reports:        { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    notifications:  { view:true,  create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    audit:          { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    settings:       { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
+    registration:   { view:false, create:false, edit:false, delete:false, export:false, import:false, manage:false },
   },
 };
 
@@ -2246,22 +2348,21 @@ function canDo(module, action, user) {
 // ── DYNAMIC NAVIGATION ────────────────────────────────────────────────────────
 
 const MODULE_TO_NAV = {
-  dashboard:  { path: '/dashboard',  icon: 'dashboard',  label: 'Dashboard',      section: 'Overview'    },
-  inventory:  { path: '/items',      icon: 'items',      label: 'Inventory',      section: 'Operations'  },
-  warehouses: { path: '/warehouses', icon: 'warehouses', label: 'Warehouses',     section: 'Operations'  },
-  workforce:  { path: '/workforce',  icon: 'workforce',  label: 'Workforce',      section: 'Operations'  },
-  billing:    { path: '/billing',    icon: 'billing',    label: 'Billing',        section: 'Finance'     },
-  crm:        { path: '/customers',  icon: 'customer',   label: 'CRM Customers',  section: 'Operations'  },
-  tables:     { path: '/tables',     icon: 'tables',     label: 'Tables',         section: 'Operations'  },
-  reports:    { path: '/analytics',  icon: 'analytics',  label: 'Reports',        section: 'Finance'     },
-  audit:      { path: '/audit',      icon: 'audit',      label: 'Audit Logs',     section: 'System'      },
-  settings:   { path: '/settings',   icon: 'settings',   label: 'Settings',       section: 'System'      },
+  dashboard:      { path: '/dashboard',      icon: 'dashboard',  label: 'Dashboard',      section: 'Overview'    },
+  inventory:      { path: '/items',          icon: 'items',      label: 'Inventory',      section: 'Operations'  },
+  warehouses:     { path: '/warehouses',     icon: 'warehouses', label: 'Warehouses',     section: 'Operations'  },
+  workforce:      { path: '/workforce',      icon: 'workforce',  label: 'Workforce',      section: 'Operations'  },
+  billing:        { path: '/billing',        icon: 'billing',    label: 'Billing',        section: 'Finance'     },
+  crm:            { path: '/customers',      icon: 'customer',   label: 'CRM Customers',  section: 'Operations'  },
+  tables:         { path: '/tables',         icon: 'tables',     label: 'Tables',         section: 'Operations'  },
+  reports:        { path: '/analytics',      icon: 'analytics',  label: 'Reports',        section: 'Finance'     },
+  notifications:  { path: '/notifications',  icon: 'bell',       label: 'Notifications',  section: 'System'      },
+  audit:          { path: '/audit',          icon: 'audit',      label: 'Audit Logs',     section: 'System'      },
+  settings:       { path: '/settings',       icon: 'settings',   label: 'Settings',       section: 'System'      },
 };
 
 // Always show for super_admin — extra items not tied to permissions
 const SUPER_ADMIN_EXTRAS = [
-  { path: '/registry', icon: 'audit', label: 'Registry Ledger', section: 'Operations' },
-  { path: '/roles',    icon: 'workforce', label: 'Role Manager', section: 'System' },
 ];
 
 const SECTION_ORDER = ['Overview', 'Operations', 'Finance', 'Reports', 'System'];
@@ -2490,9 +2591,10 @@ function renderShell(pageTitle, pageSubtitle, content) {
     <div class="sidebar-section">
       <div class="sidebar-section-label">${section.section}</div>
       ${section.items.map(item => `
-        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" data-tooltip="${item.label}">
+        <div class="sidebar-item ${currentPath === item.path ? 'active' : ''}" data-path="${item.path}" data-tooltip="${item.label}" style="position:relative">
           <span class="sidebar-item-icon">${getSvgIcon(item.icon)}</span>
           <span class="sidebar-item-label">${item.label}</span>
+          ${item.path === '/notifications' && unreadCount > 0 ? `<span style="position:absolute;top:6px;right:8px;min-width:18px;height:18px;padding:0 4px;background:var(--accent-rose);border-radius:9px;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-sidebar, var(--bg-base))">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
         </div>
       `).join('')}
     </div>
@@ -2530,7 +2632,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
         ${sidebarWidget}
         <div class="sidebar-footer">
           <div class="sidebar-user" id="user-menu-btn" data-tooltip="${user.name} (${capitalize(user.role)})">
-            <div class="sidebar-user-avatar">${renderAvatarContainer(user.avatar, user.name, 36)}</div>
+            <div class="sidebar-user-avatar" style="background:${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? 'transparent' : 'var(--gradient-brand)'};border:${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? '2px solid var(--border-default)' : 'none'}">${renderAvatar(user.avatar, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;')}</div>
             <div class="sidebar-user-info">
               <div class="sidebar-user-name">${user.name}</div>
               <div class="sidebar-user-role" style="font-size:11px;color:var(--text-muted);font-weight:500;">${capitalize(user.role.replace('_', ' '))} · ${whAccessText}</div>
@@ -2557,7 +2659,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
               ${getSvgIcon('bell', 18)}
               ${unreadCount > 0 ? `<span class="badge" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;background:var(--accent-rose);border-radius:50%;font-size:10px;font-weight:700;color:white;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-base)">${unreadCount > 9 ? '9+' : unreadCount}</span>` : ''}
             </div>
-            <div class="icon-btn" data-tooltip="Profile" id="profile-btn" style="overflow:hidden;padding:0;">${renderAvatarContainer(user.avatar, user.name, 34)}</div>
+            <div class="icon-btn" data-tooltip="Profile" id="profile-btn" style="overflow:hidden;padding:0;border-radius:50%;width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? 'transparent' : 'var(--gradient-brand)'}">${renderAvatar(user.avatar, 'width:34px;height:34px;object-fit:cover;border-radius:50%;display:block;')}</div>
           </div>
         </header>
         <div class="page-content" id="page-content">
@@ -2811,6 +2913,9 @@ function showNotificationDropdown(anchor) {
           </div>
         `).join('')}
     </div>
+    <div style="padding:10px;text-align:center;border-top:1px solid var(--border-subtle)">
+      <button id="go-to-notifications-btn" style="width:100%;padding:8px 0;background:var(--bg-input);border:1px solid var(--border-default);border-radius:6px;font-size:12px;color:var(--text-primary);font-weight:600;cursor:pointer;font-family:var(--font-sans)">Go To Notifications</button>
+    </div>
   `;
 
   document.body.appendChild(dropdown);
@@ -2839,6 +2944,12 @@ function showNotificationDropdown(anchor) {
     navigate(getCurrentPath());
   });
 
+  dropdown.querySelector('#go-to-notifications-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.remove();
+    navigate('/notifications');
+  });
+
   setTimeout(() => document.addEventListener('click', () => dropdown.remove(), { once: true }), 50);
 }
 
@@ -2856,13 +2967,22 @@ function showProfileDropdown(anchor) {
   dropdown.className = 'dropdown-menu animate-scaleUp';
   dropdown.style.cssText = 'min-width:220px;';
   
+  dropdown.innerHTML = `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
+      <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${user.name}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
+    </div>
+    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
+    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
+    <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
+    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
+  `;
+
   const isSidebar = anchor.id === 'user-menu-btn';
   
   if (isSidebar) {
-    // Append to body FIRST so we can measure its rendered height
     document.body.appendChild(dropdown);
-    // Force layout calculation
-    dropdown.getBoundingClientRect();
     
     const rect = anchor.getBoundingClientRect();
     const elRect = dropdown.getBoundingClientRect();
@@ -2891,21 +3011,9 @@ function showProfileDropdown(anchor) {
       preferredAlign: 'right',
       preferredVertical: 'bottom'
     });
+    document.body.appendChild(dropdown);
   }
 
-  dropdown.innerHTML = `
-    <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
-      <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${user.name}</div>
-      <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
-      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
-    </div>
-    <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
-    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
-    <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
-    <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
-  `;
-
-  document.body.appendChild(dropdown);
 
   dropdown.querySelectorAll('.dropdown-item').forEach(el => {
     el.addEventListener('mouseenter', () => el.style.background = 'rgba(99,102,241,0.08)');
@@ -3257,7 +3365,6 @@ function updateResults() {
     { label: 'Billing',         path: '/billing',   icon: getSvgIcon('billing', 16) },
     { label: 'Analytics',       path: '/analytics', icon: getSvgIcon('analytics', 16) },
     { label: 'Tables',          path: '/tables',    icon: getSvgIcon('tables', 16) },
-    { label: 'Registry Ledger', path: '/registry',  icon: getSvgIcon('audit', 16) },
     { label: 'CRM Customers',   path: '/customers', icon: getSvgIcon('customer', 16) },
   ];
   if (isAdmin) {
@@ -3452,7 +3559,7 @@ function executeCommand(cmd) {
     case 'item':      navigate('/items'); break;
     case 'warehouse': navigate('/warehouses/' + cmd.id); break;
     case 'workforce': navigate('/workforce'); break;
-    case 'table':     navigate('/tables'); break;
+    case 'table':     navigate('/tables?id=' + encodeURIComponent(cmd.id)); break;
     case 'billing':   navigate('/billing'); break;
     case 'customer':  navigate('/customers'); break;
     default:          navigate('/dashboard');
@@ -4930,8 +5037,12 @@ function renderDashboard() {
   const totalStock  = items.reduce((s,i)=>s+(i.stock||0),0);
   const activeUsers = users.filter(u=>u.status==='active').length;
 
-  // Low stock items
-  const lowStock = items.filter(i=>(i.stock||0)<20).slice(0,5);
+  // Low stock items calculated dynamically based on threshold
+  const allLowStockItems = items.filter(i => {
+    const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+    return (i.stock || 0) < threshold;
+  });
+  const lowStock = allLowStockItems.slice(0, 5);
 
   // Top warehouse by revenue
   const topWh = whs.length ? [...whs].sort((a,b)=>(b.revenue||0)-(a.revenue||0))[0] : null;
@@ -4943,12 +5054,16 @@ function renderDashboard() {
   const myWh = !isSA ? whs.find(w=>w.id===user.warehouseId) : null;
   const roleLabel = isSA ? 'Global Overview' : `${myWh?.name || 'Warehouse'} Overview`;
 
-  // Smart Restock Logic: Identify items with low stock relative to sales velocity
+  // Smart Restock Logic: Identify items with low stock relative to sales velocity using dynamic threshold
   const restockSuggestions = items
-    .filter(i => (i.stock || 0) < 50)
+    .filter(i => {
+      const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+      return (i.stock || 0) < threshold;
+    })
     .map(i => {
+      const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
       const salesCount = bills.reduce((acc, b) => acc + (b.items?.filter(bi => bi.id === i.id).reduce((s, bi) => s + bi.qty, 0) || 0), 0);
-      const priority = (salesCount * 2) + (50 - (i.stock || 0));
+      const priority = (salesCount * 2) + (threshold - (i.stock || 0));
       return { ...i, priority, salesCount };
     })
     .sort((a, b) => b.priority - a.priority)
@@ -5011,7 +5126,7 @@ function renderDashboard() {
           <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
           <div class="stat-card-label">Stock Units</div>
-          <div class="stat-card-trend ${lowStock.length>0?'trend-down':'trend-up'}">${lowStock.length} low stock</div>
+          <div class="stat-card-trend ${allLowStockItems.length>0?'trend-down':'trend-up'}">${allLowStockItems.length} low stock</div>
         </div>` : ''}
         ${isSA ? `<div class="stat-card" style="cursor:pointer" onclick="location.hash='#/subscription'">
           <div class="stat-card-glow" style="background:#f43f5e"></div>
@@ -5080,10 +5195,13 @@ function renderDashboard() {
           <div style="display:flex;flex-direction:column;gap:8px">
             ${whs.slice(0,4).map(wh=>`
               <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-input);border-radius:8px;cursor:pointer" onclick="location.hash='#/warehouses/${wh.id}'">
-                <div style="display:flex;align-items:center">${wh.logo ? `<span style="font-size:20px">${wh.logo}</span>` : getSvgIcon('warehouses', 20)}</div>
+                <div style="display:flex;align-items:center">${renderWarehouseLogo(wh.logo, 20)}</div>
                 <div style="flex:1;min-width:0">
-                  <div style="font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wh.name}</div>
-                  <div style="font-size:11px;color:var(--text-muted)">${wh.staffCount||0} staff · ${formatCurrency(wh.revenue||0)}</div>
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-size:13px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wh.name}</span>
+                    <span style="font-family:var(--font-mono);font-size:9px;background:var(--bg-card);padding:1px 5px;border-radius:4px;color:var(--text-muted);border:1px solid var(--border-subtle);flex-shrink:0;">#${wh.id.slice(-6)}</span>
+                  </div>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${wh.staffCount||0} staff · ${formatCurrency(wh.revenue||0)}</div>
                 </div>
                 <span class="badge badge-success" style="font-size:10px">●</span>
               </div>
@@ -5097,9 +5215,12 @@ function renderDashboard() {
           </div>
           ${myWh ? `
           <div style="text-align:center;padding:8px 0">
-            <div style="display:flex;justify-content:center;margin-bottom:8px">${myWh.logo ? `<span style="font-size:40px">${myWh.logo}</span>` : getSvgIcon('warehouses', 40)}</div>
-            <div style="font-size:16px;font-weight:700;color:var(--text-primary)">${myWh.name}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${myWh.businessName}</div>
+            <div style="display:flex;justify-content:center;margin-bottom:8px">${renderWarehouseLogo(myWh.logo, 40)}</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);display:flex;align-items:center;justify-content:center;gap:6px">
+              ${myWh.name}
+              <span style="font-family:var(--font-mono);font-size:11px;background:var(--bg-input);padding:2px 6px;border-radius:4px;color:var(--text-muted);border:1px solid var(--border-subtle)">#${myWh.id.slice(-6)}</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;margin-top:4px">${myWh.businessName}</div>
             <div style="display:flex;justify-content:center;gap:20px">
               <div><div style="font-weight:700;font-size:18px">${myWh.staffCount||0}</div><div style="font-size:11px;color:var(--text-muted)">Staff</div></div>
               <div><div style="font-weight:700;font-size:18px">${myWh.items||0}</div><div style="font-size:11px;color:var(--text-muted)">Items</div></div>
@@ -5147,9 +5268,9 @@ function renderDashboard() {
           ${lowStock.length === 0
             ? `<div style="text-align:center;padding:16px;color:var(--accent-emerald);font-size:13px">✅ All stock levels healthy</div>`
             : lowStock.map(i=>`
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-subtle)">
+              <div class="clickable-list-item" onclick="location.hash='#/items?id=${i.id}'" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-subtle);cursor:pointer;border-radius:4px;transition:background 0.15s;" onmouseenter="this.style.background='var(--bg-input)'" onmouseleave="this.style.background='transparent'">
                 <div style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${i.name}</div>
-                <span style="font-size:11px;font-weight:700;color:${i.stock<10?'var(--accent-rose)':'var(--accent-amber)'};flex-shrink:0;margin-left:8px">${i.stock} left</span>
+                <span style="font-size:11px;font-weight:700;color:${i.stock<(i.lowStockThreshold !== undefined ? i.lowStockThreshold/2 : 10)?'var(--accent-rose)':'var(--accent-amber)'};flex-shrink:0;margin-left:8px">${i.stock} left</span>
               </div>
             `).join('')}
           <div style="margin-top:12px;border-top:1px solid var(--border-subtle);padding-top:12px">
@@ -5185,14 +5306,14 @@ function renderDashboard() {
           <div style="display:flex;flex-direction:column;gap:10px">
             ${restockSuggestions.length === 0 ? '<div style="padding:20px;text-align:center;color:var(--text-muted)">Stock levels optimal</div>' :
               restockSuggestions.map(s => `
-                <div style="background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;border:1px solid var(--border-default);display:flex;align-items:center;gap:12px">
+                <div class="clickable-list-item" onclick="location.hash='#/items?id=${s.id}'" style="background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;border:1px solid var(--border-default);display:flex;align-items:center;gap:12px;cursor:pointer;transition:transform 0.15s, background 0.15s;" onmouseenter="this.style.background='var(--bg-input)';this.style.transform='translateY(-2px)'" onmouseleave="this.style.background='rgba(255,255,255,0.02)';this.style.transform=''">
                   <div style="width:36px;height:36px;background:var(--bg-card);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0">${getSvgIcon('items', 18)}</div>
                   <div style="flex:1">
                     <div style="font-size:13px;font-weight:700;color:var(--text-primary)">${s.name}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} units sold · Priority: ${s.priority > 30 ? 'High' : 'Normal'}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} units sold · Priority: ${s.priority > (s.lowStockThreshold !== undefined ? s.lowStockThreshold*1.5 : 30) ? 'High' : 'Normal'}</div>
                   </div>
                   <div style="text-align:right">
-                    <div style="font-size:14px;font-weight:800;color:${s.stock < 10 ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
+                    <div style="font-size:14px;font-weight:800;color:${s.stock < (s.lowStockThreshold !== undefined ? s.lowStockThreshold/2 : 10) ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
                     <div style="font-size:10px;color:var(--text-muted)">In Stock</div>
                   </div>
                 </div>
@@ -5297,7 +5418,7 @@ function renderDashboard() {
     ` : ''}
   `);
 
-  setTimeout(() => initDashboardCharts(bills, whs), 100);
+  setTimeout(() => initDashboardCharts(whs), 100);
 }
 
 /**
@@ -5308,50 +5429,91 @@ function renderDashboard() {
  * @param {Array<Object>} whs - Active warehouses.
  * @private
  */
-function initDashboardCharts(bills, whs) {
-  // Revenue trend chart
-  const now = new Date();
-  const labels = [];
-  const data = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    labels.push(d.toLocaleString('default',{month:'short'}));
-    const monthRevenue = bills.filter(b=>{
-      const bd = new Date(b.createdAt);
-      return bd.getMonth()===d.getMonth() && bd.getFullYear()===d.getFullYear();
-    }).reduce((s,b)=>s+(b.total||0),0);
-    data.push(monthRevenue || 0);
+async function initDashboardCharts(whs) {
+  // Fetch dynamic trends data from the API
+  let fullTrends = [];
+  const trendsRes = await apiFetch('/analytics/trends');
+  if (trendsRes && trendsRes.success && Array.isArray(trendsRes.data)) {
+    fullTrends = trendsRes.data;
   }
 
-  const rc = document.getElementById('revenue-chart');
-  if (rc) {
-    if (_dashboardCharts.revenue) _dashboardCharts.revenue.destroy();
-    _dashboardCharts.revenue = new Chart(rc, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Revenue',
-          data,
-          backgroundColor: data.map((_,i)=>i===data.length-1?'rgba(99,102,241,0.9)':'rgba(99,102,241,0.35)'),
-          borderColor: '#6366f1',
-          borderWidth: 1,
-          borderRadius: 6,
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { backgroundColor:'#1a1d3a', titleColor:'#f1f5f9', bodyColor:'#94a3b8', borderColor:'#2a2d4a', borderWidth:1,
-            callbacks: { label: ctx => ' $' + ctx.raw.toLocaleString() }
-          }
-        },
-        scales: {
-          x: { grid: { display:false }, ticks: { color:'#64748b', font:{size:11} } },
-          y: { grid: { color:'rgba(255,255,255,0.04)' }, ticks: { color:'#64748b', font:{size:11}, callback: v=>'$'+(v/1000).toFixed(0)+'k' }, border:{display:false} }
-        }
+  const renderTrendChart = (monthsCount) => {
+    const subset = fullTrends.slice(-monthsCount);
+    let labels = [];
+    let data = [];
+    if (subset.length > 0) {
+      labels = subset.map(t => t.monthName.split(' ')[0]); // e.g. "Jun"
+      data = subset.map(t => t.totalRevenue);
+    } else {
+      // Fallback
+      const now = new Date();
+      for (let i = monthsCount - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        labels.push(d.toLocaleString('default', { month: 'short' }));
+        data.push(0);
       }
+    }
+
+    const rc = document.getElementById('revenue-chart');
+    if (rc) {
+      if (_dashboardCharts.revenue) _dashboardCharts.revenue.destroy();
+      _dashboardCharts.revenue = new Chart(rc, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Revenue',
+            data,
+            backgroundColor: data.map((_, i) => i === data.length - 1 ? 'rgba(99,102,241,0.9)' : 'rgba(99,102,241,0.35)'),
+            borderColor: '#6366f1',
+            borderWidth: 1,
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1a1d3a',
+              titleColor: '#f1f5f9',
+              bodyColor: '#94a3b8',
+              borderColor: '#2a2d4a',
+              borderWidth: 1,
+              callbacks: { label: ctx => ' $' + ctx.raw.toLocaleString() }
+            }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } } },
+            y: {
+              grid: { color: 'rgba(255,255,255,0.04)' },
+              ticks: { color: '#64748b', font: { size: 11 }, callback: v => '$' + (v / 1000).toFixed(0) + 'k' },
+              border: { display: false }
+            }
+          }
+        }
+      });
+    }
+  };
+
+  // Initial draw: last 6 months
+  renderTrendChart(6);
+
+  // Set up listeners for time-range togglers
+  const btn6m = document.getElementById('chart-6m');
+  const btn1y = document.getElementById('chart-1y');
+  if (btn6m && btn1y) {
+    btn6m.classList.add('active'); // Style active button
+    btn6m.addEventListener('click', () => {
+      btn6m.classList.add('active');
+      btn1y.classList.remove('active');
+      renderTrendChart(6);
+    });
+    btn1y.addEventListener('click', () => {
+      btn1y.classList.add('active');
+      btn6m.classList.remove('active');
+      renderTrendChart(12);
     });
   }
 
@@ -5550,7 +5712,7 @@ function renderWarehouseGrid(whs, allUsers) {
       return `
       <div class="warehouse-card animate-slideUp" data-wh-id="${wh.id}" style="cursor:pointer" title="Click to view warehouse dashboard">
         <div class="warehouse-card-top">
-          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0;overflow:hidden">${renderWarehouseLogo(wh.logo, 40)}</div>
+          ${renderWarehouseLogo(wh.logo, 40)}
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             <span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'} badge-dot"> ${wh.status}</span>
             <div style="display:flex;gap:4px">
@@ -5613,7 +5775,7 @@ function renderWarehouseTable(whs, allUsers) {
               const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
               return `
                 <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
-                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:6px;width:32px;height:32px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 32)}</div></td>
+                  <td data-label="Logo">${renderWarehouseLogo(wh.logo, 32)}</td>
                   <td data-label="Name">
                     <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
                     <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('location', 11)} ${wh.address}</div>
@@ -5949,7 +6111,7 @@ function renderWarehouseDetail(whId) {
       <div class="page-header">
         <div class="page-header-left">
           <div style="display:flex;align-items:center;gap:14px">
-            <div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 60)}</div>
+            ${renderWarehouseLogo(wh.logo, 60)}
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
                 <h1 class="page-title" style="margin:0">${wh.name}</h1>
@@ -5997,16 +6159,8 @@ function renderWarehouseDetail(whId) {
             <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 16)} Revenue Trend (Last 6 Months)</div>
             <div style="font-size:12px;color:var(--text-muted)">Total: ${formatCurrency(revenue)}</div>
           </div>
-          <div style="display:flex;align-items:flex-end;gap:6px;height:100px;padding:0 4px">
-            ${monthRevs.map((v,i)=>{
-              const h=maxRev>0?Math.max(Math.round(v/maxRev*100),2):2;
-              const isLast=i===monthRevs.length-1;
-              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-                <div style="font-size:10px;color:var(--text-muted)">${v>0?'$'+(v/1000).toFixed(1)+'k':''}</div>
-                <div style="width:100%;height:${h}%;background:${isLast?'var(--brand-500)':'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px"></div>
-                <div style="font-size:10px;color:var(--text-muted)">${monthLabels[i]}</div>
-              </div>`;
-            }).join('')}
+          <div id="wh-detail-trend-bars" style="display:flex;align-items:flex-end;gap:6px;height:100px;padding:0 4px">
+            <div style="width:100%;text-align:center;color:var(--text-muted);font-size:12px">Loading trend data...</div>
           </div>
         </div>
         <div class="card col-4">
@@ -6045,7 +6199,7 @@ function renderWarehouseDetail(whId) {
                 <tr>
                   <td data-label="Name">
                     <div style="display:flex;align-items:center;gap:8px">
-                      <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:white;flex-shrink:0">${u.avatar}</div>
+                      ${renderAvatarContainer(u.avatar, u.name, 28)}
                       <div>
                         <div style="font-size:13px;font-weight:600">${u.name}</div>
                         <div style="font-size:11px;color:var(--text-muted)">${u.email}</div>
@@ -6157,6 +6311,38 @@ function renderWarehouseDetail(whId) {
   `);
 
   document.getElementById('wd-edit-btn')?.addEventListener('click', () => showWarehouseModal(wh));
+
+  // Load dynamic trend analytics
+  apiFetch(`/analytics/trends?warehouseId=${whId}`).then(res => {
+    const barsContainer = document.getElementById('wh-detail-trend-bars');
+    if (!barsContainer) return;
+    
+    if (res && res.success && Array.isArray(res.data)) {
+      const trends = res.data.slice(-6); // last 6 months
+      const maxRevenue = Math.max(...trends.map(t => t.totalRevenue), 1);
+      
+      barsContainer.innerHTML = trends.map((t, i) => {
+        const val = t.totalRevenue;
+        const h = maxRevenue > 0 ? Math.max(Math.round(val / maxRevenue * 100), 2) : 2;
+        const isLast = i === trends.length - 1;
+        return `
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+            <div style="font-size:10px;color:var(--text-muted)">${val > 0 ? '$' + (val / 1000).toFixed(1) + 'k' : ''}</div>
+            <div style="width:100%;height:${h}%;background:${isLast ? 'var(--brand-500)' : 'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px" title="$${val.toLocaleString()}"></div>
+            <div style="font-size:10px;color:var(--text-muted)">${t.monthName.split(' ')[0]}</div>
+          </div>
+        `;
+      }).join('');
+    } else {
+      barsContainer.innerHTML = '<div style="width:100%;text-align:center;color:var(--text-muted);font-size:12px">No trend data available</div>';
+    }
+  }).catch(err => {
+    console.error('Failed to load warehouse trend data:', err);
+    const barsContainer = document.getElementById('wh-detail-trend-bars');
+    if (barsContainer) {
+      barsContainer.innerHTML = '<div style="width:100%;text-align:center;color:var(--accent-rose);font-size:12px">Error loading trend data</div>';
+    }
+  });
 }
 
 // ===== pages/workforce.js =====
@@ -6608,8 +6794,8 @@ function showUserModal(u) {
   const body = `
     <form id="user-modal-form">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border-subtle)">
-        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;${m_avatar && (m_avatar.startsWith('data:image/') || m_avatar.startsWith('http')) ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
-          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%") || (u?.name ? u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() : '?')}
+        <div id="m-u-avatar-preview" style="width:60px;height:60px;border-radius:50%;${m_avatar && (m_avatar.startsWith('data:') || m_avatar.startsWith('http')) ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:white;overflow:hidden;flex-shrink:0">
+          ${renderAvatar(m_avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}
         </div>
         <div style="flex:1">
           <div style="display:flex;gap:8px">
@@ -6769,14 +6955,12 @@ function showUserModal(u) {
   });
 
   modal.el.querySelector('#m-u-remove-photo-btn')?.addEventListener('click', () => {
-    const name = document.getElementById('m-u-name').value.trim() || 'US';
-    const fallbackInitials = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
-    m_avatar = fallbackInitials;
+    m_avatar = '';
     const preview = modal.el.querySelector('#m-u-avatar-preview');
     if (preview) {
       preview.style.background = 'var(--gradient-brand)';
       preview.style.border = 'none';
-      preview.innerHTML = fallbackInitials;
+      preview.innerHTML = `<svg style="width:60%;height:60%;display:block;color:rgba(255,255,255,0.95);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
     }
   });
 
@@ -6812,6 +6996,10 @@ function showUserModal(u) {
       const result = await updateUser(u.id, data);
       if (result && result.error) { showToast('Error', result.error, 'error'); return; }
       showToast('User updated', `${name}'s details updated`, 'success');
+      const curUser = getCurrentUser();
+      if (u.id === curUser.id) {
+        updateDOMAvatars(m_avatar, name);
+      }
     } else {
       const password = document.getElementById('m-u-password').value;
       if (!password || password.length < 8) { showToast('Validation', 'Password must be at least 8 characters', 'warning'); return; }
@@ -6862,6 +7050,7 @@ function renderItems() {
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${canEdit ? `
+            <button class="btn btn-secondary btn-sm" id="generate-barcodes-btn">Generate Barcodes</button>
             <button class="btn btn-secondary btn-sm" id="import-csv-btn">Import CSV</button>
             <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
@@ -6906,6 +7095,7 @@ function renderItems() {
 
   document.getElementById('create-item-btn')?.addEventListener('click', () => showItemModal(null));
   document.getElementById('import-csv-btn')?.addEventListener('click', () => showImportModal());
+  document.getElementById('generate-barcodes-btn')?.addEventListener('click', () => showBarcodeGenerationModal());
   const debouncedSearch = debounce(q => {
     it_searchQ = q;
     it_page = 1;
@@ -6935,6 +7125,22 @@ function renderItems() {
   // Realtime WebSocket auto-refresh for inventory
   window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
   window.addEventListener('wareops_ws_event', _handleInventoryWsEvent);
+
+  // Deep-link target item if id query parameter is present in URL hash
+  const hash = window.location.hash || '';
+  const queryPart = hash.split('?')[1];
+  if (queryPart) {
+    const params = new URLSearchParams(queryPart);
+    const itemId = params.get('id');
+    if (itemId) {
+      setTimeout(() => {
+        const item = getItems().find(i => i.id === itemId);
+        if (item) {
+          showItemCardModal(item);
+        }
+      }, 300);
+    }
+  }
 }
 
 function renderItemStats() {
@@ -6943,7 +7149,10 @@ function renderItemStats() {
   if (!el) return;
   const totalStock = items.reduce((s,i)=>s+(i.stock||0),0);
   const totalValue = items.reduce((s,i)=>s+((i.price||0)*(i.stock||0)),0);
-  const lowStock = items.filter(i=>(i.stock||0)<20).length;
+  const lowStock = items.filter(i => {
+    const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+    return (i.stock || 0) < threshold;
+  }).length;
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center;color:#6366f1">${getSvgIcon('items', 18)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
@@ -6999,7 +7208,9 @@ function renderItemsTableView(pageItems, whs, canEdit, container, start, total, 
         <tbody>
           ${pageItems.map(item => {
             const wh = whs.find(w=>w.id===item.warehouseId);
-            const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+            const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+            const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+            const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
             const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
             return `<tr>
               <td data-label="Item">
@@ -7020,6 +7231,7 @@ function renderItemsTableView(pageItems, whs, canEdit, container, start, total, 
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
+                  <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="color:var(--accent-emerald)">${getSvgIcon('plus', 14)}</button>
                   <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
                   <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
@@ -7045,7 +7257,9 @@ function renderItemsGridView(pageItems, whs, canEdit, container, start, total, i
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:16px">
       ${pageItems.map(item => {
         const wh = whs.find(w=>w.id===item.warehouseId);
-        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+        const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+        const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
         const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
         return `
           <div class="card clickable-card" data-iid="${item.id}" style="padding:16px;display:flex;flex-direction:column;justify-content:space-between;transition:transform 0.15s,box-shadow 0.15s;cursor:pointer" 
@@ -7092,7 +7306,9 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin-bottom:16px">
       ${pageItems.map(item => {
         const wh = whs.find(w=>w.id===item.warehouseId);
-        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+        const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+        const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
         const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
         const barcodeStr = item.barcode || item.sku || `ITEM-${item.id.slice(-6)}`;
         const barcodeSVG = generateBarcodeSVG(barcodeStr, { height: 30, showLabel: false });
@@ -7143,6 +7359,7 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
                 <button class="btn btn-secondary btn-xs clickable-card" data-iid="${item.id}" style="font-size:11px;">${getSvgIcon('view', 12)} View Details</button>
                 <div style="display:flex;gap:6px">
                   ${canEdit ? `
+                    <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="padding: 4px;color:var(--accent-emerald)">${getSvgIcon('plus', 12)}</button>
                     <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
                     <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
                   ` : ''}
@@ -7169,6 +7386,13 @@ function bindItemsEvents(container, it_pages) {
   const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   if (canEdit) {
+    container.querySelectorAll('.add-stock[data-iid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = getItems().find(i => i.id === btn.dataset.iid);
+        if (item) showAddStockModal(item);
+      });
+    });
     container.querySelectorAll('.edit[data-iid]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -7267,12 +7491,18 @@ function showItemModal(item) {
           </select>
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Warehouse <span class="req">*</span></label>
-        <select id="m-i-wh" class="form-control" required>
-          <option value="">Select warehouse</option>
-          ${whs.map(w=>`<option value="${w.id}" ${item?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Warehouse <span class="req">*</span></label>
+          <select id="m-i-wh" class="form-control" required>
+            <option value="">Select warehouse</option>
+            ${whs.map(w=>`<option value="${w.id}" ${item?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Low Stock Alert Limit <span class="req">*</span></label>
+          <input type="number" id="m-i-threshold" class="form-control" value="${item?.lowStockThreshold !== undefined ? item.lowStockThreshold : 20}" required min="1" />
+        </div>
       </div>
       
       <!-- Product Media Gallery -->
@@ -7404,14 +7634,16 @@ function showItemModal(item) {
     const price = parseFloat(document.getElementById('m-i-price').value);
     const stock = parseInt(document.getElementById('m-i-stock').value);
     const warehouseId = document.getElementById('m-i-wh').value;
-    if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
+    const lowStockThreshold = parseInt(document.getElementById('m-i-threshold').value);
+    if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId||isNaN(lowStockThreshold)) { showToast('Validation','Fill all required fields','warning'); return; }
     
     const data = {
       name, category, price, stock, warehouseId,
       sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
       unit: document.getElementById('m-i-unit').value,
       taxCategory: 'normal',
-      images: selectedImages
+      images: selectedImages,
+      lowStockThreshold
     };
     
     let res;
@@ -7624,8 +7856,10 @@ function _handleInventoryWsEvent(e) {
 function showItemCardModal(item) {
   const whs = getWarehouses();
   const wh = whs.find(w => w.id === item.warehouseId);
-  const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
-  const statusLabel = (item.stock||0) === 0 ? 'Out of Stock' : (item.stock||0) < 20 ? 'Low Stock' : 'In Stock';
+  const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+  const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+  const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
+  const statusLabel = healthStatus;
   
   const images = item.images && item.images.length > 0 ? item.images : [];
   
@@ -7706,6 +7940,10 @@ function showItemCardModal(item) {
               <strong style="color:var(--text-primary);">${item.stock||0} ${item.unit||'pcs'}</strong>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Low Stock Alert Limit</span>
+              <strong style="color:var(--text-primary);">${threshold} ${item.unit||'pcs'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
               <span style="color:var(--text-secondary)">Assigned Hub</span>
               <strong style="color:var(--text-primary);">${wh?.name || '—'}</strong>
             </div>
@@ -7775,6 +8013,225 @@ function showItemCardModal(item) {
   }
 }
 
+function showBarcodeGenerationModal() {
+  const whs = getWarehouses();
+  const user = getCurrentUser();
+  const items = getStore().items || [];
+
+  const body = `
+    <form id="barcode-gen-form" style="display:flex;flex-direction:column;gap:16px">
+      <div class="form-group">
+        <label class="form-label" style="font-weight:600;margin-bottom:8px">Generation Mode</label>
+        <div style="display:flex;gap:16px;margin-bottom:8px">
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+            <input type="radio" name="gen-mode" value="existing" checked style="accent-color:var(--brand-500)" />
+            Existing Inventory Item
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+            <input type="radio" name="gen-mode" value="new" style="accent-color:var(--brand-500)" />
+            Register New Item
+          </label>
+        </div>
+      </div>
+
+      <!-- Existing Item Section -->
+      <div id="gen-existing-section" class="form-group">
+        <label class="form-label">Select Inventory Item <span class="req">*</span></label>
+        <select id="gen-item-select" class="form-control" style="width:100%" required>
+          <option value="">-- Choose Item --</option>
+          ${items.map(i => `<option value="${i.id}">${i.name} (${i.sku || 'No SKU'}) - Stock: ${i.stock}</option>`).join('')}
+        </select>
+        <div id="gen-item-info" style="margin-top:10px;padding:10px;border-radius:6px;background:var(--bg-elevated);border:1px solid var(--border-subtle);display:none;font-size:12px;"></div>
+      </div>
+
+      <!-- New Item Section (Hidden by default) -->
+      <div id="gen-new-section" style="display:none;flex-direction:column;gap:12px;border:1px solid var(--border-subtle);padding:14px;border-radius:8px;background:var(--bg-elevated)">
+        <div style="font-weight:600;font-size:13px;color:var(--brand-500);margin-bottom:4px">New Catalog Item Details</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Item Name <span class="req">*</span></label>
+            <input type="text" id="gen-new-name" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">SKU</label>
+            <input type="text" id="gen-new-sku" class="form-control" placeholder="Auto-generated if empty" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Category <span class="req">*</span></label>
+            <select id="gen-new-cat" class="form-control">
+              ${CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Price ($) <span class="req">*</span></label>
+            <input type="number" id="gen-new-price" class="form-control" min="0" step="0.01" value="0.00" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <select id="gen-new-unit" class="form-control">
+              ${['pcs','kg','lbs','box','pallet','set','m','ft'].map(u=>`<option value="${u}">${u}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tax Category</label>
+            <select id="gen-new-tax" class="form-control">
+              <option value="normal">Normal</option>
+              <option value="reduced">Reduced</option>
+              <option value="exempt">Exempt</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Warehouse Partition <span class="req">*</span></label>
+          <select id="gen-new-wh" class="form-control">
+            <option value="">Select warehouse</option>
+            ${whs.map(w=>`<option value="${w.id}" ${user.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <!-- Quantity Field -->
+      <div class="form-group">
+        <label class="form-label">Quantity to Generate (Max 50) <span class="req">*</span></label>
+        <input type="number" id="gen-qty" class="form-control" value="10" min="1" max="50" required />
+        <span id="gen-qty-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;display:block">This will generate 10 unique serial codes, register them in the registry tracker ledger, and increase the item stock count by 10.</span>
+      </div>
+    </form>
+  `;
+
+  const footer = `
+    <button class="btn btn-secondary" id="gen-cancel-btn">Cancel</button>
+    <button class="btn btn-primary" id="gen-submit-btn" style="display:inline-flex;align-items:center;gap:6px">
+      ${getSvgIcon('export', 14)} Generate Barcodes
+    </button>
+  `;
+
+  const modal = createModal({ title: 'Batch Generate Barcodes & Sync Stock', body, footer });
+
+  // Bind change listeners to update item details and quantity hint dynamically
+  const itemSelectEl = modal.el.querySelector('#gen-item-select');
+  const itemInfoEl = modal.el.querySelector('#gen-item-info');
+  const qtyInputEl = modal.el.querySelector('#gen-qty');
+  const qtyHintEl = modal.el.querySelector('#gen-qty-hint');
+
+  itemSelectEl?.addEventListener('change', () => {
+    const selectedItem = items.find(i => i.id === itemSelectEl.value);
+    if (selectedItem) {
+      itemInfoEl.style.display = 'block';
+      itemInfoEl.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="color:var(--text-secondary)">SKU:</span> <strong style="font-family:var(--font-mono)">${selectedItem.sku || '—'}</strong></div>
+          <div><span style="color:var(--text-secondary)">Current Stock:</span> <strong>${selectedItem.stock} ${selectedItem.unit || 'pcs'}</strong></div>
+          <div><span style="color:var(--text-secondary)">Unit Price:</span> <strong>${formatCurrency(selectedItem.price || 0)}</strong></div>
+          <div><span style="color:var(--text-secondary)">Category:</span> <strong>${selectedItem.category}</strong></div>
+        </div>
+      `;
+    } else {
+      itemInfoEl.style.display = 'none';
+      itemInfoEl.innerHTML = '';
+    }
+  });
+
+  qtyInputEl?.addEventListener('input', () => {
+    const val = parseInt(qtyInputEl.value) || 0;
+    qtyHintEl.textContent = `This will generate ${val} unique serial codes, register them in the registry tracker ledger, and increase the item stock count by ${val}.`;
+  });
+
+  // Toggle Mode Listeners
+  modal.el.querySelectorAll('input[name="gen-mode"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      const existingSec = modal.el.querySelector('#gen-existing-section');
+      const newSec = modal.el.querySelector('#gen-new-section');
+      const itemSelect = modal.el.querySelector('#gen-item-select');
+      
+      const newName = modal.el.querySelector('#gen-new-name');
+      const newWh = modal.el.querySelector('#gen-new-wh');
+
+      if (mode === 'existing') {
+        existingSec.style.display = 'block';
+        newSec.style.display = 'none';
+        itemSelect.setAttribute('required', 'true');
+        newName.removeAttribute('required');
+        newWh.removeAttribute('required');
+      } else {
+        existingSec.style.display = 'none';
+        newSec.style.display = 'flex';
+        itemSelect.removeAttribute('required');
+        newName.setAttribute('required', 'true');
+        newWh.setAttribute('required', 'true');
+      }
+    });
+  });
+
+  // Cancel Button
+  modal.el.querySelector('#gen-cancel-btn').addEventListener('click', () => modal.close());
+
+  // Form Submission
+  modal.el.querySelector('#gen-submit-btn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const form = modal.el.querySelector('#barcode-gen-form');
+    if (!form.checkValidity()) {
+      form.reportValidity();
+      return;
+    }
+
+    const genMode = modal.el.querySelector('input[name="gen-mode"]:checked').value;
+    const qty = parseInt(modal.el.querySelector('#gen-qty').value);
+    
+    if (isNaN(qty) || qty < 1 || qty > 50) {
+      showToast('Validation Error', 'Quantity must be between 1 and 50.', 'warning');
+      return;
+    }
+
+    const submitBtn = modal.el.querySelector('#gen-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Generating...';
+
+    const payload = {
+      quantity: qty,
+      itemId: null,
+      newItem: null
+    };
+
+    if (genMode === 'existing') {
+      payload.itemId = modal.el.querySelector('#gen-item-select').value;
+    } else {
+      payload.newItem = {
+        name: modal.el.querySelector('#gen-new-name').value.trim(),
+        sku: modal.el.querySelector('#gen-new-sku').value.trim() || null,
+        category: modal.el.querySelector('#gen-new-cat').value,
+        price: parseFloat(modal.el.querySelector('#gen-new-price').value) || 0,
+        stock: 0,
+        unit: modal.el.querySelector('#gen-new-unit').value,
+        taxCategory: modal.el.querySelector('#gen-new-tax').value,
+        warehouseId: modal.el.querySelector('#gen-new-wh').value
+      };
+    }
+
+    const res = await apiFetch('/items/generate-barcodes', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (res?.success) {
+      showToast('Barcodes Generated', `Successfully generated ${qty} barcodes and synced stock level.`, 'success');
+      modal.close();
+      await syncWithBackend();
+      await renderItems();
+    } else {
+      showToast('Error', res?.error || 'Failed to generate barcodes.', 'error');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `${getSvgIcon('export', 14)} Generate Barcodes`;
+    }
+  });
+}
+window.showBarcodeGenerationModal = showBarcodeGenerationModal;
+
 // ===== pages/tables.js =====
 /**
  * WareOps ERP — Dynamic Tables Spreadsheet Workspace
@@ -7803,6 +8260,25 @@ let _pendingCells    = new Map();       // `${rowIndex}:${colId}` → cellEl —
 let _debounceSavers  = new Map();       // rowIndex → debounced save fn
 let _activePage      = 1;      // active page tracking
 
+// NexWare Upgrade Module States
+let _columnWidths      = {};
+let _sidebarCollapsed  = false;
+let _selectedCell      = null;
+let _undoStack         = [];
+let _redoStack         = [];
+let _cellFormats       = new Map(); // `${rowId}:${colId}` -> format styles
+let _cellPreValue      = null;
+let _lastSavedTime     = Date.now();
+let _isOffline         = false;
+let _saveStatusInterval= null;
+let _pendingSaveRows   = new Set();
+
+// Central Registry dynamic filters
+let _registrySearchQ   = '';
+let _registryTypeFilter = '';
+let _registryWhFilter   = '';
+
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 async function renderTables() {
   const user     = getCurrentUser();
@@ -7810,8 +8286,23 @@ async function renderTables() {
     window.location.hash = '#/login';
     return;
   }
+
+  // Parse deep-linked table ID from hash query parameters if present
+  const hash = window.location.hash;
+  const match = hash.match(/[?&]id=([^&]+)/);
+  if (match && match[1]) {
+    _activeTableId = decodeURIComponent(match[1]);
+  } else {
+    _activeTableId = null;
+  }
+
   const whs      = getWarehouses();
   const canManage = ['super_admin','admin'].includes(user.role);
+
+  // Auto-seed system tables on list view entry
+  if (!_activeTableId && canManage) {
+    await _ensureSystemTables();
+  }
 
   if (_activeTableId) {
     // ── Spreadsheet workspace ──
@@ -7837,6 +8328,8 @@ async function _renderTableList(user, whs, canManage) {
   }
 
 
+  const canEdit = ['super_admin','admin','manager'].includes(user.role);
+
   renderShell('Tables', 'Dynamic table builder and spreadsheet workspace', `
     <div class="animate-slideUp">
       <div class="page-header">
@@ -7846,6 +8339,7 @@ async function _renderTableList(user, whs, canManage) {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+          ${canEdit ? `<button class="btn btn-secondary btn-sm" id="generate-barcodes-btn-tbl">Generate Barcodes</button>` : ''}
           ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
         </div>
       </div>
@@ -7865,7 +8359,7 @@ async function _renderTableList(user, whs, canManage) {
           <table>
             <thead><tr>
               <th>Table Name</th><th>Category</th><th>Warehouse</th>
-              <th>Columns</th><th>Access Roles</th><th>Created</th><th>Actions</th>
+              <th>Columns</th><th>Access Users</th><th>Created</th><th>Actions</th>
             </tr></thead>
             <tbody id="tbl-list-body">
               ${schemas.map(t => {
@@ -7873,7 +8367,9 @@ async function _renderTableList(user, whs, canManage) {
                 return `<tr>
                   <td>
                     <div style="display:flex;align-items:center;gap:10px">
-                      <div style="width:32px;height:32px;border-radius:8px;background:${t.headerColor||'#6366f1'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">📋</div>
+                      <div style="width:32px;height:32px;border-radius:8px;background:${t.headerColor||'#6366f1'};display:flex;align-items:center;justify-content:center;color:white;flex-shrink:0">
+                        ${getSvgIcon('tables', 16)}
+                      </div>
                       <div>
                         <div class="primary-cell">${t.name}</div>
                         <div class="sub-cell">${t.description||'No description'}</div>
@@ -7883,7 +8379,7 @@ async function _renderTableList(user, whs, canManage) {
                   <td><span class="badge badge-brand">${t.category||'—'}</span></td>
                   <td><span class="badge badge-info">${wh?.name||'All Warehouses'}</span></td>
                   <td>${(t.columns||[]).length} cols</td>
-                  <td>${(t.roles||[]).length > 0 ? t.roles.map(r => `<span class="badge badge-muted" style="margin-right:2px">${capitalize(r)}</span>`).join('') : '<span class="badge badge-muted">All</span>'}</td>
+                  <td>${_renderAccessUsersStack(t)}</td>
                   <td>${formatDate(t.createdAt)}</td>
                   <td>
                     <div class="table-actions">
@@ -7904,6 +8400,13 @@ async function _renderTableList(user, whs, canManage) {
   // Events
   document.getElementById('create-tbl-btn')?.addEventListener('click', () => _showSchemaModal(null, whs));
   document.getElementById('create-tbl-btn-empty')?.addEventListener('click', () => _showSchemaModal(null, whs));
+  document.getElementById('generate-barcodes-btn-tbl')?.addEventListener('click', () => {
+    if (typeof window.showBarcodeGenerationModal === 'function') {
+      window.showBarcodeGenerationModal();
+    } else {
+      showToast('Error', 'Barcode module not loaded.', 'error');
+    }
+  });
   document.getElementById('tbl-search')?.addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
     document.querySelectorAll('#tbl-list-body tr').forEach(tr => {
@@ -7912,9 +8415,8 @@ async function _renderTableList(user, whs, canManage) {
   });
   document.querySelectorAll('.action-btn.view[data-tid]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      _activeTableId = btn.dataset.tid;
       _activePage = 1;
-      await renderTables();
+      window.location.hash = '#/tables?id=' + encodeURIComponent(btn.dataset.tid);
     });
   });
   document.querySelectorAll('.action-btn.edit[data-tid]').forEach(btn => {
@@ -7936,16 +8438,36 @@ async function _renderTableList(user, whs, canManage) {
 }
 
 // ─── SPREADSHEET WORKSPACE ────────────────────────────────────────────────────
+// ─── SPREADSHEET WORKSPACE ────────────────────────────────────────────────────
 async function _openSpreadsheet(user, canManage) {
+  const whs = getWarehouses();
   // Fetch schema + rows
-  const schemaRes = await apiFetch(`/dynamic-tables/`);
-  _schema = schemaRes?.data?.find(t => t.id === _activeTableId) || null;
+  let schema = null;
+  const res = await apiFetch(`/dynamic-tables/${_activeTableId}`);
+  if (res?.success) {
+    schema = res.data;
+  } else {
+    const schemaRes = await apiFetch(`/dynamic-tables/`);
+    if (schemaRes?.success && Array.isArray(schemaRes.data)) {
+      schema = schemaRes.data.find(t => t.id === _activeTableId) || null;
+      if (!schema) {
+        schema = schemaRes.data.find(t => t.name === _activeTableId || t.name?.toLowerCase() === _activeTableId.toLowerCase()) || null;
+      }
+    }
+  }
+  _schema = schema;
 
   if (!_schema) {
     showToast('Error', 'Table not found', 'error');
     _activeTableId = null;
     await renderTables();
     return;
+  }
+
+  // Canonicalize the active table ID and URL hash to use the actual resolved ID
+  if (_activeTableId !== _schema.id) {
+    _activeTableId = _schema.id;
+    window.location.hash = `#/tables?id=${encodeURIComponent(_activeTableId)}`;
   }
 
   // Enforce role-based access on schema open
@@ -7958,69 +8480,327 @@ async function _openSpreadsheet(user, canManage) {
     }
   }
 
-
-  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
+  let url = `/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`;
+  if (_activeTableId === 'central_registry') {
+    if (_registrySearchQ) url += `&search=${encodeURIComponent(_registrySearchQ)}`;
+    if (_registryTypeFilter) url += `&entityType=${encodeURIComponent(_registryTypeFilter)}`;
+    if (_registryWhFilter) url += `&warehouseId=${encodeURIComponent(_registryWhFilter)}`;
+  }
+  const rowsRes = await apiFetch(url);
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
 
-  const canEdit   = ['super_admin','admin','manager','staff'].includes(user.role);
-  const canImport = ['super_admin','admin','manager'].includes(user.role);
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit   = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
+  const canImport = ['super_admin','admin','manager'].includes(user.role) && !isRegistry;
   const cols      = _schema.columns || [];
   const headerColor = _schema.headerColor || '#6366f1';
 
+  // Resolve metadata values
+  const accessUsers = _getAccessUsers(_schema);
+  const ownerUser = getStore().users.find(u => u.id === _schema.createdBy) || { name: 'System' };
+  const ownerName = ownerUser.name;
+  
+  // Total storage usage estimation
+  const totalStorage = _schema.pages ? _schema.pages.reduce((acc, p) => acc + (p.storage_usage || 0), 0) : 0;
+
   renderShell(_schema.name, `Spreadsheet Workspace · ${_rows.length} rows · ${cols.length} columns`, `
     <div class="animate-slideUp" id="spreadsheet-workspace">
-      <!-- Toolbar -->
-      <div class="ss-toolbar">
-        <div class="ss-toolbar-left">
+      <!-- Layout Header -->
+      <div class="page-header" style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="page-header-left" style="display:flex;align-items:center;gap:10px">
           <button class="btn btn-secondary btn-sm" id="ss-back">← All Tables</button>
-          <div class="ss-table-badge" style="background:${headerColor}22;border-color:${headerColor}44;display:inline-flex;align-items:center;gap:6px">
-            <span style="color:${headerColor};display:flex;align-items:center">${getSvgIcon('tables', 14)}</span>
-            <span style="font-weight:700;color:var(--text-primary)">${_schema.name}</span>
-            <span class="badge badge-muted" style="font-size:11px">${_schema.category}</span>
-          </div>
-          <div id="ss-pages-tabs-container" style="display:flex;align-items:center"></div>
-          <div id="ss-collab-badges" class="ss-collab-area"></div>
+          <h1 class="page-title" style="margin:0;font-size:18px;display:flex;align-items:center;gap:8px">
+            <span style="color:${headerColor};display:flex;align-items:center">${getSvgIcon('tables', 18)}</span>
+            <span>${_schema.name}</span>
+          </h1>
+          <span class="badge badge-brand">${_schema.category}</span>
         </div>
-        <div class="ss-toolbar-right">
-          <div id="ss-save-indicator" class="ss-save-indicator" style="display:none">
-            <span class="ss-save-spinner">⟳</span> Saving…
+
+        ${isRegistry ? `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div class="table-search" style="max-width:200px;margin:0">
+              <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 14)}</span>
+              <input type="text" id="ss-grid-search" placeholder="Search ID, barcode..." value="${_registrySearchQ || ''}" />
+            </div>
+            <select class="form-control" style="width:auto;padding:4px 8px;font-size:12px;height:30px;border-radius:6px;background:var(--bg-elevated);color:var(--text-primary);border:1px solid var(--border-subtle)" id="ss-registry-type-filter">
+              <option value="">All Types</option>
+              <option value="invoice" ${_registryTypeFilter === 'invoice' ? 'selected' : ''}>Invoices (INV)</option>
+              <option value="warehouse" ${_registryTypeFilter === 'warehouse' ? 'selected' : ''}>Warehouses (WH)</option>
+              <option value="employee" ${_registryTypeFilter === 'employee' ? 'selected' : ''}>Workforce (EMP)</option>
+              <option value="inventory" ${_registryTypeFilter === 'inventory' ? 'selected' : ''}>Inventory (ITEM)</option>
+              <option value="table_registry" ${_registryTypeFilter === 'table_registry' ? 'selected' : ''}>Operational Tables (TBL)</option>
+              <option value="customer" ${_registryTypeFilter === 'customer' ? 'selected' : ''}>CRM Customers (CUST)</option>
+            </select>
+            ${user.role === 'super_admin' ? `
+              <select class="form-control" style="width:auto;padding:4px 8px;font-size:12px;height:30px;border-radius:6px;background:var(--bg-elevated);color:var(--text-primary);border:1px solid var(--border-subtle)" id="ss-registry-wh-filter">
+                <option value="">All Warehouses</option>
+                <option value="Global" ${_registryWhFilter === 'Global' ? 'selected' : ''}>Global Scoped</option>
+                ${whs.map(w => `<option value="${w.id}" ${_registryWhFilter === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}
+              </select>
+            ` : ''}
           </div>
-          ${canImport ? `
-            <button class="btn btn-secondary btn-sm" id="ss-import-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('upload', 14)} Import CSV</button>
-            <button class="btn btn-secondary btn-sm" id="ss-export-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('export', 14)} Export CSV</button>
-          ` : ''}
-          ${canManage ? `<button class="btn btn-secondary btn-sm" id="ss-schema-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('settings', 14)} Edit Schema</button>` : ''}
+        ` : `
+          <div class="table-search" style="max-width:240px;margin:0">
+            <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 14)}</span>
+            <input type="text" id="ss-grid-search" placeholder="Search rows..." />
+          </div>
+        `}
+
+        <div class="page-header-actions" style="display:flex;align-items:center;gap:8px">
+          ${isRegistry ? `
+            <button class="btn btn-primary btn-sm" id="ss-print-barcodes-btn" style="display:flex;align-items:center;gap:4px">
+              ${getSvgIcon('export', 14)} Print Barcodes
+            </button>
+          ` : `
+            <div id="ss-save-status-container" style="display:inline-flex;align-items:center;gap:6px;font-size:12px">
+              <span id="ss-save-status-indicator" class="badge badge-success">Saved just now</span>
+              <button class="btn btn-primary btn-sm" id="ss-save-now-btn" style="padding:4px 8px;font-size:11px;font-weight:600">Save</button>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="ss-toggle-sidebar" style="display:flex;align-items:center;gap:4px">
+              ${getSvgIcon('info', 14)} Details
+            </button>
+            ${canEdit ? `<button class="btn btn-secondary btn-sm" id="ss-scan-btn" style="display:flex;align-items:center;gap:4px">${getSvgIcon('search', 14)} Scan Entity</button>` : ''}
+          `}
         </div>
       </div>
 
-      <!-- Spreadsheet Grid -->
-      <div class="ss-container" id="ss-container">
-        <div class="ss-grid-wrap" id="ss-grid-wrap">
-          <table class="ss-grid" id="ss-grid" style="--header-color:${headerColor}">
-            <thead>
-              <tr>
-                <th class="ss-th ss-th-row-num">#</th>
-                ${cols.map(c => `
-                  <th class="ss-th" data-col="${c.id}" title="${c.type}${c.required ? ' · Required' : ''}">
-                    <div class="ss-th-inner">
-                      <span class="ss-col-type-icon">${_colTypeIcon(c.type)}</span>
-                      <span class="ss-col-name">${c.name}</span>
-                      ${c.required ? '<span class="ss-req-dot" title="Required">*</span>' : ''}
-                    </div>
-                  </th>
-                `).join('')}
-                ${canEdit ? '<th class="ss-th ss-th-actions">Actions</th>' : ''}
-              </tr>
-            </thead>
-            <tbody id="ss-tbody">
-              ${_buildAllRows(cols, canEdit, user)}
-            </tbody>
-          </table>
+      <!-- Google Sheets-style drop-down menus -->
+      <div class="ss-toolbar-menus">
+        <div class="ss-menu-item">
+          <button class="ss-menu-btn">File</button>
+          <div class="ss-menu-dropdown">
+            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-file-new">New Spreadsheet</button>` : ''}
+            ${canImport ? `<button class="ss-menu-dropdown-item" id="menu-file-import">Import</button>` : ''}
+            <button class="ss-menu-dropdown-item" id="menu-file-export">Download</button>
+            <button class="ss-menu-dropdown-item" id="menu-file-copy">Make a copy</button>
+            <button class="ss-menu-dropdown-item" id="menu-file-share">Share</button>
+            <button class="ss-menu-dropdown-item" id="menu-file-rename">Rename</button>
+            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-file-bin">Move to bin</button>` : ''}
+            <button class="ss-menu-dropdown-item" id="menu-file-history">Version history</button>
+          </div>
         </div>
-        <div class="ss-status-bar" style="display:flex;align-items:center;justify-content:space-between">
-          <span id="ss-row-count">${_rows.length} active rows (100 rows capacity)</span>
-          <span id="ss-selected-info" style="color:var(--text-muted)"></span>
-          <span id="ss-page-meta" style="color:var(--text-muted);font-size:12px;display:flex;align-items:center;gap:12px"></span>
+
+        <div class="ss-menu-item">
+          <button class="ss-menu-btn">Edit</button>
+          <div class="ss-menu-dropdown">
+            <button class="ss-menu-dropdown-item" id="menu-edit-undo">Undo <span style="font-size:10px;color:var(--text-muted)">Ctrl+Z</span></button>
+            <button class="ss-menu-dropdown-item" id="menu-edit-redo">Redo <span style="font-size:10px;color:var(--text-muted)">Ctrl+Y</span></button>
+            <button class="ss-menu-dropdown-item" id="menu-edit-find">Find and replace</button>
+          </div>
+        </div>
+
+        <div class="ss-menu-item">
+          <button class="ss-menu-btn">View</button>
+          <div class="ss-menu-dropdown">
+            <button class="ss-menu-dropdown-item" id="menu-view-formula">Formula bar toggle</button>
+            <button class="ss-menu-dropdown-item" id="menu-view-gridlines">Gridline toggle</button>
+            <button class="ss-menu-dropdown-item ss-zoom-opt" data-zoom="0.5">Zoom 50%</button>
+            <button class="ss-menu-dropdown-item ss-zoom-opt" data-zoom="0.75">Zoom 75%</button>
+            <button class="ss-menu-dropdown-item ss-zoom-opt" data-zoom="1">Zoom 100%</button>
+            <button class="ss-menu-dropdown-item ss-zoom-opt" data-zoom="1.25">Zoom 125%</button>
+            <button class="ss-menu-dropdown-item ss-zoom-opt" data-zoom="1.5">Zoom 150%</button>
+            <div class="ss-menu-dropdown-divider"></div>
+            <button class="ss-menu-dropdown-item" id="menu-view-fullscreen">Toggle Fullscreen</button>
+          </div>
+        </div>
+
+        <div class="ss-menu-item">
+          <button class="ss-menu-btn">Insert</button>
+          <div class="ss-menu-dropdown">
+            <button class="ss-menu-dropdown-item" id="menu-insert-row">Row</button>
+            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-insert-col">Column</button>` : ''}
+            <button class="ss-menu-dropdown-item" id="menu-insert-image">Image</button>
+            <button class="ss-menu-dropdown-item" id="menu-insert-link">Link</button>
+            <button class="ss-menu-dropdown-item" id="menu-insert-comment">Comment</button>
+            <div class="ss-menu-dropdown-divider"></div>
+            <button class="ss-menu-dropdown-item ss-func-opt" data-func="SUM">Function: SUM</button>
+            <button class="ss-menu-dropdown-item ss-func-opt" data-func="AVERAGE">Function: AVERAGE</button>
+            <button class="ss-menu-dropdown-item ss-func-opt" data-func="MIN">Function: MIN</button>
+            <button class="ss-menu-dropdown-item ss-func-opt" data-func="MAX">Function: MAX</button>
+          </div>
+        </div>
+
+        <div class="ss-menu-item">
+          <button class="ss-menu-btn">Format</button>
+          <div class="ss-menu-dropdown">
+            <button class="ss-menu-dropdown-item" id="menu-fmt-bold">Bold</button>
+            <button class="ss-menu-dropdown-item" id="menu-fmt-italic">Italic</button>
+            <button class="ss-menu-dropdown-item" id="menu-fmt-underline">Underline</button>
+            <button class="ss-menu-dropdown-item" id="menu-fmt-strike">Strikethrough</button>
+            <div class="ss-menu-dropdown-divider"></div>
+            <button class="ss-menu-dropdown-item" id="menu-fmt-currency">Currency ($)</button>
+            <button class="ss-menu-dropdown-item" id="menu-fmt-percent">Percentage (%)</button>
+            <button class="ss-menu-dropdown-item" id="menu-fmt-dec-inc">Increase Decimals</button>
+            <button class="ss-menu-dropdown-item" id="menu-fmt-dec-dec">Decrease Decimals</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick formatting bar -->
+      <div class="ss-format-bar">
+        <button class="ss-format-btn" id="fmt-bold" title="Bold" style="font-weight:bold">B</button>
+        <button class="ss-format-btn" id="fmt-italic" title="Italic" style="font-style:italic">I</button>
+        <button class="ss-format-btn" id="fmt-underline" title="Underline" style="text-decoration:underline">U</button>
+        <button class="ss-format-btn" id="fmt-strike" title="Strikethrough" style="text-decoration:line-through">S</button>
+        
+        <div class="ss-format-divider"></div>
+        
+        <select class="ss-format-select" id="fmt-align" title="Text Alignment">
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+        </select>
+
+        <select class="ss-format-select" id="fmt-size" title="Font Size">
+          <option value="11px">11px</option>
+          <option value="12px">12px</option>
+          <option value="13px" selected>13px</option>
+          <option value="14px">14px</option>
+          <option value="16px">16px</option>
+        </select>
+
+        <div class="ss-format-divider"></div>
+
+        <button class="ss-format-btn" id="fmt-currency" title="Format Currency">$</button>
+        <button class="ss-format-btn" id="fmt-percent" title="Format Percentage">%</button>
+        <button class="ss-format-btn" id="fmt-dec-inc" title="Increase Decimals">.00→</button>
+        <button class="ss-format-btn" id="fmt-dec-dec" title="Decrease Decimals">←.0</button>
+
+        <div class="ss-format-divider"></div>
+        
+        <!-- Visible Color Pickers -->
+        <div style="display:inline-flex;align-items:center;gap:6px">
+          <label title="Text Color" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-secondary);margin:0">
+            Font:
+            <input type="color" id="fmt-color" style="width:22px;height:22px;border:1px solid #d1d5db;padding:0;cursor:pointer;border-radius:4px" value="#111827" />
+          </label>
+          <label title="Fill Background Color" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-secondary);margin:0">
+            Fill:
+            <input type="color" id="fmt-bg" style="width:22px;height:22px;border:1px solid #d1d5db;padding:0;cursor:pointer;border-radius:4px" value="#ffffff" />
+          </label>
+        </div>
+
+        <div class="ss-format-divider"></div>
+        
+        <!-- Tab pages selector container -->
+        <div id="ss-pages-tabs-container" style="display:flex;align-items:center"></div>
+        <div id="ss-collab-badges" class="ss-collab-area" style="margin-left:auto"></div>
+      </div>
+
+      <!-- Formula Bar -->
+      <div class="ss-formula-bar" id="ss-formula-bar-container">
+        <div class="ss-formula-label">fx</div>
+        <div class="ss-formula-divider"></div>
+        <input type="text" id="ss-formula-input" class="ss-formula-input" placeholder="Enter cell value or formula..." />
+      </div>
+
+      <!-- Main workspace container with side panel layout -->
+      <div class="ss-layout-container">
+        <!-- Main dynamic grid -->
+        <div class="ss-grid-main">
+          <div class="ss-container" id="ss-container" style="height: calc(100vh - 310px)">
+            <div class="ss-grid-wrap" id="ss-grid-wrap">
+              <table class="ss-grid" id="ss-grid" style="--header-color:${headerColor}">
+                <thead>
+                  <tr>
+                    <th class="ss-th ss-th-row-num">#</th>
+                    ${cols.map((c, colIdx) => `
+                      <th class="ss-th" data-col="${c.id}" style="width:${_columnWidths[c.id] || 150}px">
+                        <div class="ss-th-inner-excel">
+                          <div class="ss-th-letter">${_getColLetter(colIdx)}</div>
+                          <div class="ss-th-inner">
+                            <span class="ss-col-type-icon">${_colTypeIcon(c.type)}</span>
+                            <span class="ss-col-name">${c.name}</span>
+                            ${c.required ? '<span class="ss-req-dot">*</span>' : ''}
+                          </div>
+                          <div class="col-resize-handle" data-col="${c.id}"></div>
+                        </div>
+                      </th>
+                    `).join('')}
+                    ${canEdit ? '<th class="ss-th ss-th-actions">Actions</th>' : ''}
+                  </tr>
+                </thead>
+                <tbody id="ss-tbody">
+                  ${_buildAllRows(cols, canEdit, user)}
+                </tbody>
+              </table>
+            </div>
+            <div class="ss-status-bar" style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;font-size:12px;border-top:1px solid #e5e7eb;background:#f9fafb;color:#4b5563">
+              <div style="display:flex;align-items:center;gap:8px">
+                <button class="btn btn-secondary btn-sm" id="ss-prev-page-btn" title="Previous Page" style="padding:2px 6px">◀</button>
+                <span style="font-weight:600" id="ss-active-sheet-name">Sheet: ${_schema.name} (Page ${_activePage})</span>
+                <button class="btn btn-secondary btn-sm" id="ss-next-page-btn" title="Next Page" style="padding:2px 6px">▶</button>
+              </div>
+              
+              <div style="display:flex;align-items:center;gap:16px">
+                <span id="ss-row-count">${_rows.length} / 100 capacity</span>
+                <span id="ss-footer-save-status">Sync State: Saved just now</span>
+                <span id="ss-footer-buttons">
+                  ${canEdit ? `
+                    <button class="btn btn-secondary btn-sm" id="ss-duplicate-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">Duplicate Sheet</button>
+                    <button class="btn btn-secondary btn-sm" id="ss-add-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">+ New Page</button>
+                    ${_schema.pages?.length > 1 ? `
+                      <button class="btn btn-danger btn-sm" id="ss-delete-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600;background:var(--accent-rose);border-color:var(--accent-rose);color:white">Delete Page</button>
+                    ` : ''}
+                  ` : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar metadata panel -->
+        <div class="ss-sidebar-panel ${_sidebarCollapsed ? 'collapsed' : ''}" id="ss-sidebar-panel">
+          <div class="ss-sidebar-header">
+            <span class="ss-sidebar-title">Table Details</span>
+            <button class="action-btn" id="ss-close-sidebar" title="Collapse sidebar">${getSvgIcon('close', 14)}</button>
+          </div>
+          
+          <div class="ss-sidebar-item">
+            <span class="ss-sidebar-label">Table Owner</span>
+            <span class="ss-sidebar-value" style="font-weight:600">${ownerName}</span>
+          </div>
+
+          <div class="ss-sidebar-item">
+            <span class="ss-sidebar-label">Created Date</span>
+            <span class="ss-sidebar-value">${formatDate(_schema.createdAt)}</span>
+          </div>
+
+          <div class="ss-sidebar-item">
+            <span class="ss-sidebar-label">Page Count</span>
+            <span class="ss-sidebar-value">${_schema.pages?.length || 1} pages</span>
+          </div>
+
+          <div class="ss-sidebar-item">
+            <span class="ss-sidebar-label">Storage Usage</span>
+            <span class="ss-sidebar-value">${totalStorage} B</span>
+          </div>
+
+          <div class="ss-sidebar-item">
+            <span class="ss-sidebar-label">Access Permissions</span>
+            <span class="ss-sidebar-value" style="margin-top:2px">
+              ${_schema.roles?.length > 0 ? _schema.roles.map(r => `<span class="badge badge-muted" style="margin-right:2px">${capitalize(r)}</span>`).join('') : '<span class="badge badge-muted">Public (All)</span>'}
+            </span>
+          </div>
+
+          <div class="ss-sidebar-item">
+            <span class="ss-sidebar-label">Access Users</span>
+            <div style="margin-top:4px">
+              ${_renderAccessUsersStack(_schema)}
+            </div>
+          </div>
+          
+          <div class="ss-sidebar-item">
+            <span class="ss-sidebar-label">Barcode Value</span>
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);margin-top:2px">
+              ${_schema.barcode || 'N/A'}
+            </div>
+            ${_schema.barcode ? `
+              <div class="barcode-container">
+                ${generateBarcodeSVG(_schema.barcode, { height: 32, showLabel: false })}
+              </div>
+            ` : ''}
+          </div>
         </div>
       </div>
     </div>
@@ -8029,21 +8809,336 @@ async function _openSpreadsheet(user, canManage) {
     <input type="file" id="ss-csv-file" accept=".csv" style="display:none" />
   `);
 
+  // Initialize save status states
+  _lastSavedTime = Date.now();
+  _updateSaveStatusText();
+  if (_saveStatusInterval) clearInterval(_saveStatusInterval);
+  _saveStatusInterval = setInterval(() => _updateSaveStatusText(), 10000);
+
   // Wire toolbar events
   document.getElementById('ss-back')?.addEventListener('click', () => {
     _activeTableId = null; _schema = null; _rows = [];
     _lockedRows.clear(); _pendingCells.clear(); _debounceSavers.clear();
+    _undoStack = []; _redoStack = []; _selectedCell = null;
+    if (_saveStatusInterval) {
+      clearInterval(_saveStatusInterval);
+      _saveStatusInterval = null;
+    }
+    window.location.hash = '#/tables';
     renderTables();
   });
-  document.getElementById('ss-schema-btn')?.addEventListener('click', () => _showSchemaModal(_schema, getWarehouses()));
-  document.getElementById('ss-import-btn')?.addEventListener('click', () => document.getElementById('ss-csv-file').click());
-  document.getElementById('ss-export-btn')?.addEventListener('click', () => _exportCSV());
+  document.getElementById('ss-toggle-sidebar')?.addEventListener('click', () => {
+    _sidebarCollapsed = !_sidebarCollapsed;
+    const panel = document.getElementById('ss-sidebar-panel');
+    if (panel) panel.classList.toggle('collapsed', _sidebarCollapsed);
+  });
+  document.getElementById('ss-close-sidebar')?.addEventListener('click', () => {
+    _sidebarCollapsed = true;
+    const panel = document.getElementById('ss-sidebar-panel');
+    if (panel) panel.classList.add('collapsed');
+  });
+  document.getElementById('ss-scan-btn')?.addEventListener('click', () => {
+    _showBarcodeScanModal();
+  });
+
+  // Save button
+  document.getElementById('ss-save-now-btn')?.addEventListener('click', () => {
+    _forceSaveAllPending();
+  });
+  
+  // Hidden CSV Import triggers
   document.getElementById('ss-csv-file')?.addEventListener('change', e => _handleCSVImport(e, cols));
+
+  // Toolbar menus events
+  document.getElementById('menu-file-new')?.addEventListener('click', () => _showSchemaModal(null, getWarehouses()));
+  document.getElementById('menu-file-import')?.addEventListener('click', () => document.getElementById('ss-csv-file').click());
+  document.getElementById('menu-file-export')?.addEventListener('click', () => _exportCSV());
+  document.getElementById('menu-file-copy')?.addEventListener('click', () => _cloneTable());
+  document.getElementById('menu-file-share')?.addEventListener('click', () => _shareTableLink());
+  document.getElementById('menu-file-rename')?.addEventListener('click', async () => {
+    const newName = prompt('Enter new table name:', _schema.name);
+    if (!newName || newName.trim() === _schema.name) return;
+    
+    const data = {
+      name: newName.trim(),
+      category: _schema.category,
+      description: _schema.description,
+      warehouseId: _schema.warehouseId,
+      columns: _schema.columns,
+      roles: _schema.roles,
+      headerColor: _schema.headerColor
+    };
+    
+    const res = await apiFetch(`/dynamic-tables/${_activeTableId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+    
+    if (res?.success) {
+      showToast('Table Renamed', newName, 'success');
+      _schema = res.data;
+      await renderTables();
+    } else {
+      showToast('Error', res?.error || 'Could not rename table', 'error');
+    }
+  });
+
+  document.getElementById('menu-file-bin')?.addEventListener('click', async () => {
+    const ok = await confirm('Move this table to the bin and delete all its data permanently?', 'Delete Table');
+    if (!ok) return;
+    const res = await apiFetch(`/dynamic-tables/${_activeTableId}`, { method: 'DELETE' });
+    if (res?.success) {
+      showToast('Table deleted', '', 'success');
+      _activeTableId = null; _schema = null; _rows = [];
+      if (_saveStatusInterval) {
+        clearInterval(_saveStatusInterval);
+        _saveStatusInterval = null;
+      }
+      window.location.hash = '#/tables';
+      renderTables();
+    } else {
+      showToast('Error', res?.error || 'Delete failed', 'error');
+    }
+  });
+
+  document.getElementById('menu-file-history')?.addEventListener('click', () => {
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <p style="color:var(--text-secondary);font-size:13px">Showing revision history logs for table: <strong>${_schema.name}</strong></p>
+        <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-elevated);padding:10px">
+          <div style="border-left:2px solid var(--brand-500);padding-left:12px;margin-bottom:12px">
+            <div style="font-weight:600;font-size:12px;color:var(--text-primary)">Current Version (Page ${_activePage})</div>
+            <div style="font-size:11px;color:var(--text-muted)">Modified by you · Just now</div>
+          </div>
+          <div style="border-left:2px solid var(--border-default);padding-left:12px;margin-bottom:12px">
+            <div style="font-weight:600;font-size:12px;color:var(--text-secondary)">Schema Registered</div>
+            <div style="font-size:11px;color:var(--text-muted)">System Auto-Generation · ${formatDate(_schema.createdAt)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+    createModal({ title: 'Version History', body, footer: '<button class="btn btn-secondary modal-close-btn">Close</button>' });
+  });
+
+  document.getElementById('menu-edit-undo')?.addEventListener('click', () => _undo());
+  document.getElementById('menu-edit-redo')?.addEventListener('click', () => _redo());
+  document.getElementById('menu-edit-find')?.addEventListener('click', () => _showFindReplaceModal());
+
+  document.querySelectorAll('.ss-zoom-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const zoom = btn.dataset.zoom;
+      const grid = document.getElementById('ss-grid');
+      if (grid) grid.style.fontSize = `${zoom * 13}px`;
+      showToast('Zoom', `Zoom scale set to ${zoom * 100}%`, 'info');
+    });
+  });
+
+  const toggleFullscreen = () => {
+    const ws = document.getElementById('spreadsheet-workspace');
+    if (ws) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        ws.requestFullscreen().catch(() => {
+          ws.classList.toggle('fullscreen-active');
+        });
+      }
+    }
+  };
+  document.getElementById('menu-view-fullscreen')?.addEventListener('click', toggleFullscreen);
+  document.getElementById('menu-view-formula')?.addEventListener('click', () => {
+    const fbar = document.getElementById('ss-formula-bar-container');
+    if (fbar) {
+      const isHidden = fbar.style.display === 'none';
+      fbar.style.display = isHidden ? 'flex' : 'none';
+      showToast('Formula Bar', isHidden ? 'Formula bar shown' : 'Formula bar hidden', 'info');
+    }
+  });
+  document.getElementById('menu-view-gridlines')?.addEventListener('click', () => {
+    const grid = document.getElementById('ss-grid');
+    if (grid) {
+      const active = grid.classList.toggle('ss-grid-no-gridlines');
+      showToast('Gridlines', active ? 'Gridlines hidden' : 'Gridlines visible', 'info');
+    }
+  });
+
+  document.getElementById('menu-insert-row')?.addEventListener('click', () => _appendVirtualRow(cols, canEdit, user));
+  document.getElementById('menu-insert-col')?.addEventListener('click', () => _showSchemaModal(_schema, getWarehouses()));
+  document.getElementById('menu-insert-image')?.addEventListener('click', () => {
+    if (!_selectedCell) { showToast('Insert Image', 'Please select a cell first', 'warning'); return; }
+    const url = prompt('Enter image URL:');
+    if (url) _applyCellChange(_selectedCell.rowId, _selectedCell.colId, url);
+  });
+  document.getElementById('menu-insert-link')?.addEventListener('click', () => {
+    if (!_selectedCell) { showToast('Insert Link', 'Please select a cell first', 'warning'); return; }
+    const url = prompt('Enter link URL:');
+    if (url) _applyCellChange(_selectedCell.rowId, _selectedCell.colId, url);
+  });
+  document.getElementById('menu-insert-comment')?.addEventListener('click', () => {
+    if (!_selectedCell) { showToast('Insert Comment', 'Please select a cell first', 'warning'); return; }
+    const comment = prompt('Enter cell comment:');
+    if (comment) {
+      const cellInp = _selectedCell.el.querySelector('.ss-input');
+      if (cellInp) cellInp.title = comment;
+      showToast('Comment added', '', 'success');
+    }
+  });
+
+  // Functions buttons in insert
+  document.querySelectorAll('.ss-func-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!_selectedCell) {
+        showToast('Function Error', 'Please select a cell first', 'warning');
+        return;
+      }
+      
+      const func = btn.dataset.func;
+      const colId = _selectedCell.colId;
+      
+      const numValues = _rows
+        .map(r => parseFloat(r[colId]))
+        .filter(v => !isNaN(v));
+        
+      if (numValues.length === 0) {
+        showToast('Function Error', 'No numeric data in the selected column to calculate', 'warning');
+        return;
+      }
+      
+      let result = 0;
+      if (func === 'SUM') {
+        result = numValues.reduce((acc, v) => acc + v, 0);
+      } else if (func === 'AVERAGE') {
+        result = numValues.reduce((acc, v) => acc + v, 0) / numValues.length;
+      } else if (func === 'MIN') {
+        result = Math.min(...numValues);
+      } else if (func === 'MAX') {
+        result = Math.max(...numValues);
+      }
+      
+      const finalVal = Number.isInteger(result) ? result : result.toFixed(2);
+      
+      _applyCellChange(_selectedCell.rowId, _selectedCell.colId, finalVal);
+      showToast('Calculated ' + func, `Result: ${finalVal}`, 'success');
+    });
+  });
+
+  document.getElementById('menu-data-filter')?.addEventListener('click', () => {
+    const q = prompt('Filter rows containing:');
+    if (q !== null) {
+      document.querySelectorAll('#ss-tbody tr').forEach(tr => {
+        if (tr.dataset.virtual === 'true') return;
+        tr.style.display = tr.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+      });
+      showToast('Filtered View', `Showing rows containing: "${q}"`, 'info');
+    }
+  });
+  document.getElementById('menu-data-sort-asc')?.addEventListener('click', () => _sortRows('asc'));
+  document.getElementById('menu-data-sort-desc')?.addEventListener('click', () => _sortRows('desc'));
+
+  // Format menus
+  const wireFmt = (btnId, type, val = null) => {
+    document.getElementById(btnId)?.addEventListener('click', () => _applyFormatting(type, val));
+  };
+  wireFmt('menu-fmt-bold', 'bold');
+  wireFmt('fmt-bold', 'bold');
+  wireFmt('menu-fmt-italic', 'italic');
+  wireFmt('fmt-italic', 'italic');
+  wireFmt('menu-fmt-underline', 'underline');
+  wireFmt('fmt-underline', 'underline');
+  wireFmt('menu-fmt-strike', 'strike');
+  wireFmt('fmt-strike', 'strike');
+  wireFmt('menu-fmt-currency', 'currency');
+  wireFmt('fmt-currency', 'currency');
+  wireFmt('menu-fmt-percent', 'percent');
+  wireFmt('fmt-percent', 'percent');
+  wireFmt('menu-fmt-dec-inc', 'dec-inc');
+  wireFmt('fmt-dec-inc', 'dec-inc');
+  wireFmt('menu-fmt-dec-dec', 'dec-dec');
+  wireFmt('fmt-dec-dec', 'dec-dec');
+
+  document.getElementById('fmt-align')?.addEventListener('change', e => _applyFormatting('align', e.target.value));
+  document.getElementById('fmt-size')?.addEventListener('change', e => _applyFormatting('size', e.target.value));
+  document.getElementById('fmt-color')?.addEventListener('change', e => _applyFormatting('color', e.target.value));
+  document.getElementById('fmt-bg')?.addEventListener('change', e => _applyFormatting('bg', e.target.value));
+
+  // Formula input bar listener
+  const formulaInput = document.getElementById('ss-formula-input');
+  formulaInput?.addEventListener('input', e => {
+    if (!_selectedCell) return;
+    const { rowId, colId, el } = _selectedCell;
+    const inp = el.querySelector('.ss-input');
+    if (!inp) return;
+    
+    const val = formulaInput.value;
+    if (inp.type === 'checkbox') {
+      inp.checked = val.toLowerCase() === 'true' || val === '1' || val.toUpperCase() === 'TRUE';
+    } else {
+      inp.value = val;
+    }
+    
+    const rowIdx = parseInt(el.dataset.rowIdx || el.dataset.rowidx || '0');
+    _scheduleSave(rowId, rowIdx, cols, inp);
+  });
+
+  // Search input filter
+  document.getElementById('ss-grid-search')?.addEventListener('input', debounce(async (e) => {
+    if (_activeTableId === 'central_registry') {
+      _registrySearchQ = e.target.value;
+      _activePage = 1;
+      await _reloadRegistryRows();
+    } else {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#ss-tbody tr').forEach(tr => {
+        if (tr.dataset.virtual === 'true') return;
+        tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    }
+  }, 300));
+
+  // Central Registry filters
+  document.getElementById('ss-registry-type-filter')?.addEventListener('change', async (e) => {
+    _registryTypeFilter = e.target.value;
+    _activePage = 1;
+    await _reloadRegistryRows();
+  });
+
+  document.getElementById('ss-registry-wh-filter')?.addEventListener('change', async (e) => {
+    _registryWhFilter = e.target.value;
+    _activePage = 1;
+    await _reloadRegistryRows();
+  });
+
+  // Print barcodes action
+  document.getElementById('ss-print-barcodes-btn')?.addEventListener('click', async () => {
+    await _showBarcodePrintSheet();
+  });
+
+  // Footer page navigation buttons
+  document.getElementById('ss-prev-page-btn')?.addEventListener('click', () => {
+    if (_activePage > 1) {
+      _switchPage(_activePage - 1);
+    } else {
+      showToast('Pagination', 'Already on the first page', 'info');
+    }
+  });
+  document.getElementById('ss-next-page-btn')?.addEventListener('click', () => {
+    const totalPages = _schema.pages?.length || 1;
+    if (_activePage < totalPages) {
+      _switchPage(_activePage + 1);
+    } else {
+      showToast('Pagination', 'Already on the last page. Use "+ New Page" to add more pages.', 'info');
+    }
+  });
+
+  // Footer buttons setup
+  _updateFooterButtons();
 
   // Attach cell + row events
   _attachGridEvents(cols, canEdit, user);
   _renderPageTabs(canEdit);
   _updatePageMeta();
+  _initColumnResizer();
 
   // Connect WebSocket for realtime collaboration
   _subscribeToTableEvents();
@@ -8077,6 +9172,11 @@ function _renderPageTabs(canEdit) {
     storage_usage: 0
   }];
 
+  if (pages.length <= 1) {
+    container.innerHTML = '';
+    return;
+  }
+
   container.innerHTML = `
     <div class="ss-pages-tabs" style="display:flex;align-items:center;gap:4px;margin-left:16px;background:var(--bg-input);padding:3px;border-radius:8px;border:1px solid var(--border-default)">
       ${pages.map(p => `
@@ -8088,13 +9188,6 @@ function _renderPageTabs(canEdit) {
           Page ${p.page_number}
         </button>
       `).join('')}
-      ${canEdit ? `
-        <button class="ss-page-tab-add" id="ss-add-page-btn" title="Add Page" 
-                style="border:none;padding:6px;border-radius:6px;cursor:pointer;background:transparent;
-                       color:var(--brand-500);display:flex;align-items:center;justify-content:center">
-          ${getSvgIcon('plus', 14)}
-        </button>
-      ` : ''}
     </div>
   `;
 
@@ -8116,19 +9209,32 @@ async function _switchPage(pageNumber) {
     `;
   }
   
-  const rowsRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`);
+  let url = `/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`;
+  if (_activeTableId === 'central_registry') {
+    if (_registrySearchQ) url += `&search=${encodeURIComponent(_registrySearchQ)}`;
+    if (_registryTypeFilter) url += `&entityType=${encodeURIComponent(_registryTypeFilter)}`;
+    if (_registryWhFilter) url += `&warehouseId=${encodeURIComponent(_registryWhFilter)}`;
+  }
+  const rowsRes = await apiFetch(url);
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
   _updateRowCount();
   _updatePageMeta();
   
   const cols = _schema.columns || [];
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
   if (tbody) {
     tbody.innerHTML = _buildAllRows(cols, canEdit, user);
     _attachGridEvents(cols, canEdit, user);
   }
   
+  const sheetNameEl = document.getElementById('ss-active-sheet-name');
+  if (sheetNameEl) {
+    sheetNameEl.textContent = `Sheet: ${_schema.name} (Page ${_activePage})`;
+  }
+  
+  _updateFooterButtons();
   _renderPageTabs(canEdit);
 }
 
@@ -8140,38 +9246,6 @@ function _bindPageEvents(canEdit) {
         _switchPage(pageNum);
       }
     });
-  });
-
-  document.getElementById('ss-add-page-btn')?.addEventListener('click', async () => {
-    const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{}];
-    const storeSub = localStorage.getItem('wareops_store');
-    let plan = 'enterprise';
-    try {
-      if (storeSub) {
-        const parsed = JSON.parse(storeSub);
-        if (parsed.subscription?.plan) plan = parsed.subscription.plan;
-      }
-    } catch (e) {}
-
-    const maxPages = plan === 'starter' ? 2 : 50;
-    if (pages.length >= maxPages) {
-      showToast('Plan Limit Exceeded', `Starter plan tables are limited to ${maxPages} pages. Please upgrade your subscription.`, 'warning');
-      return;
-    }
-
-    _showSavingIndicator(true);
-    const res = await apiFetch(`/dynamic-tables/${_activeTableId}/pages`, { method: 'POST' });
-    _showSavingIndicator(false);
-
-    if (res?.success && res.data) {
-      _schema = res.data;
-      showToast('Page Created', `Page ${_schema.pages.length} added to table`, 'success');
-      _activePage = _schema.pages.length;
-      _renderPageTabs(canEdit);
-      await _switchPage(_schema.pages.length);
-    } else {
-      showToast('Error', res?.error || 'Could not create new page', 'error');
-    }
   });
 }
 
@@ -8246,6 +9320,19 @@ function _buildVirtualRow(idx, cols, canEdit) {
 function _buildEditableCell(value, col, rowId, rowIdx) {
   const v = value ?? '';
   const id = `cell-${rowId}-${col.id}`;
+  
+  // Resolve cell formats
+  const fmtKey = `${rowId}:${col.id}`;
+  const fmt = _cellFormats.get(fmtKey) || {};
+  let style = '';
+  if (fmt.bold) style += 'font-weight:bold;';
+  if (fmt.italic) style += 'font-style:italic;';
+  if (fmt.underline) style += 'text-decoration:underline;';
+  if (fmt.strike) style += 'text-decoration:line-through;';
+  if (fmt.align) style += `text-align:${fmt.align};`;
+  if (fmt.size) style += `font-size:${fmt.size};`;
+  if (fmt.color) style += `color:${fmt.color};`;
+  if (fmt.bg) style += `background-color:${fmt.bg};`;
 
   switch (col.type) {
     case 'checkbox':
@@ -8258,7 +9345,7 @@ function _buildEditableCell(value, col, rowId, rowIdx) {
       const opts = _parseOptions(col.options);
       const normalized = String(v).trim();
       return `<select id="${id}" class="ss-input ss-select" data-row-id="${rowId}"
-          data-col-id="${col.id}" data-row-idx="${rowIdx}">
+          data-col-id="${col.id}" data-row-idx="${rowIdx}" style="${style}">
         <option value="">—</option>
         ${opts.map(o => `<option value="${o}" ${normalized === o ? 'selected' : ''}>${o}</option>`).join('')}
       </select>`;
@@ -8266,7 +9353,7 @@ function _buildEditableCell(value, col, rowId, rowIdx) {
 
     case 'status':
       return `<select id="${id}" class="ss-input ss-select ss-status-select" data-row-id="${rowId}"
-          data-col-id="${col.id}" data-row-idx="${rowIdx}">
+          data-col-id="${col.id}" data-row-idx="${rowIdx}" style="${style}">
         <option value="">—</option>
         ${['Todo','In Progress','Done'].map(s => `<option value="${s}" ${v === s ? 'selected' : ''}>${s}</option>`).join('')}
       </select>`;
@@ -8275,16 +9362,16 @@ function _buildEditableCell(value, col, rowId, rowIdx) {
     case 'price':
       return `<input type="number" id="${id}" class="ss-input" value="${v}"
         data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}"
-        step="${col.type === 'price' ? '0.01' : '1'}" min="0" />`;
+        step="${col.type === 'price' ? '0.01' : '1'}" min="0" style="${style}" />`;
 
     case 'date':
       return `<input type="date" id="${id}" class="ss-input" value="${v}"
-        data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}" />`;
+        data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}" style="${style}" />`;
 
     default:
       return `<input type="text" id="${id}" class="ss-input" value="${v}"
         data-row-id="${rowId}" data-col-id="${col.id}" data-row-idx="${rowIdx}"
-        placeholder="…" />`;
+        placeholder="…" style="${style}" />`;
   }
 }
 
@@ -8303,7 +9390,23 @@ function _buildReadonlyCell(value, col) {
       return `<span class="badge ${cls}">${v}</span>`;
     }
     case 'dropdown': return `<span class="badge badge-info">${v}</span>`;
-    default:         return `<span>${v}</span>`;
+    default: {
+      const isUrlOrPath = typeof v === 'string' && (
+        v.startsWith('data:') || 
+        v.startsWith('http://') || 
+        v.startsWith('https://') || 
+        v.startsWith('http') || 
+        v.startsWith('/') || 
+        v.startsWith('./') || 
+        v.startsWith('../') ||
+        v.match(/\.(jpeg|jpg|gif|png|svg|webp)($|\?)/i)
+      );
+      if (isUrlOrPath) {
+        const srcVal = v.startsWith('/api/') ? 'http://localhost:8000' + v : v;
+        return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" />`;
+      }
+      return `<span>${v}</span>`;
+    }
   }
 }
 
@@ -8312,6 +9415,42 @@ function _attachGridEvents(cols, canEdit, user) {
   const tbody = document.getElementById('ss-tbody');
   if (!tbody) return;
 
+  // Selection handler
+  tbody.addEventListener('mousedown', e => {
+    const td = e.target.closest('.ss-cell');
+    if (!td) return;
+
+    document.querySelectorAll('.ss-cell-selected').forEach(el => el.classList.remove('ss-cell-selected'));
+    td.classList.add('ss-cell-selected');
+
+    const rowId = td.dataset.row;
+    const colId = td.dataset.col;
+    const colName = cols.find(c => c.id === colId)?.name || '';
+
+    _selectedCell = { rowId, colId, el: td };
+
+    const selInfo = document.getElementById('ss-selected-info');
+    if (selInfo) {
+      selInfo.textContent = `Selected: ${colName} (Row ${parseInt(td.dataset.rowIdx) + 1})`;
+    }
+
+    // Sync selected cell value with the formula input bar
+    const inp = td.querySelector('.ss-input');
+    const formulaBar = document.getElementById('ss-formula-input');
+    if (formulaBar) {
+      if (inp) {
+        formulaBar.value = inp.type === 'checkbox' ? (inp.checked ? 'TRUE' : 'FALSE') : inp.value;
+      } else {
+        formulaBar.value = '';
+      }
+    }
+
+    // Update formatting toolbar states based on cell styling cache
+    const fmtKey = `${rowId}:${colId}`;
+    const fmt = _cellFormats.get(fmtKey) || {};
+    _updateFormatBtnStates(fmt);
+  });
+
   // Event delegation for all ss-input changes
   tbody.addEventListener('change', e => {
     const inp = e.target.closest('.ss-input');
@@ -8319,6 +9458,13 @@ function _attachGridEvents(cols, canEdit, user) {
     const rowId   = inp.dataset.rowId;
     const colId   = inp.dataset.colId;
     const rowIdx  = parseInt(inp.dataset.rowIdx);
+
+    if (rowId && colId) {
+      const newValue = inp.type === 'checkbox' ? inp.checked : inp.value;
+      if (newValue !== _cellPreValue) {
+        _pushToUndoStack({ rowId, colId, oldValue: _cellPreValue, newValue });
+      }
+    }
 
     if (inp.dataset.virtual === 'true' || !rowId) {
       // Click on virtual row → promote to real row
@@ -8333,6 +9479,12 @@ function _attachGridEvents(cols, canEdit, user) {
     if (!inp || !inp.dataset.rowId) return;
     const rowIdx = parseInt(inp.dataset.rowIdx);
     _scheduleSave(inp.dataset.rowId, rowIdx, cols, inp);
+
+    // Sync typing value to formula input bar dynamically
+    const formulaBar = document.getElementById('ss-formula-input');
+    if (formulaBar) {
+      formulaBar.value = inp.value;
+    }
   });
 
   // Virtual row — click activates it
@@ -8358,6 +9510,10 @@ function _attachGridEvents(cols, canEdit, user) {
   tbody.addEventListener('focusin', e => {
     const inp = e.target.closest('.ss-input');
     if (!inp) return;
+    
+    // Capture pre-edit value for undo stack
+    _cellPreValue = inp.type === 'checkbox' ? inp.checked : inp.value;
+
     const rowId = inp.dataset.rowId;
     if (!rowId || inp.dataset.virtual === 'true') return;
 
@@ -8432,14 +9588,20 @@ async function _saveNewVirtualRow(tr, cols, canEdit, user) {
     _updateRowCount();
     // Refresh grid event bindings
     _attachGridEvents(cols, canEdit, user);
+    _lastSavedTime = Date.now();
+    _updateSaveStatusText();
     showToast('Row saved', '', 'success');
   } else {
     showToast('Save failed', res?.error || 'Check field values', 'error');
+    _updateSaveStatusText('Save error');
   }
 }
 
 // ─── AUTO-SAVE ─────────────────────────────────────────────────────────────────
 function _scheduleSave(rowId, rowIdx, cols, triggerInput) {
+  _pendingSaveRows.add(rowId);
+  _updateSaveStatusText('Syncing...');
+
   const key = `${rowId}`;
   if (!_debounceSavers.has(key)) {
     _debounceSavers.set(key, debounce(async () => {
@@ -8456,7 +9618,11 @@ async function _saveRow(rowId, rowIdx, cols) {
 
   // Find the row's <tr> in DOM
   const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
-  if (!tr) { _savingRows.delete(rowId); return; }
+  if (!tr) { 
+    _savingRows.delete(rowId); 
+    _pendingSaveRows.delete(rowId);
+    return; 
+  }
 
   const rowData = _collectRowData(tr, cols);
 
@@ -8466,14 +9632,18 @@ async function _saveRow(rowId, rowIdx, cols) {
   });
 
   _savingRows.delete(rowId);
+  _pendingSaveRows.delete(rowId);
   _showSavingIndicator(false);
 
   if (res?.success && res.data) {
     // Optimistic update — update local array
     const localIdx = _rows.findIndex(r => r.id === rowId);
     if (localIdx !== -1) _rows[localIdx] = res.data;
+    _lastSavedTime = Date.now();
+    _updateSaveStatusText();
   } else {
     showToast('Save error', res?.error || 'Row could not be saved', 'error');
+    _updateSaveStatusText('Save error');
   }
 }
 
@@ -8525,6 +9695,76 @@ function _updateRowCount() {
   const el = document.getElementById('ss-row-count');
   if (el) el.textContent = `${_rows.length} rows`;
 }
+
+function _updateSaveStatusText(statusOverride = null) {
+  const indicator = document.getElementById('ss-save-status-indicator');
+  const footerStatus = document.getElementById('ss-footer-save-status');
+  
+  let text = '';
+  let badgeClass = 'badge-success';
+  
+  if (statusOverride) {
+    text = statusOverride;
+    if (statusOverride === 'Syncing...') {
+      badgeClass = 'badge-warning';
+    } else if (statusOverride.startsWith('Offline') || statusOverride.includes('error') || statusOverride.includes('failed')) {
+      badgeClass = 'badge-danger';
+    }
+  } else if (!window.navigator.onLine || _isOffline) {
+    text = 'Offline / reconnecting';
+    badgeClass = 'badge-danger';
+  } else {
+    const diffMs = Date.now() - _lastSavedTime;
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 5) {
+      text = 'Saved just now';
+    } else if (diffSec < 60) {
+      text = 'Saved a few seconds ago';
+    } else if (diffSec < 3600) {
+      text = 'Saved a few minutes ago';
+    } else {
+      text = 'Saved a few hours ago';
+    }
+  }
+  
+  if (indicator) {
+    indicator.textContent = text;
+    indicator.className = `badge ${badgeClass}`;
+  }
+  if (footerStatus) {
+    footerStatus.textContent = `Sync State: ${text}`;
+  }
+}
+
+async function _forceSaveAllPending() {
+  if (_pendingSaveRows.size === 0) {
+    showToast('Save', 'No pending changes to save', 'info');
+    _updateSaveStatusText();
+    return;
+  }
+  
+  _updateSaveStatusText('Syncing...');
+  _showSavingIndicator(true);
+  
+  const cols = _schema.columns || [];
+  const savePromises = Array.from(_pendingSaveRows).map(async (rowId) => {
+    const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
+    if (!tr) return;
+    const rowIdx = parseInt(tr.dataset.rowIdx);
+    await _saveRow(rowId, rowIdx, cols);
+  });
+  
+  await Promise.all(savePromises);
+  _pendingSaveRows.clear();
+  _showSavingIndicator(false);
+  _lastSavedTime = Date.now();
+  _updateSaveStatusText();
+  showToast('Save Complete', 'All changes saved to database', 'success');
+}
+
+// Register network status listeners
+window.addEventListener('online', () => { _isOffline = false; _updateSaveStatusText(); });
+window.addEventListener('offline', () => { _isOffline = true; _updateSaveStatusText(); });
 
 // ─── SAVE INDICATOR ───────────────────────────────────────────────────────────
 let _saveIndicatorTimer = null;
@@ -8766,9 +10006,12 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
         }
       }
     }
+    _lastSavedTime = Date.now();
+    _updateSaveStatusText();
     showToast('Row created', '', 'success');
   } else {
     showToast('Save failed', res?.error || 'Check field values', 'error');
+    _updateSaveStatusText('Save error');
   }
 }
 
@@ -9080,7 +10323,7 @@ function _parseOptions(rawOpts) {
 
 function _colTypeIcon(type) {
   const icons = {
-    text: `<span style="font-family:serif;font-weight:bold;font-size:12px">T</span>`, 
+    text: getSvgIcon('edit', 12), 
     number: '<span style="font-weight:bold;font-size:11px">#</span>', 
     price: '<span style="font-weight:bold;font-size:12px">$</span>', 
     date: getSvgIcon('clock', 12),
@@ -9089,7 +10332,1107 @@ function _colTypeIcon(type) {
     status: getSvgIcon('info', 12), 
     tags: getSvgIcon('palette', 12)
   };
-  return icons[type] || `<span style="font-family:serif;font-weight:bold;font-size:12px">T</span>`;
+  return icons[type] || getSvgIcon('edit', 12);
+}
+
+// ─── NEXWARE UPGRADE SPREADSHEET ENGINE HELPERS ───────────────────────────────
+
+function _getColLetter(idx) {
+  let letter = '';
+  while (idx >= 0) {
+    letter = String.fromCharCode((idx % 26) + 65) + letter;
+    idx = Math.floor(idx / 26) - 1;
+  }
+  return letter;
+}
+
+function _getAccessUsers(schema) {
+  const store = getStore();
+  const allUsers = store.users || [];
+  const roles = schema.roles || [];
+  
+  return allUsers.filter(u => {
+    if (['super_admin', 'admin'].includes(u.role)) return true;
+    if (roles.length === 0) return true;
+    return roles.includes(u.role);
+  });
+}
+
+function _renderAccessUsersStack(schema) {
+  const accessUsers = _getAccessUsers(schema);
+
+  if (accessUsers.length === 0) {
+    return `<span class="badge badge-muted">No Users</span>`;
+  }
+
+  const limit = 3;
+  const displayUsers = accessUsers.slice(0, limit);
+  const remaining = accessUsers.length - limit;
+  const currentUser = getCurrentUser() || {};
+  const isAdmin = ['super_admin', 'admin'].includes(currentUser.role);
+
+  const tooltipHtml = accessUsers.map(u => {
+    const permLevel = _getPermissionLevel(u.role);
+    const avatarImg = renderAvatar(u.avatar || u.name.slice(0, 2), 'width:100%;height:100%;object-fit:cover;border-radius:50%');
+    return `
+      <div class="tooltip-user-row">
+        <div style="width:20px;height:20px;border-radius:50%;overflow:hidden;background:var(--gradient-brand);flex-shrink:0;display:flex;align-items:center;justify-content:center">${avatarImg}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:11px;color:#111827">${u.name}</div>
+          <div style="font-size:9px;color:#6b7280">${capitalize(u.role)} · ${permLevel}</div>
+          ${isAdmin ? `<div style="font-family:var(--font-mono);font-size:8px;color:#9ca3af;margin-top:1px">ID: ${u.id}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const avatarItems = displayUsers.map(u => {
+    const avatarImg = renderAvatar(u.avatar || u.name.slice(0, 2), 'width:100%;height:100%;object-fit:cover;border-radius:50%');
+    return `<div class="avatar-stack-item">${avatarImg}</div>`;
+  }).join('');
+
+  return `
+    <div class="avatar-stack-container">
+      <div class="avatar-stack">
+        ${avatarItems}
+        ${remaining > 0 ? `<div class="avatar-stack-more">+${remaining}</div>` : ''}
+      </div>
+      <div class="avatar-stack-tooltip">
+        <div style="font-weight:700;font-size:10px;color:#9ca3af;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Access Users (${accessUsers.length})</div>
+        ${tooltipHtml}
+      </div>
+    </div>
+  `;
+}
+
+function _getPermissionLevel(role) {
+  const mapping = {
+    super_admin: 'Owner / Full Admin',
+    admin: 'Administrator',
+    manager: 'Write & Export',
+    staff: 'Write Only',
+    employee: 'Read Only'
+  };
+  return mapping[role] || 'Read Only';
+}
+
+function _initColumnResizer() {
+  let startX, startWidth, activeHandle, activeColId;
+  
+  document.querySelectorAll('.col-resize-handle').forEach(handle => {
+    handle.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      activeHandle = handle;
+      activeColId = handle.dataset.col;
+      const th = handle.closest('.ss-th');
+      startWidth = th.offsetWidth;
+      startX = e.clientX;
+      handle.classList.add('active');
+      
+      document.addEventListener('mousemove', _onMouseMove);
+      document.addEventListener('mouseup', _onMouseUp);
+    });
+  });
+  
+  function _onMouseMove(e) {
+    if (!activeHandle) return;
+    const diff = e.clientX - startX;
+    const newWidth = Math.max(80, startWidth + diff);
+    const th = activeHandle.closest('.ss-th');
+    th.style.width = newWidth + 'px';
+    _columnWidths[activeColId] = newWidth;
+    
+    document.querySelectorAll(`td[data-col="${activeColId}"]`).forEach(td => {
+      td.style.width = newWidth + 'px';
+    });
+  }
+  
+  function _onMouseUp() {
+    if (activeHandle) {
+      activeHandle.classList.remove('active');
+    }
+    activeHandle = null;
+    document.removeEventListener('mousemove', _onMouseMove);
+    document.removeEventListener('mouseup', _onMouseUp);
+  }
+}
+
+function _pushToUndoStack(change) {
+  _undoStack.push(change);
+  _redoStack = []; // Clear redo
+}
+
+function _undo() {
+  if (_undoStack.length === 0) {
+    showToast('Undo', 'Nothing to undo', 'info');
+    return;
+  }
+  const change = _undoStack.pop();
+  _redoStack.push(change);
+  _applyCellChange(change.rowId, change.colId, change.oldValue);
+  showToast('Undo', 'Action reverted', 'success');
+}
+
+function _redo() {
+  if (_redoStack.length === 0) {
+    showToast('Redo', 'Nothing to redo', 'info');
+    return;
+  }
+  const change = _redoStack.pop();
+  _undoStack.push(change);
+  _applyCellChange(change.rowId, change.colId, change.newValue);
+  showToast('Redo', 'Action re-applied', 'success');
+}
+
+async function _applyCellChange(rowId, colId, value) {
+  const cellInp = document.querySelector(`[data-row-id="${rowId}"][data-col-id="${colId}"]`);
+  if (cellInp) {
+    if (cellInp.type === 'checkbox') {
+      cellInp.checked = Boolean(value);
+    } else {
+      cellInp.value = value ?? '';
+    }
+    const cols = _schema.columns || [];
+    const localIdx = _rows.findIndex(r => r.id === rowId);
+    _scheduleSave(rowId, localIdx, cols, cellInp);
+  }
+}
+
+function _applyFormatting(formatType, formatValue) {
+  if (!_selectedCell) {
+    showToast('Format', 'Please select a cell first', 'warning');
+    return;
+  }
+  const { rowId, colId, el } = _selectedCell;
+  const key = `${rowId}:${colId}`;
+  if (!_cellFormats.has(key)) {
+    _cellFormats.set(key, {});
+  }
+  const fmt = _cellFormats.get(key);
+  const inp = el.querySelector('.ss-input');
+  if (!inp) return;
+
+  if (formatType === 'bold') {
+    fmt.bold = !fmt.bold;
+    inp.style.fontWeight = fmt.bold ? 'bold' : 'normal';
+    document.getElementById('fmt-bold')?.classList.toggle('active', fmt.bold);
+  } else if (formatType === 'italic') {
+    fmt.italic = !fmt.italic;
+    inp.style.fontStyle = fmt.italic ? 'italic' : 'normal';
+    document.getElementById('fmt-italic')?.classList.toggle('active', fmt.italic);
+  } else if (formatType === 'underline') {
+    fmt.underline = !fmt.underline;
+    inp.style.textDecoration = fmt.underline ? 'underline' : 'none';
+    document.getElementById('fmt-underline')?.classList.toggle('active', fmt.underline);
+  } else if (formatType === 'strike') {
+    fmt.strike = !fmt.strike;
+    inp.style.textDecoration = fmt.strike ? 'line-through' : 'none';
+    document.getElementById('fmt-strike')?.classList.toggle('active', fmt.strike);
+  } else if (formatType === 'align') {
+    fmt.align = formatValue;
+    inp.style.textAlign = formatValue;
+  } else if (formatType === 'size') {
+    fmt.size = formatValue;
+    inp.style.fontSize = formatValue;
+  } else if (formatType === 'currency') {
+    const num = parseFloat(inp.value);
+    if (!isNaN(num)) {
+      inp.value = num.toFixed(2);
+      const localIdx = _rows.findIndex(r => r.id === rowId);
+      _scheduleSave(rowId, localIdx, _schema.columns, inp);
+    }
+  } else if (formatType === 'percent') {
+    const num = parseFloat(inp.value);
+    if (!isNaN(num)) {
+      inp.value = num + '%';
+    }
+  } else if (formatType === 'dec-inc') {
+    const num = parseFloat(inp.value);
+    if (!isNaN(num)) {
+      inp.value = (num * 10).toFixed(2);
+    }
+  } else if (formatType === 'dec-dec') {
+    const num = parseFloat(inp.value);
+    if (!isNaN(num)) {
+      inp.value = (num / 10).toFixed(2);
+    }
+  } else if (formatType === 'color') {
+    fmt.color = formatValue;
+    inp.style.color = formatValue;
+  } else if (formatType === 'bg') {
+    fmt.bg = formatValue;
+    inp.style.backgroundColor = formatValue;
+  }
+}
+
+function _updateFormatBtnStates(fmt) {
+  document.getElementById('fmt-bold')?.classList.toggle('active', !!fmt.bold);
+  document.getElementById('fmt-italic')?.classList.toggle('active', !!fmt.italic);
+  document.getElementById('fmt-underline')?.classList.toggle('active', !!fmt.underline);
+  document.getElementById('fmt-strike')?.classList.toggle('active', !!fmt.strike);
+  
+  const alignEl = document.getElementById('fmt-align');
+  if (alignEl && fmt.align) alignEl.value = fmt.align;
+  
+  const sizeEl = document.getElementById('fmt-size');
+  if (sizeEl && fmt.size) sizeEl.value = fmt.size;
+
+  const colorEl = document.getElementById('fmt-color');
+  if (colorEl) colorEl.value = fmt.color || '#111827';
+
+  const bgEl = document.getElementById('fmt-bg');
+  if (bgEl) bgEl.value = fmt.bg || '#ffffff';
+}
+
+function _sortRows(direction) {
+  if (!_selectedCell) {
+    showToast('Sort', 'Please select a cell in the column to sort', 'warning');
+    return;
+  }
+  const colId = _selectedCell.colId;
+  _rows.sort((a, b) => {
+    let valA = a[colId] ?? '';
+    let valB = b[colId] ?? '';
+    if (typeof valA === 'string') valA = valA.toLowerCase();
+    if (typeof valB === 'string') valB = valB.toLowerCase();
+    
+    if (valA < valB) return direction === 'asc' ? -1 : 1;
+    if (valA > valB) return direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+  
+  const tbody = document.getElementById('ss-tbody');
+  const cols = _schema.columns || [];
+  const user = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  if (tbody) {
+    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
+    _attachGridEvents(cols, canEdit, user);
+  }
+  showToast('Sort Complete', `Rows sorted by column`, 'success');
+}
+
+async function _cloneTable() {
+  const newName = prompt('Enter a name for the copied table:', `Copy of ${_schema.name}`);
+  if (!newName) return;
+  
+  _showSavingIndicator(true);
+  _updateSaveStatusText('Syncing...');
+  
+  const schemaPayload = {
+    name: newName,
+    category: _schema.category,
+    description: _schema.description || '',
+    warehouseId: _schema.warehouseId || null,
+    columns: _schema.columns || [],
+    roles: _schema.roles || [],
+    headerColor: _schema.headerColor || '#6366f1'
+  };
+  
+  const createRes = await apiFetch('/dynamic-tables/', {
+    method: 'POST',
+    body: JSON.stringify(schemaPayload)
+  });
+  
+  if (!createRes?.success || !createRes.data) {
+    _showSavingIndicator(false);
+    _updateSaveStatusText();
+    showToast('Clone Failed', createRes?.error || 'Could not create new schema', 'error');
+    return;
+  }
+  
+  const newTable = createRes.data;
+  
+  const rowsToCopy = _rows.map(r => {
+    const cleanRow = { ...r };
+    delete cleanRow.id;
+    delete cleanRow._id;
+    delete cleanRow.createdAt;
+    delete cleanRow.updatedAt;
+    return cleanRow;
+  });
+  
+  if (rowsToCopy.length > 0) {
+    const importRes = await apiFetch(`/dynamic-tables/${newTable.id}/rows/import?page=1`, {
+      method: 'POST',
+      body: JSON.stringify(rowsToCopy)
+    });
+    
+    if (!importRes?.success) {
+      showToast('Clone Warning', 'Schema cloned but rows could not be imported', 'warning');
+    }
+  }
+  
+  _showSavingIndicator(false);
+  _lastSavedTime = Date.now();
+  _updateSaveStatusText();
+  showToast('Table Cloned Successfully', newName, 'success');
+  
+  _activeTableId = newTable.id;
+  _activePage = 1;
+  await renderTables();
+}
+
+function _shareTableLink() {
+  const url = `${window.location.origin}${window.location.pathname}#/tables?id=${_activeTableId}`;
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Link Shared', 'Direct link to this table copied to clipboard', 'success');
+  }).catch(() => {
+    const inp = document.createElement('input');
+    inp.value = url;
+    document.body.appendChild(inp);
+    inp.select();
+    document.execCommand('copy');
+    inp.remove();
+    showToast('Link Shared', 'Direct link to this table copied to clipboard', 'success');
+  });
+}
+
+function _showFindReplaceModal() {
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Find Text</label>
+      <input type="text" id="find-text" class="form-control" placeholder="Search cell text..." style="margin:0" />
+    </div>
+    <div class="form-group" style="margin-top:12px">
+      <label class="form-label">Replace With</label>
+      <input type="text" id="replace-text" class="form-control" placeholder="Replacement text..." style="margin:0" />
+    </div>
+    <div class="form-group" style="margin-top:12px">
+      <label class="checkbox-group" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="find-match-case" />
+        <span style="font-size:13px">Match case</span>
+      </label>
+    </div>
+  `;
+  
+  const footer = `
+    <button class="btn btn-secondary" id="fr-cancel">Cancel</button>
+    <button class="btn btn-primary" id="fr-submit">Replace All</button>
+  `;
+  
+  const modal = createModal({ title: 'Find and Replace', body, footer });
+  modal.el.querySelector('#fr-cancel').addEventListener('click', modal.close);
+  modal.el.querySelector('#fr-submit').addEventListener('click', async () => {
+    const findText = document.getElementById('find-text').value;
+    const replaceText = document.getElementById('replace-text').value;
+    const matchCase = document.getElementById('find-match-case').checked;
+    
+    if (findText === '') {
+      showToast('Validation', 'Please enter text to find', 'warning');
+      return;
+    }
+    
+    modal.close();
+    
+    let replaceCount = 0;
+    const cols = _schema.columns || [];
+    
+    _showSavingIndicator(true);
+    _updateSaveStatusText('Syncing...');
+    
+    for (let rIdx = 0; rIdx < _rows.length; rIdx++) {
+      const row = _rows[rIdx];
+      let rowChanged = false;
+      
+      cols.forEach(col => {
+        if (col.id === 'id' || col.id === '_id') return;
+        
+        const val = row[col.id];
+        if (val === null || val === undefined) return;
+        
+        const strVal = String(val);
+        let match = false;
+        if (matchCase) {
+          match = strVal.includes(findText);
+        } else {
+          match = strVal.toLowerCase().includes(findText.toLowerCase());
+        }
+        
+        if (match) {
+          let newVal;
+          if (matchCase) {
+            newVal = strVal.replaceAll(findText, replaceText);
+          } else {
+            const regex = new RegExp(findText.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
+            newVal = strVal.replace(regex, replaceText);
+          }
+          
+          if (col.type === 'number' || col.type === 'price') {
+            const num = parseFloat(newVal);
+            newVal = isNaN(num) ? null : num;
+          } else if (col.type === 'checkbox') {
+            newVal = newVal.toLowerCase() === 'true' || newVal === '1';
+          }
+          
+          row[col.id] = newVal;
+          rowChanged = true;
+          replaceCount++;
+          
+          const cellInp = document.querySelector(`[data-row-id="${row.id}"][data-col-id="${col.id}"]`);
+          if (cellInp) {
+            if (cellInp.type === 'checkbox') {
+              cellInp.checked = Boolean(newVal);
+            } else {
+              cellInp.value = newVal ?? '';
+            }
+          }
+        }
+      });
+      
+      if (rowChanged) {
+        await _saveRow(row.id, rIdx, cols);
+      }
+    }
+    
+    _showSavingIndicator(false);
+    _lastSavedTime = Date.now();
+    _updateSaveStatusText();
+    
+    showToast('Replace Complete', `Replaced ${replaceCount} occurrences across all cells`, 'success');
+  });
+}
+
+function _showBarcodeScanModal() {
+  const store = getStore();
+  const allBarcodes = [];
+  store.tables?.forEach(t => { if (t.barcode) allBarcodes.push({ type: 'Table', name: t.name, code: t.barcode }); });
+  store.warehouses?.forEach(w => { if (w.barcode) allBarcodes.push({ type: 'Warehouse', name: w.name, code: w.barcode }); });
+  store.users?.forEach(u => { if (u.barcode) allBarcodes.push({ type: 'Employee', name: u.name, code: u.barcode }); });
+  store.items?.forEach(i => { if (i.barcode) allBarcodes.push({ type: 'Inventory Item', name: i.name, code: i.barcode }); });
+
+  const body = document.createElement('div');
+  body.className = 'scanner-viewfinder-modal';
+  body.innerHTML = `
+    <div class="scanner-modal-tabs" style="display:flex;gap:8px;border-bottom:1px solid var(--border-subtle);margin-bottom:12px;padding-bottom:8px;width:100%">
+      <button class="btn btn-secondary btn-sm scanner-tab-btn active" data-tab="camera" style="flex:1">Webcam Camera</button>
+      <button class="btn btn-secondary btn-sm scanner-tab-btn" data-tab="usb" style="flex:1">USB Intercept</button>
+      <button class="btn btn-secondary btn-sm scanner-tab-btn" data-tab="manual" style="flex:1">Manual Fallback</button>
+    </div>
+
+    <!-- Webcam Tab -->
+    <div class="scanner-tab-content" id="tab-camera" style="width:100%; display:flex; flex-direction:column; align-items:center; gap:10px">
+      <div class="form-group" style="width:100%">
+        <label class="form-label" style="font-size:12px">Select Camera Device</label>
+        <select id="scanner-camera-select" class="form-control" style="margin:0"></select>
+      </div>
+      <div class="scanner-video-feed">
+        <video id="scanner-video" autoplay playsinline></video>
+        <div class="scanner-overlay-box">
+          <div class="scanner-laser-line"></div>
+        </div>
+      </div>
+      <div class="form-group" style="width:100%; margin-top:8px">
+        <label class="form-label" style="font-size:12px">Simulated Snap-Capture Target</label>
+        <select id="sim-barcode-select" class="form-control" style="margin:0">
+          ${allBarcodes.map(b => `<option value="${b.code}">[${b.type}] ${b.name} (${b.code})</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-snap-simulate" style="width:100%">Simulate Scan / Snap Capture</button>
+    </div>
+
+    <!-- USB Tab -->
+    <div class="scanner-tab-content" id="tab-usb" style="width:100%; display:none; flex-direction:column; gap:12px">
+      <div class="form-group">
+        <label class="form-label">USB Hardware Scanner Catcher</label>
+        <input type="text" id="usb-scan-catcher" class="form-control" placeholder="Click here to focus scanner..." style="text-align:center;font-size:16px;font-family:var(--font-mono);border:2px solid var(--brand-500);margin:0" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.4">Ensure this field is focused. When the scanner sweeps a barcode, hardware keystrokes (latency &lt; 30ms) will be intercepted automatically.</div>
+      </div>
+    </div>
+
+    <!-- Manual Tab -->
+    <div class="scanner-tab-content" id="tab-manual" style="width:100%; display:none; flex-direction:column; gap:12px">
+      <div class="form-group">
+        <label class="form-label">Manual Barcode Input</label>
+        <input type="text" id="manual-scan-input" class="form-control" placeholder="e.g. ITM-2026-0001, WH-2026-0002" style="font-family:var(--font-mono);margin:0" />
+      </div>
+      <button class="btn btn-primary" id="btn-manual-submit" style="width:100%">Locate Entity</button>
+    </div>
+  `;
+
+  const footer = `<button class="btn btn-secondary" id="scan-modal-close" style="width:100%">Close</button>`;
+
+  let activeStream = null;
+
+  const modal = createModal({ 
+    title: 'Dynamic Barcode Scan Engine', 
+    body, 
+    footer,
+    onClose: () => {
+      if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+        activeStream = null;
+      }
+    }
+  });
+
+  // Handle Close Button
+  modal.el.querySelector('#scan-modal-close').addEventListener('click', modal.close);
+
+  // Tab switching logic
+  const tabBtns = modal.el.querySelectorAll('.scanner-tab-btn');
+  const tabContents = modal.el.querySelectorAll('.scanner-tab-content');
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const targetTab = btn.dataset.tab;
+      tabContents.forEach(c => {
+        c.style.display = c.id === `tab-${targetTab}` ? 'flex' : 'none';
+      });
+      if (targetTab === 'usb') {
+        setTimeout(() => modal.el.querySelector('#usb-scan-catcher')?.focus(), 100);
+      }
+    });
+  });
+
+  // Webcam stream logic
+  const cameraSelect = modal.el.querySelector('#scanner-camera-select');
+  const videoEl = modal.el.querySelector('#scanner-video');
+
+  async function startCamera(deviceId = null) {
+    if (activeStream) {
+      activeStream.getTracks().forEach(track => track.stop());
+    }
+    try {
+      const constraints = {
+        video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' }
+      };
+      activeStream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (videoEl) videoEl.srcObject = activeStream;
+    } catch (err) {
+      console.warn('Camera stream error:', err);
+    }
+  }
+
+  // Enumerate cameras
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    navigator.mediaDevices.enumerateDevices()
+      .then(devices => {
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        if (cameraSelect) {
+          cameraSelect.innerHTML = videoDevices.map(d => `<option value="${d.deviceId}">${d.label || 'Camera ' + (cameraSelect.options.length + 1)}</option>`).join('');
+          cameraSelect.addEventListener('change', () => {
+            startCamera(cameraSelect.value);
+          });
+        }
+        return startCamera(videoDevices[0]?.deviceId);
+      })
+      .catch(err => console.warn('Could not enumerate cameras:', err));
+  } else {
+    startCamera();
+  }
+
+  // Simulated capture logic
+  modal.el.querySelector('#btn-snap-simulate').addEventListener('click', () => {
+    const code = modal.el.querySelector('#sim-barcode-select').value;
+    if (code) {
+      _handleScannedBarcode(code, modal);
+    }
+  });
+
+  // USB Scanner interception logic
+  let lastKeyTime = Date.now();
+  let scanBuffer = '';
+  const usbInput = modal.el.querySelector('#usb-scan-catcher');
+  if (usbInput) {
+    usbInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const finalCode = scanBuffer.trim();
+        scanBuffer = '';
+        usbInput.value = '';
+        if (finalCode) {
+          _handleScannedBarcode(finalCode, modal);
+        }
+        e.preventDefault();
+        return;
+      }
+      
+      const now = Date.now();
+      const diff = now - lastKeyTime;
+      lastKeyTime = now;
+      
+      // Keystroke latency < 30ms identifies barcode scanner typing
+      if (diff < 30 || scanBuffer.length === 0) {
+        if (e.key.length === 1) {
+          scanBuffer += e.key;
+          usbInput.value = scanBuffer;
+        }
+      } else {
+        scanBuffer = e.key.length === 1 ? e.key : '';
+        usbInput.value = scanBuffer;
+      }
+    });
+  }
+
+  // Manual fallback logic
+  modal.el.querySelector('#btn-manual-submit').addEventListener('click', () => {
+    const code = modal.el.querySelector('#manual-scan-input').value.trim();
+    if (code) {
+      _handleScannedBarcode(code, modal);
+    } else {
+      showToast('Validation', 'Please enter a barcode', 'warning');
+    }
+  });
+}
+
+async function _handleScannedBarcode(code, modal) {
+  const codeClean = code.trim();
+  if (!codeClean) return;
+  modal.close();
+  
+  const store = getStore();
+  
+  // 1. Check Tables
+  const schema = store.tables?.find(t => t.barcode === codeClean || t.enterprise_id === codeClean || t.id === codeClean);
+  if (schema) {
+    _activeTableId = schema.id;
+    _activePage = 1;
+    renderTables();
+    showToast('Located Table', schema.name, 'success');
+    return;
+  }
+  
+  // 2. Check Warehouses
+  const wh = store.warehouses?.find(w => w.barcode === codeClean || w.id === codeClean);
+  if (wh) {
+    location.hash = '#/warehouses';
+    showToast('Located Warehouse', wh.name, 'success');
+    return;
+  }
+
+  // 3. Check Workforce Users
+  const u = store.users?.find(usr => usr.barcode === codeClean || usr.id === codeClean);
+  if (u) {
+    location.hash = '#/workforce';
+    showToast('Located employee', u.name, 'success');
+    return;
+  }
+
+  // 4. Check Inventory Items (fix redirect to #/items)
+  const item = store.items?.find(i => i.barcode === codeClean || (i.barcodes && i.barcodes.includes(codeClean)) || i.sku === codeClean || i.id === codeClean);
+  if (item) {
+    location.hash = '#/items';
+    showToast('Located Item', item.name, 'success');
+    return;
+  }
+
+  // 5. Fallback API lookup
+  try {
+    const res = await apiFetch(`/registry/lookup?code=${encodeURIComponent(codeClean)}`);
+    if (res?.success && res.data) {
+      const type = res.data.entity_type;
+      const entityId = res.data.entity_id;
+      const name = res.data.snapshot?.name || res.data.snapshot?.billNo || entityId;
+      if (type === 'inventory' || type === 'item') {
+        location.hash = '#/items';
+        showToast('Located Item', name, 'success');
+        return;
+      } else if (type === 'warehouse') {
+        location.hash = '#/warehouses';
+        showToast('Located Warehouse', name, 'success');
+        return;
+      } else if (type === 'employee' || type === 'user') {
+        location.hash = '#/workforce';
+        showToast('Located employee', name, 'success');
+        return;
+      } else if (type === 'invoice') {
+        location.hash = '#/billing';
+        showToast('Located Invoice', name, 'success');
+        return;
+      } else if (type === 'customer') {
+        location.hash = '#/customers';
+        showToast('Located Customer', name, 'success');
+        return;
+      } else if (type === 'table_registry') {
+        location.hash = '#/tables';
+        showToast('Located Table', name, 'success');
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('Scanned barcode lookup failed:', err);
+  }
+  
+  // If we are currently editing a cell, let's write it to the cell!
+  if (_selectedCell) {
+    _applyCellChange(_selectedCell.rowId, _selectedCell.colId, codeClean);
+    showToast('Barcode Written', `Wrote "${codeClean}" to cell`, 'success');
+    return;
+  }
+  
+  showToast('Not Found', `Barcode '${codeClean}' not registered.`, 'warning');
+}
+
+async function _reloadRegistryRows() {
+  const tbody = document.getElementById('ss-tbody');
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="100" style="text-align:center;padding:48px;color:var(--text-muted)">
+          <span class="ss-save-spinner" style="display:inline-block;margin-right:8px">⟳</span> Refreshing Ledger…
+        </td>
+      </tr>
+    `;
+  }
+  
+  const schemaRes = await apiFetch(`/dynamic-tables/${_activeTableId}`);
+  if (schemaRes?.success && schemaRes.data) {
+    _schema = schemaRes.data;
+  }
+  
+  let url = `/dynamic-tables/${_activeTableId}/rows?page=${_activePage}`;
+  if (_registrySearchQ) url += `&search=${encodeURIComponent(_registrySearchQ)}`;
+  if (_registryTypeFilter) url += `&entityType=${encodeURIComponent(_registryTypeFilter)}`;
+  if (_registryWhFilter) url += `&warehouseId=${encodeURIComponent(_registryWhFilter)}`;
+
+  const rowsRes = await apiFetch(url);
+  _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
+  _updateRowCount();
+  _updatePageMeta();
+
+  const cols = _schema.columns || [];
+  const user = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && _activeTableId !== 'central_registry';
+  if (tbody) {
+    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
+    _attachGridEvents(cols, canEdit, user);
+  }
+  
+  _renderPageTabs(canEdit);
+  _updateFooterButtons();
+}
+
+function _updateFooterButtons() {
+  const user = getCurrentUser();
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
+  const container = document.getElementById('ss-footer-buttons');
+  if (!container) return;
+
+  container.innerHTML = canEdit ? `
+    <button class="btn btn-secondary btn-sm" id="ss-duplicate-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">Duplicate Sheet</button>
+    <button class="btn btn-secondary btn-sm" id="ss-add-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">+ New Page</button>
+    ${_schema.pages?.length > 1 ? `
+      <button class="btn btn-danger btn-sm" id="ss-delete-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600;background:var(--accent-rose);border-color:var(--accent-rose);color:white">Delete Page</button>
+    ` : ''}
+  ` : '';
+
+  _bindFooterButtonsEvents();
+}
+
+function _bindFooterButtonsEvents() {
+  const user = getCurrentUser();
+  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && _activeTableId !== 'central_registry';
+  if (!canEdit) return;
+
+  document.getElementById('ss-duplicate-sheet-btn')?.addEventListener('click', async () => {
+    const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{}];
+    const storeSub = localStorage.getItem('wareops_store');
+    let plan = 'enterprise';
+    try {
+      if (storeSub) {
+        const parsed = JSON.parse(storeSub);
+        if (parsed.subscription?.plan) plan = parsed.subscription.plan;
+      }
+    } catch (e) {}
+
+    const maxPages = plan === 'starter' ? 2 : 50;
+    if (pages.length >= maxPages) {
+      showToast('Plan Limit Exceeded', `Starter plan tables are limited to ${maxPages} pages. Please upgrade your subscription.`, 'warning');
+      return;
+    }
+
+    _showSavingIndicator(true);
+    _updateSaveStatusText('Syncing...');
+    
+    const res = await apiFetch(`/dynamic-tables/${_activeTableId}/pages`, { method: 'POST' });
+    if (!res?.success || !res.data) {
+      _showSavingIndicator(false);
+      _updateSaveStatusText();
+      showToast('Error', res?.error || 'Could not create new page', 'error');
+      return;
+    }
+    
+    const newSchema = res.data;
+    const newPageNum = newSchema.pages.length;
+    
+    const rowsToDuplicate = _rows.map(r => {
+      const clean = { ...r };
+      delete clean.id;
+      delete clean._id;
+      delete clean.createdAt;
+      delete clean.updatedAt;
+      return clean;
+    });
+    
+    if (rowsToDuplicate.length > 0) {
+      const importRes = await apiFetch(`/dynamic-tables/${_activeTableId}/rows/import?page=${newPageNum}`, {
+        method: 'POST',
+        body: JSON.stringify(rowsToDuplicate)
+      });
+      if (!importRes?.success) {
+        showToast('Duplicate Sheet', 'Page created but could not clone rows', 'warning');
+      }
+    }
+    
+    _schema = newSchema;
+    _showSavingIndicator(false);
+    _lastSavedTime = Date.now();
+    _updateSaveStatusText();
+    showToast('Page Duplicated', `Page ${newPageNum} created as a copy of Page ${_activePage}`, 'success');
+    
+    _activePage = newPageNum;
+    await _switchPage(newPageNum);
+  });
+
+  document.getElementById('ss-add-sheet-btn')?.addEventListener('click', async () => {
+    const pages = _schema.pages && _schema.pages.length > 0 ? _schema.pages : [{}];
+    const storeSub = localStorage.getItem('wareops_store');
+    let plan = 'enterprise';
+    try {
+      if (storeSub) {
+        const parsed = JSON.parse(storeSub);
+        if (parsed.subscription?.plan) plan = parsed.subscription.plan;
+      }
+    } catch (e) {}
+
+    const maxPages = plan === 'starter' ? 2 : 50;
+    if (pages.length >= maxPages) {
+      showToast('Plan Limit Exceeded', `Starter plan tables are limited to ${maxPages} pages. Please upgrade your subscription.`, 'warning');
+      return;
+    }
+
+    _showSavingIndicator(true);
+    _updateSaveStatusText('Creating Page...');
+    const res = await apiFetch(`/dynamic-tables/${_activeTableId}/pages`, { method: 'POST' });
+    _showSavingIndicator(false);
+    _updateSaveStatusText();
+
+    if (res?.success && res.data) {
+      _schema = res.data;
+      showToast('Page Created', `Page ${_schema.pages.length} added to table`, 'success');
+      _activePage = _schema.pages.length;
+      await _switchPage(_schema.pages.length);
+    } else {
+      showToast('Error', res?.error || 'Could not create new page', 'error');
+    }
+  });
+
+  document.getElementById('ss-delete-sheet-btn')?.addEventListener('click', async () => {
+    const ok = await confirm(`Are you sure you want to delete Page ${_activePage} and purge all its rows? Subsequent pages will be shifted down contiguously.`, 'Delete Page');
+    if (!ok) return;
+
+    _showSavingIndicator(true);
+    _updateSaveStatusText('Deleting Page...');
+    const res = await apiFetch(`/dynamic-tables/${_activeTableId}/pages/${_activePage}`, { method: 'DELETE' });
+    _showSavingIndicator(false);
+    _updateSaveStatusText();
+
+    if (res?.success && res.data) {
+      _schema = res.data;
+      showToast('Page Deleted', `Page ${_activePage} deleted successfully.`, 'success');
+      const nextPage = _activePage > 1 ? _activePage - 1 : 1;
+      _activePage = nextPage;
+      await _switchPage(nextPage);
+    } else {
+      showToast('Error', res?.error || 'Could not delete page', 'error');
+    }
+  });
+}
+
+async function _showBarcodePrintSheet() {
+  let query = `/registry/?page=1&limit=60`;
+  if (_registryTypeFilter) query += `&entityType=${_registryTypeFilter}`;
+  if (_registryWhFilter) query += `&warehouseId=${_registryWhFilter}`;
+  if (_registrySearchQ) query += `&search=${encodeURIComponent(_registrySearchQ)}`;
+
+  const res = await apiFetch(query);
+  if (!res?.success || !res.data) {
+    showToast('Failed to load barcodes', res?.error || 'Unknown error', 'error');
+    return;
+  }
+
+  const { entries } = res.data;
+  if (!entries || entries.length === 0) {
+    showToast('No Barcodes', 'No matching items found to print barcodes.', 'warning');
+    return;
+  }
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    showToast('Blocker active', 'Please allow popups to render the barcode print sheet.', 'warning');
+    return;
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>NexWare ERP — Printable Barcode Sheet</title>
+        <style>
+          body {
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #111827;
+            background: #ffffff;
+            margin: 0;
+            padding: 20px;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+          }
+          .card {
+            border: 1px dashed #9ca3af;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            page-break-inside: avoid;
+          }
+          .title {
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            color: #374151;
+          }
+          .barcode {
+            max-width: 100%;
+            height: auto;
+            margin: 8px 0;
+          }
+          .footer-info {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 6px;
+          }
+          @media print {
+            body { padding: 0; }
+            .header { display: none; }
+            .grid { gap: 15px; }
+            .card { border-style: solid; border-color: #d1d5db; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>NexWare ERP Scan Sheet</h1>
+          <p>Scan-ready laser barcode tags sheet. Print onto label paper or sheets.</p>
+          <button onclick="window.print()" style="padding: 10px 20px; font-size:14px; font-weight:bold; color:white; background:#6366f1; border:none; border-radius:6px; cursor:pointer">🖨️ Print Label Sheet</button>
+        </div>
+        <div class="grid">
+          ${entries.map(e => {
+            const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${e.entity_id}`;
+            const snap = e.metadata_snapshot || {};
+            const name = snap.name || snap.customer || e.entity_type.toUpperCase();
+            return `
+              <div class="card">
+                <div class="title">${name}</div>
+                <img class="barcode" src="${barcodeUrl}" />
+                <div class="footer-info">Type: ${e.entity_type} | Scope: ${e.warehouse_id}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
+async function _ensureSystemTables() {
+  const res = await apiFetch('/dynamic-tables/');
+  if (!res?.success || !Array.isArray(res.data)) return;
+  const schemas = res.data;
+  
+  const warehouseExists = schemas.some(s => s.name === 'Warehouse Table' || s.name === 'Warehouse');
+  const workforceExists = schemas.some(s => s.name === 'Workforce Table' || s.name === 'Workforce');
+  const inventoryExists = schemas.some(s => s.name === 'Inventory Table' || s.name === 'Inventory');
+  
+  const user = getCurrentUser();
+  if (!user || !['super_admin', 'admin'].includes(user.role)) return;
+
+  if (!warehouseExists) {
+    await apiFetch('/dynamic-tables/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Warehouse Table',
+        category: 'Operations',
+        description: 'System-generated Warehouses Directory',
+        columns: [
+          { id: 'c_id', name: 'ID', type: 'text', required: true },
+          { id: 'c_barcode', name: 'Barcode', type: 'text', required: true },
+          { id: 'c_name', name: 'Name', type: 'text', required: true },
+          { id: 'c_logo', name: 'Logo', type: 'text', required: false },
+          { id: 'c_location', name: 'Location', type: 'text', required: false },
+          { id: 'c_created', name: 'Created Date', type: 'date', required: false },
+          { id: 'c_owner', name: 'Owner', type: 'text', required: false },
+          { id: 'c_users', name: 'Access Users', type: 'text', required: false }
+        ],
+        roles: [],
+        headerColor: '#06b6d4'
+      })
+    });
+  }
+
+  if (!workforceExists) {
+    await apiFetch('/dynamic-tables/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Workforce Table',
+        category: 'HR',
+        description: 'System-generated Employee Roster',
+        columns: [
+          { id: 'c_emp_id', name: 'Employee ID', type: 'text', required: true },
+          { id: 'c_barcode', name: 'Barcode', type: 'text', required: true },
+          { id: 'c_profile', name: 'Profile', type: 'text', required: false },
+          { id: 'c_role', name: 'Role', type: 'text', required: true },
+          { id: 'c_warehouse', name: 'Warehouse', type: 'text', required: false },
+          { id: 'c_created', name: 'Created Date', type: 'date', required: false }
+        ],
+        roles: [],
+        headerColor: '#10b981'
+      })
+    });
+  }
+
+  if (!inventoryExists) {
+    await apiFetch('/dynamic-tables/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Inventory Table',
+        category: 'Inventory',
+        description: 'System-generated Stock Catalog',
+        columns: [
+          { id: 'c_item_id', name: 'Item ID', type: 'text', required: true },
+          { id: 'c_barcode', name: 'Barcode', type: 'text', required: true },
+          { id: 'c_image', name: 'Image', type: 'text', required: false },
+          { id: 'c_sku', name: 'SKU', type: 'text', required: true },
+          { id: 'c_stock', name: 'Stock', type: 'number', required: false },
+          { id: 'c_category', name: 'Category', type: 'text', required: false },
+          { id: 'c_warehouse', name: 'Warehouse', type: 'text', required: false }
+        ],
+        roles: [],
+        headerColor: '#f59e0b'
+      })
+    });
+  }
 }
 
 // ===== pages/billing.js =====
@@ -9979,9 +12322,7 @@ function buildInvoiceHTML(bill, wh, mode) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid var(--border-default)">
       <div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="width:40px;height:40px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border-default);display:flex;align-items:center;justify-content:center;color:var(--text-primary);overflow:hidden;flex-shrink:0;">
-            ${renderWarehouseLogo(wh?.logo, 32)}
-          </div>
+          ${renderWarehouseLogo(wh?.logo, 40)}
           <div>
             <div style="font-size:22px;font-weight:800;color:var(--text-primary);line-height:1">${wh?.businessName || wh?.name || 'NexWare ERP'}</div>
             <div style="font-size:11px;font-weight:700;color:var(--text-brand);letter-spacing:1px;margin-top:4px">TAX ID/GSTIN: ${sellerTax}</div>
@@ -10638,10 +12979,10 @@ function updateWhBreakdown(bills, whs, totalRev) {
     const pct = totalRev>0 ? Math.round(rev/totalRev*100) : 0;
     return `
       <div class="revenue-bar" style="margin-bottom:12px">
-        <div class="revenue-bar-label">
-          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;overflow:hidden;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}vertical-align:middle;margin-right:6px;">${renderWarehouseLogo(wh.logo, 20)}</span>${wh.name}
-          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
-        </div>
+         <div class="revenue-bar-label" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+           ${renderWarehouseLogo(wh.logo, 20)}<span>${wh.name}</span>
+           <span style="font-size:11px;color:var(--text-muted)">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
+         </div>
         <div class="revenue-bar-track"><div class="revenue-bar-fill" style="width:${pct}%"></div></div>
         <div class="revenue-bar-val">${formatCurrency(rev)} <span style="color:var(--text-muted);font-size:10px">${pct}%</span></div>
       </div>`;
@@ -10658,33 +12999,27 @@ function updateStockTable(items, taxCfg) {
       <table>
         <thead><tr>
           <th>Item</th><th>Category</th><th>Price</th><th>Stock</th>
-          <th>Value</th><th>Tax</th><th>Status</th>
+          <th>Threshold</th><th>Value</th><th>Status</th><th>Barcode Count</th>
         </tr></thead>
         <tbody>
           ${sorted.slice(0,10).map(i=>{
-            const val  = (i.price||0)*(i.stock||0);
-            const stockClass = (i.stock||0)<10?'badge-danger':(i.stock||0)<20?'badge-warning':'badge-success';
+            const val = (i.price||0)*(i.stock||0);
+            const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+            const healthStatus = i.healthStatus || ((i.stock || 0) === 0 ? 'Critical' : (i.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
             
-            let taxHtml = '';
-            if (taxCfg.taxes && taxCfg.taxes.length > 0) {
-              taxHtml = taxCfg.taxes.map(t => {
-                const rateText = t.taxType === 'percentage' ? `${t.rate}%` : `$${t.rate}`;
-                return `<span class="badge badge-info" style="margin-right:2px;font-size:10px">${t.name}: ${rateText}</span>`;
-              }).join('');
-            } else {
-              const rate = i.taxCategory==='luxury' ? taxCfg.luxury : taxCfg.normal;
-              const badgeClass = i.taxCategory==='luxury' ? 'badge-purple' : 'badge-info';
-              taxHtml = `<span class="badge ${badgeClass}">GST: ${rate}%</span>`;
-            }
+            const stockClass = (i.stock||0) === 0 ? 'badge-danger' : (i.stock||0) < threshold ? 'badge-warning' : 'badge-success';
+            const statusClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
+            const barcodeCount = Array.isArray(i.barcodes) ? i.barcodes.length : (i.barcode ? 1 : 0);
 
             return `<tr>
               <td data-label="Item"><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
               <td data-label="Category"><span class="badge badge-brand">${i.category}</span></td>
               <td data-label="Price">${formatCurrency(i.price||0)}</td>
               <td data-label="Stock"><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
+              <td data-label="Threshold"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">${threshold} ${i.unit||'pcs'}</span></td>
               <td data-label="Value"><strong>${formatCurrency(val)}</strong></td>
-              <td data-label="Tax"><div style="display:flex;flex-wrap:wrap;gap:2px">${taxHtml}</div></td>
-              <td data-label="Status"><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
+              <td data-label="Status"><span class="badge ${statusClass}">${healthStatus}</span></td>
+              <td data-label="Barcode Count"><span class="badge badge-muted" style="font-family:var(--font-mono)">${barcodeCount}</span></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -10873,7 +13208,9 @@ async function renderAuditTable() {
               const actionClass = ACTION_CLASSES[log.action] || 'badge-muted';
               const actionText = (log.action || 'unknown').toUpperCase().replace(/_/g, ' ');
               const userName = log.userName || 'System';
-              const userInitials = userName.slice(0, 2).toUpperCase();
+              const allUsers = getStore().users || [];
+              const targetUser = allUsers.find(usr => usr.id === log.userId || usr.name === log.userName);
+              const avatarVal = targetUser ? targetUser.avatar : '';
               
               return `
                 <tr style="border-bottom:1px solid var(--border-color);transition:background 0.2s" class="hover-row">
@@ -10886,7 +13223,7 @@ async function renderAuditTable() {
                   <td data-label="Description" style="padding:12px 16px;font-size:13px;color:var(--text-primary);line-height:1.5">${log.description || ''}</td>
                   <td data-label="User" style="padding:12px 16px">
                     <div style="display:flex;align-items:center;gap:10px">
-                      <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:white;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,0.1)">${userInitials}</div>
+                      ${renderAvatarContainer(avatarVal, userName, 28)}
                       <span style="font-size:13px;font-weight:500;color:var(--text-primary)">${userName}</span>
                     </div>
                   </td>
@@ -10988,13 +13325,13 @@ function renderSettings() {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:20px;margin-bottom:24px">
-            <div style="width:72px;height:72px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white;flex-shrink:0;box-shadow:var(--shadow-brand);overflow:hidden">${renderAvatar(user.avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}</div>
+            <div id="settings-avatar-preview" style="width:72px;height:72px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white;flex-shrink:0;box-shadow:var(--shadow-brand);overflow:hidden">${renderAvatar(user.avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}</div>
             <div>
               <div style="font-size:20px;font-weight:800;margin-bottom:2px">${user.name}</div>
               <div style="font-size:13px;color:var(--text-muted)">${user.email}</div>
               <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
                 <button class="btn btn-secondary btn-xs" id="s-upload-photo-btn" type="button" style="padding:4px 8px;font-size:11px">Upload Photo</button>
-                ${user.avatar?.startsWith('data:image/') ? `<button class="btn btn-danger btn-xs" id="s-remove-photo-btn" type="button" style="padding:4px 8px;font-size:11px;background:var(--accent-rose)">Remove Photo</button>` : ''}
+                ${(user.avatar && (user.avatar.startsWith('data:') || user.avatar.startsWith('http'))) ? `<button class="btn btn-danger btn-xs" id="s-remove-photo-btn" type="button" style="padding:4px 8px;font-size:11px;background:var(--accent-rose)">Remove Photo</button>` : ''}
               </div>
               <input type="file" id="s-photo-input" accept="image/*" style="display:none" />
             </div>
@@ -11320,8 +13657,8 @@ function renderSettings() {
     if (u) {
       u.name = name;
       // If photo is initials, recreate them from the new name
-      if (!u.avatar || !u.avatar.startsWith('data:image/')) {
-        u.avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+      if (u.avatar && !u.avatar.startsWith('data:') && !u.avatar.startsWith('http')) {
+        u.avatar = '';
       }
       saveStore();
       await updateUser(u.id, { name, avatar: u.avatar });
@@ -11354,6 +13691,7 @@ function renderSettings() {
       if (u) {
         u.avatar = base64;
         saveStore();
+        updateDOMAvatars(base64, u.name);
         await updateUser(u.id, { avatar: base64 });
         showToast('Photo uploaded', 'Profile photo updated successfully', 'success');
         renderSettings();
@@ -11366,11 +13704,11 @@ function renderSettings() {
     const s = getStore();
     const u = s.users.find(usr => usr.id === s.currentUserId);
     if (u) {
-      const fallbackInitials = u.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
-      u.avatar = fallbackInitials;
+      u.avatar = '';
       saveStore();
-      await updateUser(u.id, { avatar: fallbackInitials });
-      showToast('Photo removed', 'Profile photo reverted to initials', 'success');
+      updateDOMAvatars('', u.name);
+      await updateUser(u.id, { avatar: '' });
+      showToast('Photo removed', 'Profile photo removed successfully', 'success');
       renderSettings();
     }
   });
@@ -12822,10 +15160,7 @@ function renderPermissionMatrix(role) {
         <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:10px;letter-spacing:0.05em">Assigned Users (${assignedUsers.length})</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px">
           ${assignedUsers.map(u => {
-            const initials = u.name ? u.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
-            const avatarHTML = u.avatar ? 
-              `<img src="${u.avatar}" style="width:28px;height:28px;border-radius:50%;object-fit:cover" />` :
-              `<div style="width:28px;height:28px;border-radius:50%;background:var(--accent-indigo);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">${initials}</div>`;
+            const avatarHTML = renderAvatarContainer(u.avatar, u.name, 28);
             const empId = u.employeeId || u.enterprise_id || 'N/A';
             return `
               <div style="display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--card-bg);border:1px solid var(--border-subtle);border-radius:20px" title="${u.email}">
@@ -13195,6 +15530,186 @@ function showNewRoleModal() {
   });
 }
 
+// ===== pages/notifications.js =====
+/**
+ * Notifications Management Page
+ */
+
+
+
+
+
+let notif_filter = 'all'; // 'all' or 'unread'
+
+function renderNotifications() {
+  const user = getCurrentUser();
+  if (!user) {
+    navigate('/login');
+    return;
+  }
+
+  const notifications = getNotifications();
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  renderShell('Notifications', 'Manage notifications and system alerts', `
+    <div class="animate-fadeIn">
+      <div class="page-header" style="margin-bottom:24px">
+        <div class="page-header-left">
+          <h1 class="page-title">Notification Center</h1>
+          <p class="page-subtitle">Real-time alerts, system logs, and transactional updates</p>
+        </div>
+        <div class="page-header-actions" style="display:flex;gap:10px">
+          ${unreadCount > 0 ? `<button class="btn btn-secondary btn-sm" id="btn-mark-all-read" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('lock', 14)} Mark All Read</button>` : ''}
+          ${notifications.length > 0 ? `<button class="btn btn-danger btn-sm" id="btn-clear-all" style="display:inline-flex;align-items:center;gap:6px;background:var(--accent-rose);border-color:var(--accent-rose);color:white">${getSvgIcon('trash', 14)} Clear All</button>` : ''}
+        </div>
+      </div>
+
+      <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-md)">
+        <div class="table-toolbar" style="border-bottom:1px solid var(--border-subtle);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;background:var(--bg-sidebar)">
+          <div style="display:flex;gap:8px">
+            <button class="btn ${notif_filter === 'all' ? 'btn-primary' : 'btn-secondary'} btn-sm" id="tab-all-notifs">All (${notifications.length})</button>
+            <button class="btn ${notif_filter === 'unread' ? 'btn-primary' : 'btn-secondary'} btn-sm" id="tab-unread-notifs">Unread (${unreadCount})</button>
+          </div>
+        </div>
+
+        <div id="notifications-list-container"></div>
+      </div>
+    </div>
+  `);
+
+  renderNotificationsList();
+
+  // Tab switcher
+  document.getElementById('tab-all-notifs')?.addEventListener('click', () => {
+    notif_filter = 'all';
+    renderNotifications();
+  });
+  document.getElementById('tab-unread-notifs')?.addEventListener('click', () => {
+    notif_filter = 'unread';
+    renderNotifications();
+  });
+
+  // Action buttons
+  document.getElementById('btn-mark-all-read')?.addEventListener('click', async () => {
+    try {
+      await markAllNotificationsRead();
+      showToast('Notifications Updated', 'All notifications marked as read', 'success');
+      renderNotifications();
+    } catch (err) {
+      showToast('Error', 'Failed to update notifications', 'error');
+    }
+  });
+
+  document.getElementById('btn-clear-all')?.addEventListener('click', async () => {
+    try {
+      await clearNotifications();
+      showToast('Notifications Cleared', 'All notifications cleared', 'success');
+      renderNotifications();
+    } catch (err) {
+      showToast('Error', 'Failed to clear notifications', 'error');
+    }
+  });
+}
+
+function renderNotificationsList() {
+  const container = document.getElementById('notifications-list-container');
+  if (!container) return;
+
+  const allNotifications = getNotifications();
+  const filtered = notif_filter === 'unread' 
+    ? allNotifications.filter(n => !n.read) 
+    : allNotifications;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="padding:64px 24px;text-align:center;color:var(--text-muted)">
+        <div style="font-size:48px;margin-bottom:16px;opacity:0.3">🔔</div>
+        <h3 style="color:var(--text-secondary);font-size:16px;font-weight:600">No notifications found</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-top:8px">
+          ${notif_filter === 'unread' ? 'You do not have any unread notifications.' : 'Your notification tray is empty.'}
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  const typeIconNames = {
+    warehouse_create: 'warehouses',
+    bill_create: 'billing',
+    user_create: 'user',
+    login: 'lock',
+    settings_update: 'settings',
+    default: 'bell'
+  };
+
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column">
+      ${filtered.map(n => `
+        <div class="notif-detail-row" data-nid="${n.id}" data-link="${n.link || '/dashboard'}" style="padding:16px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:flex-start;gap:16px;transition:background 0.2s, transform 0.2s;cursor:pointer;background:${n.read ? 'transparent' : 'rgba(99,102,241,0.04)'}">
+          <div style="display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border-default);color:var(--text-secondary);flex-shrink:0;margin-top:2px">
+            ${getSvgIcon(typeIconNames[n.type] || typeIconNames.default, 18)}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+              <span style="font-size:14px;font-weight:${n.read ? '600' : '700'};color:var(--text-primary)">${n.title}</span>
+              <span style="font-size:11px;color:var(--text-disabled);font-family:var(--font-mono)">${timeSince(n.timestamp)}</span>
+            </div>
+            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin:0 0 8px 0">${n.message}</p>
+            <div style="display:flex;gap:12px;align-items:center">
+              ${!n.read ? `
+                <button class="btn-mark-read-action" data-nid="${n.id}" style="font-size:11px;font-weight:600;color:var(--text-brand);background:none;border:none;padding:0;cursor:pointer;font-family:var(--font-sans);display:inline-flex;align-items:center;gap:4px">
+                  ● Mark as read
+                </button>
+              ` : `
+                <span style="font-size:11px;color:var(--text-disabled);display:inline-flex;align-items:center;gap:4px">✓ Read</span>
+              `}
+            </div>
+          </div>
+          ${!n.read ? `
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--text-brand);flex-shrink:0;margin-top:6px"></div>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  // Row navigation click listeners
+  container.querySelectorAll('.notif-detail-row').forEach(row => {
+    row.addEventListener('mouseenter', () => {
+      row.style.background = 'rgba(99,102,241,0.08)';
+    });
+    row.addEventListener('mouseleave', () => {
+      const nid = row.dataset.nid;
+      const n = allNotifications.find(x => x.id === nid);
+      row.style.background = (n && !n.read) ? 'rgba(99,102,241,0.04)' : 'transparent';
+    });
+    row.addEventListener('click', async (e) => {
+      // Prevent navigation trigger if clicking on action button
+      if (e.target.closest('.btn-mark-read-action')) return;
+      
+      const nid = row.dataset.nid;
+      const link = row.dataset.link;
+      await markNotificationRead(nid);
+      navigate(link);
+    });
+  });
+
+  // Action click listeners
+  container.querySelectorAll('.btn-mark-read-action').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const nid = btn.dataset.nid;
+      try {
+        await markNotificationRead(nid);
+        showToast('Notification Read', 'Notification marked as read', 'success');
+        renderNotifications();
+      } catch (err) {
+        showToast('Error', 'Failed to mark read', 'error');
+      }
+    });
+  });
+}
+
 // ===== app.js =====
 // Handle unhandled promise rejections and global errors for visible debugging
 window.addEventListener('error', (event) => {
@@ -13253,9 +15768,9 @@ const routes = {
   '/subscription': renderSubscription,
   '/privacy': renderPrivacy,
   '/terms': renderTerms,
-  '/registry': renderRegistry,
   '/customers': renderCustomers,
   '/roles': renderRoles,
+  '/notifications': renderNotifications,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -13267,6 +15782,7 @@ function getActivePath() {
 }
 
 let _lastResolvedPath = null;
+let _lastResolvedHash = null;
 
 function safeNavigate(path) {
   const currentPath = getActivePath();
@@ -13286,9 +15802,11 @@ function resolveRoute() {
   if (!appEl) return;
 
   const path = getActivePath();
-  // Prevent redundant renders if the path hasn't changed
-  if (_lastResolvedPath === path && appEl.innerHTML !== '') return;
+  const fullHash = window.location.hash;
+  // Prevent redundant renders if the path and hash haven't changed
+  if (_lastResolvedPath === path && _lastResolvedHash === fullHash && appEl.innerHTML !== '') return;
   _lastResolvedPath = path;
+  _lastResolvedHash = fullHash;
 
   try {
     const path = getActivePath();
@@ -13329,7 +15847,7 @@ function resolveRoute() {
         '/customers': 'crm',
       };
 
-      if (['/registry', '/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
+      if (['/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
         safeNavigate('/dashboard');
         return;
       }

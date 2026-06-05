@@ -884,9 +884,7 @@ function buildInvoiceHTML(bill, wh, mode) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid var(--border-default)">
       <div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="width:40px;height:40px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border-default);display:flex;align-items:center;justify-content:center;color:var(--text-primary);overflow:hidden;flex-shrink:0;">
-            ${renderWarehouseLogo(wh?.logo, 32)}
-          </div>
+          ${renderWarehouseLogo(wh?.logo, 40)}
           <div>
             <div style="font-size:22px;font-weight:800;color:var(--text-primary);line-height:1">${wh?.businessName || wh?.name || 'NexWare ERP'}</div>
             <div style="font-size:11px;font-weight:700;color:var(--text-brand);letter-spacing:1px;margin-top:4px">TAX ID/GSTIN: ${sellerTax}</div>

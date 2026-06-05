@@ -33,9 +33,9 @@ import { renderSettings } from './pages/settings.js';
 import { renderSubscription } from './pages/subscription.js';
 import { renderWarehouseDetail } from './pages/warehouses.js';
 import { renderLanding } from './pages/landing.js';
-import { renderRegistry } from './pages/registry.js';
 import { renderCustomers } from './pages/customers.js';
 import { renderRoles } from './pages/roles.js';
+import { renderNotifications } from './pages/notifications.js';
 
 // Route handler map
 const routes = {
@@ -55,9 +55,9 @@ const routes = {
   '/subscription': renderSubscription,
   '/privacy': renderPrivacy,
   '/terms': renderTerms,
-  '/registry': renderRegistry,
   '/customers': renderCustomers,
   '/roles': renderRoles,
+  '/notifications': renderNotifications,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -69,6 +69,7 @@ function getActivePath() {
 }
 
 let _lastResolvedPath = null;
+let _lastResolvedHash = null;
 
 function safeNavigate(path) {
   const currentPath = getActivePath();
@@ -88,9 +89,11 @@ function resolveRoute() {
   if (!appEl) return;
 
   const path = getActivePath();
-  // Prevent redundant renders if the path hasn't changed
-  if (_lastResolvedPath === path && appEl.innerHTML !== '') return;
+  const fullHash = window.location.hash;
+  // Prevent redundant renders if the path and hash haven't changed
+  if (_lastResolvedPath === path && _lastResolvedHash === fullHash && appEl.innerHTML !== '') return;
   _lastResolvedPath = path;
+  _lastResolvedHash = fullHash;
 
   try {
     const path = getActivePath();
@@ -131,7 +134,7 @@ function resolveRoute() {
         '/customers': 'crm',
       };
 
-      if (['/registry', '/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
+      if (['/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
         safeNavigate('/dashboard');
         return;
       }

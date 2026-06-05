@@ -13,7 +13,7 @@ const files = [
   'pages/workforce.js', 'pages/items.js', 'pages/tables.js',
   'pages/billing.js', 'pages/analytics.js', 'pages/audit.js',
   'pages/settings.js', 'pages/subscription.js',
-  'pages/registry.js', 'pages/customers.js', 'pages/roles.js',
+  'pages/registry.js', 'pages/customers.js', 'pages/roles.js', 'pages/notifications.js',
 ];
 
 function strip(code) {

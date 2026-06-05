@@ -395,10 +395,10 @@ function updateWhBreakdown(bills, whs, totalRev) {
     const pct = totalRev>0 ? Math.round(rev/totalRev*100) : 0;
     return `
       <div class="revenue-bar" style="margin-bottom:12px">
-        <div class="revenue-bar-label">
-          <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;overflow:hidden;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}vertical-align:middle;margin-right:6px;">${renderWarehouseLogo(wh.logo, 20)}</span>${wh.name}
-          <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
-        </div>
+         <div class="revenue-bar-label" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+           ${renderWarehouseLogo(wh.logo, 20)}<span>${wh.name}</span>
+           <span style="font-size:11px;color:var(--text-muted)">${cnt} invoice${cnt!==1?'s':''} · Tax: ${formatCurrency(tax)}</span>
+         </div>
         <div class="revenue-bar-track"><div class="revenue-bar-fill" style="width:${pct}%"></div></div>
         <div class="revenue-bar-val">${formatCurrency(rev)} <span style="color:var(--text-muted);font-size:10px">${pct}%</span></div>
       </div>`;
@@ -415,33 +415,27 @@ function updateStockTable(items, taxCfg) {
       <table>
         <thead><tr>
           <th>Item</th><th>Category</th><th>Price</th><th>Stock</th>
-          <th>Value</th><th>Tax</th><th>Status</th>
+          <th>Threshold</th><th>Value</th><th>Status</th><th>Barcode Count</th>
         </tr></thead>
         <tbody>
           ${sorted.slice(0,10).map(i=>{
-            const val  = (i.price||0)*(i.stock||0);
-            const stockClass = (i.stock||0)<10?'badge-danger':(i.stock||0)<20?'badge-warning':'badge-success';
+            const val = (i.price||0)*(i.stock||0);
+            const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+            const healthStatus = i.healthStatus || ((i.stock || 0) === 0 ? 'Critical' : (i.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
             
-            let taxHtml = '';
-            if (taxCfg.taxes && taxCfg.taxes.length > 0) {
-              taxHtml = taxCfg.taxes.map(t => {
-                const rateText = t.taxType === 'percentage' ? `${t.rate}%` : `$${t.rate}`;
-                return `<span class="badge badge-info" style="margin-right:2px;font-size:10px">${t.name}: ${rateText}</span>`;
-              }).join('');
-            } else {
-              const rate = i.taxCategory==='luxury' ? taxCfg.luxury : taxCfg.normal;
-              const badgeClass = i.taxCategory==='luxury' ? 'badge-purple' : 'badge-info';
-              taxHtml = `<span class="badge ${badgeClass}">GST: ${rate}%</span>`;
-            }
+            const stockClass = (i.stock||0) === 0 ? 'badge-danger' : (i.stock||0) < threshold ? 'badge-warning' : 'badge-success';
+            const statusClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
+            const barcodeCount = Array.isArray(i.barcodes) ? i.barcodes.length : (i.barcode ? 1 : 0);
 
             return `<tr>
               <td data-label="Item"><div class="primary-cell">${i.name}</div><div class="sub-cell">${i.sku||'—'}</div></td>
               <td data-label="Category"><span class="badge badge-brand">${i.category}</span></td>
               <td data-label="Price">${formatCurrency(i.price||0)}</td>
               <td data-label="Stock"><span class="badge ${stockClass}">${i.stock||0} ${i.unit||'pcs'}</span></td>
+              <td data-label="Threshold"><span style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">${threshold} ${i.unit||'pcs'}</span></td>
               <td data-label="Value"><strong>${formatCurrency(val)}</strong></td>
-              <td data-label="Tax"><div style="display:flex;flex-wrap:wrap;gap:2px">${taxHtml}</div></td>
-              <td data-label="Status"><span class="badge ${(i.stock||0)<20?'badge-danger':'badge-success'}">${(i.stock||0)<20?'Low':'OK'}</span></td>
+              <td data-label="Status"><span class="badge ${statusClass}">${healthStatus}</span></td>
+              <td data-label="Barcode Count"><span class="badge badge-muted" style="font-family:var(--font-mono)">${barcodeCount}</span></td>
             </tr>`;
           }).join('')}
         </tbody>

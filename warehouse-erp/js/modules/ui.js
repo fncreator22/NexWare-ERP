@@ -471,85 +471,131 @@ export function applyTheme(themeName) {
 
 /**
  * renderAvatar — renders a user avatar as either an <img> (photo) or styled initials span.
- * When avatar is a data URL or http URL  → renders <img> tag
- * When avatar is a string of 1-3 chars (initials) → renders styled initials span
- * When avatar is empty → returns empty string
+ * Falls back to user SVG if no valid image or initials.
  */
 export function renderAvatar(avatar, sizeStyle = "width:100%;height:100%;object-fit:cover;border-radius:50%") {
-  if (!avatar) return '';
-  // Check for image URLs (data URI or http/https)
-  if (avatar.startsWith('data:image/') || avatar.startsWith('http://') || avatar.startsWith('https://')) {
+  if (avatar && (avatar.startsWith('data:') || avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('http'))) {
     return `<img src="${avatar}" style="${sizeStyle}" alt="Avatar" onerror="this.style.display='none'" />`;
   }
-  // Treat as initials string — render with background transparent (the container provides gradient)
-  return `<span style="font-size:inherit;font-weight:700;color:inherit;line-height:1;">${avatar}</span>`;
+  // Replace fallback initials with a premium user avatar SVG icon
+  if (avatar && avatar.length > 0 && avatar.length <= 3 && !avatar.startsWith('icon:')) {
+    return `<span style="font-size:inherit;font-weight:700;color:white;text-transform:uppercase;">${avatar}</span>`;
+  }
+  return `<svg style="width:60%;height:60%;display:block;color:rgba(255,255,255,0.95);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
 }
 
 /**
  * Centralized entity image resolver.
  * Renders an image if it exists, otherwise renders initials or dynamic icons.
+ *
+ * OVERLAY PATTERN: fallback (initials/icon) is always rendered in the DOM.
+ * The photo <img> is absolutely positioned on top (z-index:1).
+ * On load  → photo covers the fallback layer.
+ * On error → photo hides itself (display:none), fallback shows beneath.
+ *
+ * This eliminates the previous onerror=innerHTML approach which embedded raw HTML
+ * inside an HTML attribute causing attribute shattering: the browser's parser
+ * stopped reading the onerror attribute at the first " inside fallbackHTML,
+ * leaving "PD" initials and "/>" text as stray visible DOM nodes.
+ *
  * @param {string} src - The image URI or base64 data string
- * @param {string} type - Entity type ('workforce' | 'profile' | 'warehouse' | 'inventory' | 'reports' | 'tables' | 'roles')
- * @param {string} fallbackText - Initials or name to generate initials, or icon key
- * @param {number} size - Square/diameter size in pixels (default 40)
- * @param {string} extraStyle - Inline styles to merge
+ * @param {string} type - Entity type ('workforce'|'profile'|'warehouse'|'warehouse_photo'|'inventory'|'company_logo')
+ * @param {string} fallbackText - Name to derive initials from, icon key, or short label
+ * @param {number} size - Square/diameter in px (default 40)
+ * @param {string} extraStyle - Additional inline CSS to merge onto the container
  * @returns {string} HTML string
  */
 export function renderEntityImage(src, type, fallbackText = '', size = 40, extraStyle = '') {
-  const isUrl = src && (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://'));
+  const isUrl = src && typeof src === 'string' && (
+    src.startsWith('data:') ||
+    src.startsWith('http://') ||
+    src.startsWith('https://') ||
+    src.startsWith('http')
+  );
   const s = size;
 
-  if (type === 'workforce' || type === 'profile') {
-    // Circular user avatar
-    const initials = fallbackText.length <= 3 && !fallbackText.startsWith('data:') && !fallbackText.startsWith('http')
-      ? fallbackText
-      : (fallbackText ? fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?');
-    const bgStyle = isUrl ? 'background:transparent;border:1px solid var(--border-default);' : 'background:var(--gradient-brand);';
-    
-    return `<div class="entity-avatar-container" style="width:${s}px;height:${s}px;border-radius:50%;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="Avatar" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
-    </div>`;
-  } else if (type === 'warehouse') {
-    // Square card / logo layout
-    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
-    
-    // Dynamic icon matching from renderWarehouseLogo
-    const defaultIcon = `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
-    const icons = {
-      'icon:industrial': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
-      'icon:distribution': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
-      'icon:retail': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
-      'icon:office': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
-      'icon:tech': `<svg width="${Math.round(s*0.7)}" height="${Math.round(s*0.7)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
-    };
-    
-    let fallbackIcon = defaultIcon;
-    if (fallbackText && fallbackText.startsWith('icon:')) {
-      fallbackIcon = icons[fallbackText.toLowerCase()] || defaultIcon;
-    }
+  // --- Per-type visual config ---
+  let borderRadius = '8px';
+  let objectFit   = 'cover';
+  let bgFallback  = 'var(--bg-elevated)';
+  let border      = '1px solid var(--border-default)';
 
-    return `<div class="entity-logo-container" style="width:${s}px;height:${s}px;border-radius:8px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" alt="Logo" onerror="this.remove();this.parentElement.innerHTML='${fallbackIcon}'" />` : fallbackIcon}
-    </div>`;
-  } else if (type === 'inventory') {
-    // Square item cards / boxes
-    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--bg-elevated);border:1px solid var(--border-default);';
-    const boxIcon = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
-
-    return `<div class="entity-item-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Item" onerror="this.parentElement.style.background='var(--bg-elevated)';this.remove();this.parentElement.innerHTML='${boxIcon}'" />` : boxIcon}
-    </div>`;
-  } else {
-    // Reports, Tables, Role management - general fallback rendering
-    const initials = fallbackText.length <= 3 
-      ? fallbackText 
-      : fallbackText.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    const bgStyle = isUrl ? 'background:transparent;' : 'background:var(--gradient-brand);';
-
-    return `<div class="entity-general-container" style="width:${s}px;height:${s}px;border-radius:6px;${bgStyle}display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.35)}px;font-weight:700;color:white;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}">
-      ${isUrl ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" alt="Entity" onerror="this.parentElement.style.background='var(--gradient-brand)';this.remove();this.parentElement.textContent='${initials}'" />` : initials}
-    </div>`;
+  if (type === 'profile' || type === 'workforce' || type === 'avatar') {
+    borderRadius = '50%';
+    bgFallback   = 'var(--gradient-brand)';
+    border       = isUrl ? '2px solid var(--border-default)' : 'none';
+  } else if (type === 'warehouse' || type === 'warehouse_logo' || type === 'logo') {
+    borderRadius = '8px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+  } else if (type === 'warehouse_photo' || type === 'photo') {
+    borderRadius = '8px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+  } else if (type === 'inventory' || type === 'inventory_item' || type === 'item') {
+    borderRadius = '6px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+  } else if (type === 'company_logo') {
+    borderRadius = '4px';
+    bgFallback   = 'var(--bg-elevated)';
+    border       = '1px solid var(--border-default)';
+    objectFit    = 'contain';
   }
+
+  // --- Build fallback content (initials / icon SVG) ---
+  let fallbackHTML = '';
+
+  if (type === 'profile' || type === 'workforce' || type === 'avatar') {
+    const raw = fallbackText && typeof fallbackText === 'string' && !fallbackText.startsWith('icon:') ? fallbackText : '';
+    const initials = raw ? raw.split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase() : '';
+    if (initials && /^[A-Z]{1,2}$/.test(initials)) {
+      fallbackHTML = `<span style="font-size:${Math.round(s * 0.38)}px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.15);line-height:1;pointer-events:none;user-select:none;">${initials}</span>`;
+    } else {
+      fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:rgba(255,255,255,.9);display:block;pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    }
+  } else if (type === 'warehouse' || type === 'warehouse_logo' || type === 'logo') {
+    const warehouseIcons = {
+      'icon:industrial':   `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
+      'icon:distribution': `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+      'icon:retail':       `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+      'icon:office':       `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
+      'icon:tech':         `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-secondary)"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
+    };
+    const defaultWHIcon = warehouseIcons['icon:industrial'];
+    if (fallbackText && typeof fallbackText === 'string') {
+      const ftLower = fallbackText.toLowerCase();
+      if (ftLower.startsWith('icon:')) {
+        fallbackHTML = warehouseIcons[ftLower] || defaultWHIcon;
+      } else if (fallbackText.length <= 4) {
+        fallbackHTML = `<span style="font-size:${Math.round(s*0.55)}px;font-weight:800;color:var(--text-primary);">${fallbackText}</span>`;
+      } else {
+        fallbackHTML = defaultWHIcon;
+      }
+    } else {
+      fallbackHTML = defaultWHIcon;
+    }
+  } else if (type === 'warehouse_photo' || type === 'photo') {
+    fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M3 21h18M3 7v14M21 7v14M12 3v18M12 7h2M12 11h2M12 15h2M8 7h2M8 11h2M8 15h2M16 7h2M16 11h2M16 15h2"/></svg>`;
+  } else if (type === 'inventory' || type === 'inventory_item' || type === 'item') {
+    fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
+  } else if (type === 'company_logo') {
+    fallbackHTML = `<svg width="${Math.round(s*0.6)}" height="${Math.round(s*0.6)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>`;
+  }
+
+  // --- Render ---
+  const containerStyle = `position:relative;width:${s}px;height:${s}px;border-radius:${borderRadius};border:${border};background:${bgFallback};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;vertical-align:middle;${extraStyle}`;
+
+  if (isUrl) {
+    // Fallback is always in DOM (z-index:0). Photo overlaid (z-index:1).
+    // onerror only sets display:none on the <img> — no innerHTML manipulation.
+    return `<div class="entity-image-container type-${type}" style="${containerStyle}">` +
+      `<span class="entity-img-fallback" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">${fallbackHTML}</span>` +
+      `<img src="${src}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${objectFit};border-radius:${borderRadius};display:block;" onerror="this.style.display='none'" />` +
+      `</div>`;
+  }
+
+  return `<div class="entity-image-container type-${type}" style="${containerStyle}">${fallbackHTML}</div>`;
 }
 
 /**
@@ -560,27 +606,54 @@ export function renderAvatarContainer(avatar, name = '', size = 36, extraStyle =
   return renderEntityImage(avatar, 'workforce', name, size, extraStyle);
 }
 
+/**
+ * renderWarehouseLogo - renders a warehouse branding logo or icon.
+ */
 export function renderWarehouseLogo(logo, size = 24) {
-  const s = size;
-  // Handle image uploads (data URIs or external URLs)
-  if (logo && (logo.startsWith('data:image/') || logo.startsWith('http://') || logo.startsWith('https://'))) {
-    return `<img src="${logo}" style="width:${s}px;height:${s}px;object-fit:cover;border-radius:6px;display:block;" alt="Warehouse logo" onerror="this.style.display='none'" />`;
+  return renderEntityImage(logo, 'warehouse', logo, size);
+}
+
+/**
+ * updateDOMAvatars - directly updates all avatar elements currently in active viewport.
+ * Sidebar and topbar profile-btn already have correctly-sized circular containers with
+ * overflow:hidden, so they use renderAvatar (returns just <img> or fallback) rather
+ * than renderAvatarContainer (which would add a second container div).
+ */
+export function updateDOMAvatars(avatarUrl, name) {
+  const isUrl = avatarUrl && (avatarUrl.startsWith('data:') || avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://') || avatarUrl.startsWith('http'));
+
+  // 1. Sidebar footer avatar (.sidebar-user-avatar already has 36×36 circular CSS container)
+  const sidebarAvatar = document.querySelector('.sidebar-user-avatar');
+  if (sidebarAvatar) {
+    sidebarAvatar.style.background = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    sidebarAvatar.style.border     = isUrl ? '2px solid var(--border-default)' : 'none';
+    sidebarAvatar.innerHTML = renderAvatar(avatarUrl, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;');
   }
-  const icons = {
-    'icon:industrial': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`,
-    'icon:distribution': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
-    'icon:retail': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
-    'icon:office': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="18" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="16"/><line x1="15" y1="22" x2="15" y2="16"/><line x1="9" y1="16" x2="15" y2="16"/><path d="M8 6h2v2H8V6zm0 4h2v2H8v-2zm8-4h2v2h-2V6zm0 4h2v2h-2v-2z"/></svg>`,
-    'icon:tech': `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`
-  };
-  
-  if (logo && icons[logo]) return icons[logo];
-  if (logo && logo.startsWith('icon:')) {
-    const key = logo.toLowerCase();
-    if (icons[key]) return icons[key];
+
+  // 2. Topbar profile button (#profile-btn already has overflow:hidden circular styling)
+  const topbarProfileBtn = document.getElementById('profile-btn');
+  if (topbarProfileBtn) {
+    topbarProfileBtn.style.background    = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    topbarProfileBtn.style.border        = isUrl ? '2px solid var(--border-default)' : 'none';
+    topbarProfileBtn.style.borderRadius  = '50%';
+    topbarProfileBtn.innerHTML = renderAvatar(avatarUrl, 'width:34px;height:34px;object-fit:cover;border-radius:50%;display:block;');
   }
-  
-  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M5 17V5l4 2v10m4 0V9l4 2v6m4 0v-4l3 1v3"/></svg>`;
+
+  // 3. Settings page avatar preview
+  const settingsPreview = document.querySelector('#settings-avatar-preview');
+  if (settingsPreview) {
+    settingsPreview.style.background = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    settingsPreview.style.border     = isUrl ? '1px solid var(--border-default)' : 'none';
+    settingsPreview.innerHTML = renderAvatar(avatarUrl, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;');
+  }
+
+  // 4. Workforce user modal avatar preview
+  const workforcePreview = document.getElementById('m-u-avatar-preview');
+  if (workforcePreview) {
+    workforcePreview.style.background = isUrl ? 'transparent' : 'var(--gradient-brand)';
+    workforcePreview.style.border     = isUrl ? '1px solid var(--border-default)' : 'none';
+    workforcePreview.innerHTML = renderAvatar(avatarUrl, 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;');
+  }
 }
 
 // ---- INLINE BARCODE GENERATOR (Code128 subset B) ----
@@ -654,4 +727,15 @@ export function generateBarcodeSVG(text, opts = {}) {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(svgW)}" height="${svgH}" viewBox="0 0 ${Math.ceil(svgW)} ${svgH}" role="img" aria-label="Barcode: ${text}">${rects}${labelSVG}</svg>`;
 }
+
+// Global Image Preview Modal Trigger
+window.showImagePreviewModal = function(src) {
+  const modal = createModal({
+    title: 'Image Preview',
+    body: `<div style="text-align:center;padding:12px;background:var(--bg-card);"><img src="${src}" style="max-width:100%;max-height:70vh;object-fit:contain;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);" alt="Preview" /></div>`,
+    footer: `<button class="btn btn-secondary" id="preview-modal-close" style="width:100%">Close Preview</button>`
+  });
+  modal.el.querySelector('#preview-modal-close')?.addEventListener('click', modal.close);
+};
+
 

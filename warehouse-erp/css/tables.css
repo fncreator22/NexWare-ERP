@@ -570,3 +570,456 @@
   background: #9ca3af !important;
 }
 
+/* =========================================================
+   NEXWARE UPGRADE: AVATAR STACK & TOOLTIP
+   ========================================================= */
+.avatar-stack-container {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+.avatar-stack {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+.avatar-stack-item {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-card);
+  margin-left: -8px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, z-index 0.2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  position: relative;
+}
+.avatar-stack-item:first-child {
+  margin-left: 0;
+}
+.avatar-stack-item:hover {
+  transform: translateY(-3px);
+  z-index: 20;
+}
+.avatar-stack-more {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  border: 2px solid var(--border-default);
+  margin-left: -8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+.avatar-stack-tooltip {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+  min-width: 240px;
+  color: #111827;
+  text-align: left;
+}
+.avatar-stack-container:hover .avatar-stack-tooltip {
+  display: block;
+}
+.tooltip-user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+.tooltip-user-row:last-child {
+  border-bottom: none;
+}
+
+/* =========================================================
+   NEXWARE UPGRADE: SPREADSHEET TOOLBAR MENU SYSTEM
+   ========================================================= */
+.ss-toolbar-menus {
+  display: flex;
+  gap: 2px;
+  background: #f3f4f6;
+  padding: 2px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 6px 6px 0 0;
+  flex-wrap: wrap;
+}
+.ss-menu-item {
+  position: relative;
+  display: inline-block;
+}
+.ss-menu-btn {
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ss-menu-btn:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+.ss-menu-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+  z-index: 100;
+  min-width: 160px;
+  padding: 4px 0;
+  margin-top: 2px;
+}
+.ss-menu-item:hover .ss-menu-dropdown {
+  display: block;
+}
+.ss-menu-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #374151;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ss-menu-dropdown-item:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+.ss-menu-dropdown-divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 4px 0;
+}
+
+/* =========================================================
+   NEXWARE UPGRADE: FORMAT QUICK TOOLBAR
+   ========================================================= */
+.ss-format-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffffff;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  flex-wrap: wrap;
+}
+.ss-format-btn {
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  color: #4b5563;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ss-format-btn:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+.ss-format-btn.active {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+.ss-format-select {
+  height: 28px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: #374151;
+  background: #ffffff;
+  cursor: pointer;
+}
+.ss-format-divider {
+  width: 1px;
+  height: 18px;
+  background: #e5e7eb;
+  margin: 0 4px;
+}
+
+/* =========================================================
+   NEXWARE UPGRADE: COLLAPSIBLE SIDEBAR INFO PANEL
+   ========================================================= */
+.ss-layout-container {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+}
+.ss-grid-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ss-sidebar-panel {
+  width: 280px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: all 0.2s ease-in-out;
+}
+.ss-sidebar-panel.collapsed {
+  display: none;
+}
+.ss-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 10px;
+}
+.ss-sidebar-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+.ss-sidebar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ss-sidebar-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: #9ca3af;
+  letter-spacing: 0.05em;
+}
+.ss-sidebar-value {
+  font-size: 13px;
+  color: #374151;
+}
+
+/* =========================================================
+   NEXWARE UPGRADE: COLUMN RESIZERS & HEADERS
+   ========================================================= */
+.ss-th-inner-excel {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px;
+  position: relative;
+  height: 100%;
+  justify-content: center;
+}
+.ss-th-letter {
+  font-size: 10px;
+  font-weight: 700;
+  color: #9ca3af;
+  text-align: center;
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 2px;
+  margin-bottom: 2px;
+}
+.col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 50;
+}
+.col-resize-handle:hover, .col-resize-handle.active {
+  background: var(--header-color, #6366f1);
+}
+
+/* Selected Cell state */
+.ss-cell {
+  position: relative;
+  cursor: cell;
+}
+.ss-cell.ss-cell-selected {
+  outline: 2px solid var(--header-color, #6366f1) !important;
+  outline-offset: -2px;
+  background: rgba(99, 102, 241, 0.02) !important;
+  z-index: 2;
+}
+
+/* Custom barcode container styling */
+.barcode-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #ffffff;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-top: 4px;
+}
+.barcode-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* =========================================================
+   NEXWARE PHASE 2 UPGRADE: FORMULA BAR
+   ========================================================= */
+.ss-formula-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 6px 12px;
+}
+.ss-formula-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9ca3af;
+  font-family: var(--font-mono);
+  user-select: none;
+  min-width: 32px;
+}
+.ss-formula-divider {
+  width: 1px;
+  height: 14px;
+  background: #e5e7eb;
+}
+.ss-formula-input {
+  flex: 1;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  background: #f9fafb;
+  outline: none;
+  color: #111827;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.ss-formula-input:focus {
+  border-color: var(--header-color, #6366f1);
+  background: #ffffff;
+}
+
+/* =========================================================
+   NEXWARE PHASE 2 UPGRADE: CAMERA SCANNER VIEWFINDER
+   ========================================================= */
+.scanner-viewfinder-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+.scanner-video-feed {
+  width: 100%;
+  max-width: 440px;
+  height: 280px;
+  background: #000000;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid #374151;
+}
+.scanner-video-feed video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.scanner-overlay-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 140px;
+  border: 2px dashed #10b981;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.scanner-laser-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+  animation: laserScan 2s linear infinite;
+  pointer-events: none;
+}
+@keyframes laserScan {
+  0%   { top: 0; }
+  50%  { top: 100%; }
+  100% { top: 0; }
+}
+
+/* Gridline Toggles */
+.ss-grid-no-gridlines td {
+  border-right: 1px solid transparent !important;
+}
+.ss-grid-no-gridlines th {
+  border-right: 1px solid transparent !important;
+}
+.ss-grid-no-gridlines .ss-td-row-num {
+  border-right: 1px solid #d1d5db !important;
+}
+.ss-grid-no-gridlines .ss-th-row-num {
+  border-right: 1px solid #d1d5db !important;
+}
+
+/* Fullscreen state container spacing override */
+.fullscreen-active {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 99999 !important;
+  background: #f3f4f6 !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+.fullscreen-active .ss-container {
+  height: calc(100vh - 180px) !important;
+}
+
+

@@ -4,7 +4,7 @@
  */
 import { getCurrentUser, getStore, saveStore } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, createModal, getSvgIcon, confirm } from '../modules/ui.js';
+import { showToast, createModal, getSvgIcon, confirm, renderAvatarContainer } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 import {
   ALL_MODULES, ALL_ACTIONS, DEFAULT_ROLE_PERMISSIONS,
@@ -171,10 +171,7 @@ function renderPermissionMatrix(role) {
         <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:10px;letter-spacing:0.05em">Assigned Users (${assignedUsers.length})</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px">
           ${assignedUsers.map(u => {
-            const initials = u.name ? u.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
-            const avatarHTML = u.avatar ? 
-              `<img src="${u.avatar}" style="width:28px;height:28px;border-radius:50%;object-fit:cover" />` :
-              `<div style="width:28px;height:28px;border-radius:50%;background:var(--accent-indigo);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">${initials}</div>`;
+            const avatarHTML = renderAvatarContainer(u.avatar, u.name, 28);
             const empId = u.employeeId || u.enterprise_id || 'N/A';
             return `
               <div style="display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--card-bg);border:1px solid var(--border-subtle);border-radius:20px" title="${u.email}">

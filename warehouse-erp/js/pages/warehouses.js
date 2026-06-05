@@ -1,9 +1,9 @@
 /**
  * Warehouses Page — CRUD for warehouse management (Super Admin only)
  */
-import { getCurrentUser, getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, getAllUsers, getBills, getPlanWarehouseLimit, getSubscription, addNotification, getItems, getTaxConfig } from '../modules/store.js';
+import { getCurrentUser, getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, getAllUsers, getBills, getPlanWarehouseLimit, getSubscription, addNotification, getItems, getTaxConfig, apiFetch } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo, generateBarcodeSVG } from '../modules/ui.js';
+import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo, renderAvatarContainer, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let wh_currentView = 'grid';
@@ -159,7 +159,7 @@ function renderWarehouseGrid(whs, allUsers) {
       return `
       <div class="warehouse-card animate-slideUp" data-wh-id="${wh.id}" style="cursor:pointer" title="Click to view warehouse dashboard">
         <div class="warehouse-card-top">
-          <div class="warehouse-avatar" style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-md);width:40px;height:40px;flex-shrink:0;overflow:hidden">${renderWarehouseLogo(wh.logo, 40)}</div>
+          ${renderWarehouseLogo(wh.logo, 40)}
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             <span class="badge ${wh.status === 'active' ? 'badge-success' : 'badge-danger'} badge-dot"> ${wh.status}</span>
             <div style="display:flex;gap:4px">
@@ -222,7 +222,7 @@ function renderWarehouseTable(whs, allUsers) {
               const staff = allUsers.filter(u => u.warehouseId === wh.id).length;
               return `
                 <tr class="warehouse-row" data-wh-id="${wh.id}" style="cursor:pointer">
-                  <td data-label="Logo"><div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:6px;width:32px;height:32px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 32)}</div></td>
+                  <td data-label="Logo">${renderWarehouseLogo(wh.logo, 32)}</td>
                   <td data-label="Name">
                     <div style="font-weight:600;color:var(--text-brand)">${wh.name}</div>
                     <div style="font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('location', 11)} ${wh.address}</div>
@@ -558,7 +558,7 @@ export function renderWarehouseDetail(whId) {
       <div class="page-header">
         <div class="page-header-left">
           <div style="display:flex;align-items:center;gap:14px">
-            <div style="display:flex;align-items:center;justify-content:center;${(wh.logo && (wh.logo.startsWith('data:') || wh.logo.startsWith('http'))) ? 'background:var(--bg-elevated);border:1px solid var(--border-default);' : 'background:var(--gradient-brand);'}border-radius:var(--radius-lg);width:60px;height:60px;overflow:hidden;flex-shrink:0">${renderWarehouseLogo(wh.logo, 60)}</div>
+            ${renderWarehouseLogo(wh.logo, 60)}
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
                 <h1 class="page-title" style="margin:0">${wh.name}</h1>
@@ -606,16 +606,8 @@ export function renderWarehouseDetail(whId) {
             <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('analytics', 16)} Revenue Trend (Last 6 Months)</div>
             <div style="font-size:12px;color:var(--text-muted)">Total: ${formatCurrency(revenue)}</div>
           </div>
-          <div style="display:flex;align-items:flex-end;gap:6px;height:100px;padding:0 4px">
-            ${monthRevs.map((v,i)=>{
-              const h=maxRev>0?Math.max(Math.round(v/maxRev*100),2):2;
-              const isLast=i===monthRevs.length-1;
-              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-                <div style="font-size:10px;color:var(--text-muted)">${v>0?'$'+(v/1000).toFixed(1)+'k':''}</div>
-                <div style="width:100%;height:${h}%;background:${isLast?'var(--brand-500)':'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px"></div>
-                <div style="font-size:10px;color:var(--text-muted)">${monthLabels[i]}</div>
-              </div>`;
-            }).join('')}
+          <div id="wh-detail-trend-bars" style="display:flex;align-items:flex-end;gap:6px;height:100px;padding:0 4px">
+            <div style="width:100%;text-align:center;color:var(--text-muted);font-size:12px">Loading trend data...</div>
           </div>
         </div>
         <div class="card col-4">
@@ -654,7 +646,7 @@ export function renderWarehouseDetail(whId) {
                 <tr>
                   <td data-label="Name">
                     <div style="display:flex;align-items:center;gap:8px">
-                      <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:white;flex-shrink:0">${u.avatar}</div>
+                      ${renderAvatarContainer(u.avatar, u.name, 28)}
                       <div>
                         <div style="font-size:13px;font-weight:600">${u.name}</div>
                         <div style="font-size:11px;color:var(--text-muted)">${u.email}</div>
@@ -766,4 +758,36 @@ export function renderWarehouseDetail(whId) {
   `);
 
   document.getElementById('wd-edit-btn')?.addEventListener('click', () => showWarehouseModal(wh));
+
+  // Load dynamic trend analytics
+  apiFetch(`/analytics/trends?warehouseId=${whId}`).then(res => {
+    const barsContainer = document.getElementById('wh-detail-trend-bars');
+    if (!barsContainer) return;
+    
+    if (res && res.success && Array.isArray(res.data)) {
+      const trends = res.data.slice(-6); // last 6 months
+      const maxRevenue = Math.max(...trends.map(t => t.totalRevenue), 1);
+      
+      barsContainer.innerHTML = trends.map((t, i) => {
+        const val = t.totalRevenue;
+        const h = maxRevenue > 0 ? Math.max(Math.round(val / maxRevenue * 100), 2) : 2;
+        const isLast = i === trends.length - 1;
+        return `
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+            <div style="font-size:10px;color:var(--text-muted)">${val > 0 ? '$' + (val / 1000).toFixed(1) + 'k' : ''}</div>
+            <div style="width:100%;height:${h}%;background:${isLast ? 'var(--brand-500)' : 'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px" title="$${val.toLocaleString()}"></div>
+            <div style="font-size:10px;color:var(--text-muted)">${t.monthName.split(' ')[0]}</div>
+          </div>
+        `;
+      }).join('');
+    } else {
+      barsContainer.innerHTML = '<div style="width:100%;text-align:center;color:var(--text-muted);font-size:12px">No trend data available</div>';
+    }
+  }).catch(err => {
+    console.error('Failed to load warehouse trend data:', err);
+    const barsContainer = document.getElementById('wh-detail-trend-bars');
+    if (barsContainer) {
+      barsContainer.innerHTML = '<div style="width:100%;text-align:center;color:var(--accent-rose);font-size:12px">Error loading trend data</div>';
+    }
+  });
 }

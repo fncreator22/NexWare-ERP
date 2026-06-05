@@ -1,7 +1,7 @@
 /**
  * Items / Inventory Management Page
  */
-import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig, syncWithBackend } from '../modules/store.js';
+import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig, syncWithBackend, getStore, apiFetch } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce, getSvgIcon, renderEntityImage, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
@@ -34,6 +34,7 @@ export function renderItems() {
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
           ${canEdit ? `
+            <button class="btn btn-secondary btn-sm" id="generate-barcodes-btn">Generate Barcodes</button>
             <button class="btn btn-secondary btn-sm" id="import-csv-btn">Import CSV</button>
             <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
@@ -78,6 +79,7 @@ export function renderItems() {
 
   document.getElementById('create-item-btn')?.addEventListener('click', () => showItemModal(null));
   document.getElementById('import-csv-btn')?.addEventListener('click', () => showImportModal());
+  document.getElementById('generate-barcodes-btn')?.addEventListener('click', () => showBarcodeGenerationModal());
   const debouncedSearch = debounce(q => {
     it_searchQ = q;
     it_page = 1;
@@ -107,6 +109,22 @@ export function renderItems() {
   // Realtime WebSocket auto-refresh for inventory
   window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
   window.addEventListener('wareops_ws_event', _handleInventoryWsEvent);
+
+  // Deep-link target item if id query parameter is present in URL hash
+  const hash = window.location.hash || '';
+  const queryPart = hash.split('?')[1];
+  if (queryPart) {
+    const params = new URLSearchParams(queryPart);
+    const itemId = params.get('id');
+    if (itemId) {
+      setTimeout(() => {
+        const item = getItems().find(i => i.id === itemId);
+        if (item) {
+          showItemCardModal(item);
+        }
+      }, 300);
+    }
+  }
 }
 
 function renderItemStats() {
@@ -115,7 +133,10 @@ function renderItemStats() {
   if (!el) return;
   const totalStock = items.reduce((s,i)=>s+(i.stock||0),0);
   const totalValue = items.reduce((s,i)=>s+((i.price||0)*(i.stock||0)),0);
-  const lowStock = items.filter(i=>(i.stock||0)<20).length;
+  const lowStock = items.filter(i => {
+    const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+    return (i.stock || 0) < threshold;
+  }).length;
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-card-icon" style="background:rgba(99,102,241,0.15);display:flex;align-items:center;justify-content:center;color:#6366f1">${getSvgIcon('items', 18)}</div><div class="stat-card-value">${items.length}</div><div class="stat-card-label">Total Items</div></div>
@@ -171,7 +192,9 @@ function renderItemsTableView(pageItems, whs, canEdit, container, start, total, 
         <tbody>
           ${pageItems.map(item => {
             const wh = whs.find(w=>w.id===item.warehouseId);
-            const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+            const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+            const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+            const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
             const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
             return `<tr>
               <td data-label="Item">
@@ -192,6 +215,7 @@ function renderItemsTableView(pageItems, whs, canEdit, container, start, total, 
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
               ${canEdit ? `<td data-label="Actions">
                 <div class="table-actions">
+                  <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="color:var(--accent-emerald)">${getSvgIcon('plus', 14)}</button>
                   <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
                   <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
                 </div>
@@ -217,7 +241,9 @@ function renderItemsGridView(pageItems, whs, canEdit, container, start, total, i
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:16px">
       ${pageItems.map(item => {
         const wh = whs.find(w=>w.id===item.warehouseId);
-        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+        const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+        const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
         const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
         return `
           <div class="card clickable-card" data-iid="${item.id}" style="padding:16px;display:flex;flex-direction:column;justify-content:space-between;transition:transform 0.15s,box-shadow 0.15s;cursor:pointer" 
@@ -264,7 +290,9 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;margin-bottom:16px">
       ${pageItems.map(item => {
         const wh = whs.find(w=>w.id===item.warehouseId);
-        const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
+        const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+        const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+        const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
         const itemImg = (item.images && item.images.length > 0) ? item.images[0] : '';
         const barcodeStr = item.barcode || item.sku || `ITEM-${item.id.slice(-6)}`;
         const barcodeSVG = generateBarcodeSVG(barcodeStr, { height: 30, showLabel: false });
@@ -315,6 +343,7 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
                 <button class="btn btn-secondary btn-xs clickable-card" data-iid="${item.id}" style="font-size:11px;">${getSvgIcon('view', 12)} View Details</button>
                 <div style="display:flex;gap:6px">
                   ${canEdit ? `
+                    <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="padding: 4px;color:var(--accent-emerald)">${getSvgIcon('plus', 12)}</button>
                     <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
                     <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
                   ` : ''}
@@ -341,6 +370,13 @@ function bindItemsEvents(container, it_pages) {
   const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   if (canEdit) {
+    container.querySelectorAll('.add-stock[data-iid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = getItems().find(i => i.id === btn.dataset.iid);
+        if (item) showAddStockModal(item);
+      });
+    });
     container.querySelectorAll('.edit[data-iid]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -439,12 +475,18 @@ function showItemModal(item) {
           </select>
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Warehouse <span class="req">*</span></label>
-        <select id="m-i-wh" class="form-control" required>
-          <option value="">Select warehouse</option>
-          ${whs.map(w=>`<option value="${w.id}" ${item?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Warehouse <span class="req">*</span></label>
+          <select id="m-i-wh" class="form-control" required>
+            <option value="">Select warehouse</option>
+            ${whs.map(w=>`<option value="${w.id}" ${item?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Low Stock Alert Limit <span class="req">*</span></label>
+          <input type="number" id="m-i-threshold" class="form-control" value="${item?.lowStockThreshold !== undefined ? item.lowStockThreshold : 20}" required min="1" />
+        </div>
       </div>
       
       <!-- Product Media Gallery -->
@@ -576,14 +618,16 @@ function showItemModal(item) {
     const price = parseFloat(document.getElementById('m-i-price').value);
     const stock = parseInt(document.getElementById('m-i-stock').value);
     const warehouseId = document.getElementById('m-i-wh').value;
-    if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId) { showToast('Validation','Fill all required fields','warning'); return; }
+    const lowStockThreshold = parseInt(document.getElementById('m-i-threshold').value);
+    if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId||isNaN(lowStockThreshold)) { showToast('Validation','Fill all required fields','warning'); return; }
     
     const data = {
       name, category, price, stock, warehouseId,
       sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
       unit: document.getElementById('m-i-unit').value,
       taxCategory: 'normal',
-      images: selectedImages
+      images: selectedImages,
+      lowStockThreshold
     };
     
     let res;
@@ -796,8 +840,10 @@ function _handleInventoryWsEvent(e) {
 function showItemCardModal(item) {
   const whs = getWarehouses();
   const wh = whs.find(w => w.id === item.warehouseId);
-  const stockClass = (item.stock||0) < 20 ? 'badge-danger' : (item.stock||0) < 50 ? 'badge-warning' : 'badge-success';
-  const statusLabel = (item.stock||0) === 0 ? 'Out of Stock' : (item.stock||0) < 20 ? 'Low Stock' : 'In Stock';
+  const threshold = item.lowStockThreshold !== undefined ? item.lowStockThreshold : 20;
+  const healthStatus = item.healthStatus || ((item.stock || 0) === 0 ? 'Critical' : (item.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+  const stockClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
+  const statusLabel = healthStatus;
   
   const images = item.images && item.images.length > 0 ? item.images : [];
   
@@ -878,6 +924,10 @@ function showItemCardModal(item) {
               <strong style="color:var(--text-primary);">${item.stock||0} ${item.unit||'pcs'}</strong>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:13px;">
+              <span style="color:var(--text-secondary)">Low Stock Alert Limit</span>
+              <strong style="color:var(--text-primary);">${threshold} ${item.unit||'pcs'}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
               <span style="color:var(--text-secondary)">Assigned Hub</span>
               <strong style="color:var(--text-primary);">${wh?.name || '—'}</strong>
             </div>
@@ -946,4 +996,224 @@ function showItemCardModal(item) {
     });
   }
 }
+
+export function showBarcodeGenerationModal() {
+  const whs = getWarehouses();
+  const user = getCurrentUser();
+  const items = getStore().items || [];
+
+  const body = `
+    <form id="barcode-gen-form" style="display:flex;flex-direction:column;gap:16px">
+      <div class="form-group">
+        <label class="form-label" style="font-weight:600;margin-bottom:8px">Generation Mode</label>
+        <div style="display:flex;gap:16px;margin-bottom:8px">
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+            <input type="radio" name="gen-mode" value="existing" checked style="accent-color:var(--brand-500)" />
+            Existing Inventory Item
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-primary)">
+            <input type="radio" name="gen-mode" value="new" style="accent-color:var(--brand-500)" />
+            Register New Item
+          </label>
+        </div>
+      </div>
+
+      <!-- Existing Item Section -->
+      <div id="gen-existing-section" class="form-group">
+        <label class="form-label">Select Inventory Item <span class="req">*</span></label>
+        <select id="gen-item-select" class="form-control" style="width:100%" required>
+          <option value="">-- Choose Item --</option>
+          ${items.map(i => `<option value="${i.id}">${i.name} (${i.sku || 'No SKU'}) - Stock: ${i.stock}</option>`).join('')}
+        </select>
+        <div id="gen-item-info" style="margin-top:10px;padding:10px;border-radius:6px;background:var(--bg-elevated);border:1px solid var(--border-subtle);display:none;font-size:12px;"></div>
+      </div>
+
+      <!-- New Item Section (Hidden by default) -->
+      <div id="gen-new-section" style="display:none;flex-direction:column;gap:12px;border:1px solid var(--border-subtle);padding:14px;border-radius:8px;background:var(--bg-elevated)">
+        <div style="font-weight:600;font-size:13px;color:var(--brand-500);margin-bottom:4px">New Catalog Item Details</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Item Name <span class="req">*</span></label>
+            <input type="text" id="gen-new-name" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">SKU</label>
+            <input type="text" id="gen-new-sku" class="form-control" placeholder="Auto-generated if empty" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Category <span class="req">*</span></label>
+            <select id="gen-new-cat" class="form-control">
+              ${CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Price ($) <span class="req">*</span></label>
+            <input type="number" id="gen-new-price" class="form-control" min="0" step="0.01" value="0.00" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <select id="gen-new-unit" class="form-control">
+              ${['pcs','kg','lbs','box','pallet','set','m','ft'].map(u=>`<option value="${u}">${u}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tax Category</label>
+            <select id="gen-new-tax" class="form-control">
+              <option value="normal">Normal</option>
+              <option value="reduced">Reduced</option>
+              <option value="exempt">Exempt</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Warehouse Partition <span class="req">*</span></label>
+          <select id="gen-new-wh" class="form-control">
+            <option value="">Select warehouse</option>
+            ${whs.map(w=>`<option value="${w.id}" ${user.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <!-- Quantity Field -->
+      <div class="form-group">
+        <label class="form-label">Quantity to Generate (Max 50) <span class="req">*</span></label>
+        <input type="number" id="gen-qty" class="form-control" value="10" min="1" max="50" required />
+        <span id="gen-qty-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;display:block">This will generate 10 unique serial codes, register them in the registry tracker ledger, and increase the item stock count by 10.</span>
+      </div>
+    </form>
+  `;
+
+  const footer = `
+    <button class="btn btn-secondary" id="gen-cancel-btn">Cancel</button>
+    <button class="btn btn-primary" id="gen-submit-btn" style="display:inline-flex;align-items:center;gap:6px">
+      ${getSvgIcon('export', 14)} Generate Barcodes
+    </button>
+  `;
+
+  const modal = createModal({ title: 'Batch Generate Barcodes & Sync Stock', body, footer });
+
+  // Bind change listeners to update item details and quantity hint dynamically
+  const itemSelectEl = modal.el.querySelector('#gen-item-select');
+  const itemInfoEl = modal.el.querySelector('#gen-item-info');
+  const qtyInputEl = modal.el.querySelector('#gen-qty');
+  const qtyHintEl = modal.el.querySelector('#gen-qty-hint');
+
+  itemSelectEl?.addEventListener('change', () => {
+    const selectedItem = items.find(i => i.id === itemSelectEl.value);
+    if (selectedItem) {
+      itemInfoEl.style.display = 'block';
+      itemInfoEl.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><span style="color:var(--text-secondary)">SKU:</span> <strong style="font-family:var(--font-mono)">${selectedItem.sku || '—'}</strong></div>
+          <div><span style="color:var(--text-secondary)">Current Stock:</span> <strong>${selectedItem.stock} ${selectedItem.unit || 'pcs'}</strong></div>
+          <div><span style="color:var(--text-secondary)">Unit Price:</span> <strong>${formatCurrency(selectedItem.price || 0)}</strong></div>
+          <div><span style="color:var(--text-secondary)">Category:</span> <strong>${selectedItem.category}</strong></div>
+        </div>
+      `;
+    } else {
+      itemInfoEl.style.display = 'none';
+      itemInfoEl.innerHTML = '';
+    }
+  });
+
+  qtyInputEl?.addEventListener('input', () => {
+    const val = parseInt(qtyInputEl.value) || 0;
+    qtyHintEl.textContent = `This will generate ${val} unique serial codes, register them in the registry tracker ledger, and increase the item stock count by ${val}.`;
+  });
+
+  // Toggle Mode Listeners
+  modal.el.querySelectorAll('input[name="gen-mode"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      const existingSec = modal.el.querySelector('#gen-existing-section');
+      const newSec = modal.el.querySelector('#gen-new-section');
+      const itemSelect = modal.el.querySelector('#gen-item-select');
+      
+      const newName = modal.el.querySelector('#gen-new-name');
+      const newWh = modal.el.querySelector('#gen-new-wh');
+
+      if (mode === 'existing') {
+        existingSec.style.display = 'block';
+        newSec.style.display = 'none';
+        itemSelect.setAttribute('required', 'true');
+        newName.removeAttribute('required');
+        newWh.removeAttribute('required');
+      } else {
+        existingSec.style.display = 'none';
+        newSec.style.display = 'flex';
+        itemSelect.removeAttribute('required');
+        newName.setAttribute('required', 'true');
+        newWh.setAttribute('required', 'true');
+      }
+    });
+  });
+
+  // Cancel Button
+  modal.el.querySelector('#gen-cancel-btn').addEventListener('click', () => modal.close());
+
+  // Form Submission
+  modal.el.querySelector('#gen-submit-btn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const form = modal.el.querySelector('#barcode-gen-form');
+    if (!form.checkValidity()) {
+      form.reportValidity();
+      return;
+    }
+
+    const genMode = modal.el.querySelector('input[name="gen-mode"]:checked').value;
+    const qty = parseInt(modal.el.querySelector('#gen-qty').value);
+    
+    if (isNaN(qty) || qty < 1 || qty > 50) {
+      showToast('Validation Error', 'Quantity must be between 1 and 50.', 'warning');
+      return;
+    }
+
+    const submitBtn = modal.el.querySelector('#gen-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Generating...';
+
+    const payload = {
+      quantity: qty,
+      itemId: null,
+      newItem: null
+    };
+
+    if (genMode === 'existing') {
+      payload.itemId = modal.el.querySelector('#gen-item-select').value;
+    } else {
+      payload.newItem = {
+        name: modal.el.querySelector('#gen-new-name').value.trim(),
+        sku: modal.el.querySelector('#gen-new-sku').value.trim() || null,
+        category: modal.el.querySelector('#gen-new-cat').value,
+        price: parseFloat(modal.el.querySelector('#gen-new-price').value) || 0,
+        stock: 0,
+        unit: modal.el.querySelector('#gen-new-unit').value,
+        taxCategory: modal.el.querySelector('#gen-new-tax').value,
+        warehouseId: modal.el.querySelector('#gen-new-wh').value
+      };
+    }
+
+    const res = await apiFetch('/items/generate-barcodes', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (res?.success) {
+      showToast('Barcodes Generated', `Successfully generated ${qty} barcodes and synced stock level.`, 'success');
+      modal.close();
+      await syncWithBackend();
+      await renderItems();
+    } else {
+      showToast('Error', res?.error || 'Failed to generate barcodes.', 'error');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `${getSvgIcon('export', 14)} Generate Barcodes`;
+    }
+  });
+}
+window.showBarcodeGenerationModal = showBarcodeGenerationModal;
+
 

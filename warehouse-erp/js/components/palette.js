@@ -230,7 +230,6 @@ function updateResults() {
     { label: 'Billing',         path: '/billing',   icon: getSvgIcon('billing', 16) },
     { label: 'Analytics',       path: '/analytics', icon: getSvgIcon('analytics', 16) },
     { label: 'Tables',          path: '/tables',    icon: getSvgIcon('tables', 16) },
-    { label: 'Registry Ledger', path: '/registry',  icon: getSvgIcon('audit', 16) },
     { label: 'CRM Customers',   path: '/customers', icon: getSvgIcon('customer', 16) },
   ];
   if (isAdmin) {
@@ -425,7 +424,7 @@ function executeCommand(cmd) {
     case 'item':      navigate('/items'); break;
     case 'warehouse': navigate('/warehouses/' + cmd.id); break;
     case 'workforce': navigate('/workforce'); break;
-    case 'table':     navigate('/tables'); break;
+    case 'table':     navigate('/tables?id=' + encodeURIComponent(cmd.id)); break;
     case 'billing':   navigate('/billing'); break;
     case 'customer':  navigate('/customers'); break;
     default:          navigate('/dashboard');
