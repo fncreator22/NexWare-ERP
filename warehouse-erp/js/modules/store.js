@@ -3,7 +3,22 @@
  * Simulates a database using localStorage + in-memory state
  */
 
-const STORAGE_KEY = 'wareops_data';
+export function getStorageKey() {
+  if (typeof window === 'undefined') return 'wareops_data_guest';
+  const token = sessionStorage.getItem('access_token');
+  if (token) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        if (payload && payload.user_id) {
+          return `wareops_data_${payload.user_id}`;
+        }
+      }
+    } catch (e) {}
+  }
+  return 'wareops_data_guest';
+}
 
 function getDefaultData() {
   const now = new Date().toISOString();
@@ -35,7 +50,8 @@ let _store = null;
 // Cross-tab synchronization: Listen for changes from other tabs
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === STORAGE_KEY && e.newValue) {
+    const activeKey = getStorageKey();
+    if (e.key === activeKey && e.newValue) {
       try {
         _store = JSON.parse(e.newValue);
         // Dispatch event for UI components to optionally re-render
@@ -50,11 +66,12 @@ if (typeof window !== 'undefined') {
 export function getStore() {
   if (_store) return _store;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const key = getStorageKey();
+    const raw = localStorage.getItem(key);
     _store = raw ? JSON.parse(raw) : getDefaultData();
 
     // Trigger silent background synchronization if access token exists
-    if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
+    if (typeof window !== 'undefined' && sessionStorage.getItem('access_token')) {
       setTimeout(syncWithBackend, 0);
     }
 
@@ -82,7 +99,8 @@ export function getStore() {
 }
 
 export function saveStore() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(_store));
+  const key = getStorageKey();
+  localStorage.setItem(key, JSON.stringify(_store));
   if (typeof window !== 'undefined') {
     window.wareops_currency = getActiveCurrency();
   }
@@ -98,7 +116,7 @@ const API_BASE_URL = 'http://localhost:8000/api/v1';
 
 export async function apiFetch(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   
   const headers = {
     'Content-Type': 'application/json',
@@ -117,11 +135,38 @@ export async function apiFetch(path, options = {}) {
   try {
     const res = await fetch(url, config);
     if (res.status === 401) {
-      localStorage.removeItem('access_token');
-      if (_store) {
-        _store.currentUserId = null;
-        saveStore();
+      if (path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/signup') {
+        console.log('[Store] Access token expired. Attempting silent token rotation...');
+        try {
+          const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json();
+            if (refreshData && refreshData.success && refreshData.data && refreshData.data.access_token) {
+              const newAccessToken = refreshData.data.access_token;
+              sessionStorage.setItem('access_token', newAccessToken);
+              console.log('[Store] Token rotation succeeded. Retrying original request.');
+              
+              config.headers['Authorization'] = `Bearer ${newAccessToken}`;
+              const retryRes = await fetch(url, config);
+              if (retryRes.status !== 401) {
+                const retryData = await retryRes.json();
+                return retryData;
+              }
+            }
+          }
+        } catch (refreshErr) {
+          console.error('[Store] Silent refresh failed:', refreshErr);
+        }
       }
+      
+      sessionStorage.removeItem('access_token');
+      _store = null;
+      const s = getStore();
+      s.currentUserId = null;
+      saveStore();
       if (typeof window !== 'undefined') {
         window.location.hash = '#/login';
       }
@@ -150,7 +195,7 @@ export async function apiFetch(path, options = {}) {
 }
 
 export async function syncWithBackend() {
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   if (!token) return;
   
   try {
@@ -176,15 +221,24 @@ export async function syncWithBackend() {
       _store.warehouses = [];
     }
 
-    // 2. Fetch Workforce (Users)
+    // 2. Fetch Workforce (Users) and Current User Profile
+    let currentUser = getCurrentUser();
+    const meRes = await apiFetch('/auth/me');
+    if (meRes && meRes.success && meRes.data) {
+      const fresh = meRes.data;
+      if (fresh._id && !fresh.id) fresh.id = fresh._id;
+      if (fresh.page_order && !fresh.pageOrder) fresh.pageOrder = fresh.page_order;
+      if (fresh.module_visibility && !fresh.moduleVisibility) fresh.moduleVisibility = fresh.module_visibility;
+      if (fresh.feature_access && !fresh.featureAccess) fresh.featureAccess = fresh.feature_access;
+      currentUser = currentUser ? { ...currentUser, ...fresh } : fresh;
+    }
+
     const wfRes = await apiFetch('/workforce/');
     if (wfRes && wfRes.success && Array.isArray(wfRes.data)) {
       const normalizedWf = normalize(wfRes.data);
-      const currentUser = getCurrentUser();
       const otherUsers = normalizedWf.filter(u => u.id !== _store.currentUserId);
       _store.users = currentUser ? [currentUser, ...otherUsers] : normalizedWf;
     } else {
-      const currentUser = getCurrentUser();
       _store.users = currentUser ? [currentUser] : [];
     }
 
@@ -261,8 +315,10 @@ export async function login(email, password) {
   }
   
   const { access_token, user } = res.data;
-  localStorage.setItem('access_token', access_token);
+  sessionStorage.setItem('access_token', access_token);
   
+  // Scoping Reset: Reset store pointer to reload the store scoped by this user ID
+  _store = null;
   const s = getStore();
   s.currentUserId = user.id;
   
@@ -283,11 +339,12 @@ export async function login(email, password) {
 }
 
 export async function logout() {
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   if (token) {
     await apiFetch('/auth/logout', { method: 'POST' });
   }
-  localStorage.removeItem('access_token');
+  sessionStorage.removeItem('access_token');
+  _store = null;
   const s = getStore();
   s.currentUserId = null;
   saveStore();
@@ -351,7 +408,7 @@ export function getStockHealth(warehouseId) {
   if (items.length === 0) return 0;
   const lowStock = items.filter(i => {
     const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-    return (i.stock || 0) < threshold;
+    return (i.stock || 0) <= threshold;
   }).length;
   return Math.round(((items.length - lowStock) / items.length) * 100);
 }
@@ -507,6 +564,20 @@ export async function deleteUser(id) {
   
   await syncWithBackend();
   return { success: true };
+}
+
+export async function reviewDocument(userId, docId, status, remarks) {
+  const res = await apiFetch(`/workforce/documents/${docId}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ status, remarks })
+  });
+  
+  if (res.error) {
+    return { error: res.error };
+  }
+  
+  await syncWithBackend();
+  return res.data;
 }
 
 // ---- ITEMS / INVENTORY ----
@@ -770,7 +841,7 @@ export function addAuditLog(action, description, userId) {
   saveStore();
 
   // Async push to backend in background (don't block caller)
-  if (localStorage.getItem('access_token')) {
+  if (sessionStorage.getItem('access_token')) {
     apiFetch('/audit-logs/', {
       method: 'POST',
       body: JSON.stringify({
@@ -959,7 +1030,7 @@ export function seedDemoData() {
 let ws = null;
 export function connectWebSocket() {
   if (typeof window === 'undefined') return;
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   if (!token) return;
 
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
@@ -996,7 +1067,7 @@ export function connectWebSocket() {
   ws.onclose = (event) => {
     console.log('[WebSocket] Connection closed. Reason:', event.reason);
     // Exponential backoff / auto reconnect in 5 seconds
-    if (localStorage.getItem('access_token')) {
+    if (sessionStorage.getItem('access_token')) {
       setTimeout(connectWebSocket, 5000);
     }
   };

@@ -1,10 +1,22 @@
 /**
  * Billing & Taxation System — v2
  */
-import { getCurrentUser, getItems, createBill, getBills, getWarehouses, getTaxConfig, getTaxRates, syncWithBackend, getActiveCurrency } from '../modules/store.js';
+import { getCurrentUser, getItems, createBill, getBills, getWarehouses, getTaxConfig, getTaxRates, syncWithBackend, getActiveCurrency, getStore } from '../modules/store.js';
+
 import { renderShell } from '../components/shell.js';
 import { showToast, createModal, formatDate, formatDateTime, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
+import { canDo } from '../modules/permissions.js';
+
+const EXCHANGE_RATES = {
+  USD: 1.0,
+  INR: 83.0,
+  EUR: 0.92,
+  GBP: 0.79,
+  AED: 3.67,
+  SGD: 1.34
+};
+
 let billItems = [];
 let bl_searchQ = '';
 let bl_page = 1;
@@ -16,8 +28,7 @@ export function renderBilling() {
     window.location.hash = '#/login';
     return;
   }
-  const allowed = ['super_admin','admin','manager','staff'];
-  if (!allowed.includes(user.role)) { navigate('/dashboard'); return; }
+
 
   const bills = getBills();
   const totalRev = bills.reduce((s,b)=>s+b.total,0);
@@ -61,7 +72,7 @@ export function renderBilling() {
       <div class="table-toolbar">
         <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
         <div class="table-filter">
-          ${user.role === 'super_admin' ? `
+          ${(canDo('warehouses', 'view') || canDo('reports', 'manage')) ? `
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="bill-wh-filter">
             <option value="">All Warehouses</option>
             ${whs.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
@@ -75,9 +86,9 @@ export function renderBilling() {
   renderBillsTable();
   document.getElementById('new-bill-btn')?.addEventListener('click', () => showBillModal());
   
-  // Realtime WebSocket auto-refresh for invoices
-  window.removeEventListener('wareops_ws_event', _handleBillingWsEvent);
-  window.addEventListener('wareops_ws_event', _handleBillingWsEvent);
+  // Realtime storage sync auto-refresh for invoices
+  window.removeEventListener('wareops_storage_sync', _handleBillingStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleBillingStorageSync);
   const debouncedSearch = debounce(q => {
     bl_searchQ = q;
     bl_page = 1;
@@ -126,7 +137,8 @@ function renderBillsTable() {
         </tr></thead>
         <tbody>
           ${pageBills.map(b => {
-            const wh = whs.find(w=>w.id===b.warehouseId);
+            const allWhs = getStore().warehouses || [];
+            const wh = allWhs.find(w=>w.id===b.warehouseId);
             return `<tr>
               <td data-label="Bill No"><span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text-brand)">${b.billNo}</span></td>
               <td data-label="Customer"><div class="primary-cell">${b.customer}</div></td>
@@ -134,7 +146,7 @@ function renderBillsTable() {
               <td data-label="Subtotal">${formatCurrency(b.subtotal)}</td>
               <td data-label="Tax"><span style="color:var(--accent-amber)">${formatCurrency(b.tax)}</span></td>
               <td data-label="Total"><strong style="color:var(--text-primary);font-size:15px">${formatCurrency(b.total)}</strong></td>
-              <td data-label="Warehouse"><span class="badge badge-info">${wh?.name||'—'}</span></td>
+              <td data-label="Warehouse"><span class="badge badge-info">${wh?.name || b.warehouseId || '—'}</span></td>
               <td data-label="Date" style="font-size:12px;color:var(--text-muted)">${formatDate(b.createdAt)}</td>
               <td data-label="Actions">
                 <div class="table-actions">
@@ -184,6 +196,7 @@ function showBillModal() {
     const savedWh = body.querySelector('#bill-wh')?.value || '';
     const warehouseId = savedWh || whs[0]?.id;
     const wh = whs.find(w => w.id === warehouseId);
+    const savedCurrency = body.querySelector('#bill-currency')?.value || wh?.currency || getActiveCurrency();
     
     const whEmail = wh?.email || '';
     const whContact = wh?.contact || '';
@@ -212,7 +225,7 @@ function showBillModal() {
       <div style="display:flex; gap:24px; min-height:550px; flex-wrap:wrap; width:100%;">
         <!-- Left Column: Interactive Checkout Desk -->
         <div style="flex:1.2; min-width:320px; display:flex; flex-direction:column; gap:16px;">
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
             <div class="form-group" style="margin:0">
               <label class="form-label" style="font-weight:600;">Customer Name <span class="req">*</span></label>
               <input type="text" id="bill-customer" class="form-control" placeholder="Customer name" value="${savedCustomer}" />
@@ -221,6 +234,17 @@ function showBillModal() {
               <label class="form-label" style="font-weight:600;">Warehouse Hub</label>
               <select id="bill-wh" class="form-control">
                 ${whs.map(w=>`<option value="${w.id}" ${warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600;">Currency</label>
+              <select id="bill-currency" class="form-control">
+                <option value="USD" ${savedCurrency==='USD'?'selected':''}>USD ($)</option>
+                <option value="INR" ${savedCurrency==='INR'?'selected':''}>INR (₹)</option>
+                <option value="EUR" ${savedCurrency==='EUR'?'selected':''}>EUR (€)</option>
+                <option value="GBP" ${savedCurrency==='GBP'?'selected':''}>GBP (£)</option>
+                <option value="AED" ${savedCurrency==='AED'?'selected':''}>AED (د.إ)</option>
+                <option value="SGD" ${savedCurrency==='SGD'?'selected':''}>SGD (S$)</option>
               </select>
             </div>
           </div>
@@ -428,7 +452,8 @@ function showBillModal() {
     }
 
     listContainer.innerHTML = filteredItems.map((i, idx) => {
-      const isLowStock = i.stock < 20;
+      const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+      const isLowStock = i.stock <= threshold;
       const isHighlighted = idx === highlightedIndex;
       return `
         <div class="sku-dropdown-item" data-id="${i.id}" data-index="${idx}" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; transition:background 0.15s; background:${isHighlighted ? 'rgba(99,102,241,0.08)' : 'transparent'};">
@@ -533,6 +558,9 @@ function showBillModal() {
     if (!previewContainer) return;
 
     const customerName = body.querySelector('#bill-customer')?.value.trim() || 'Valued Client';
+    const billCurrency = body.querySelector('#bill-currency')?.value || wh?.currency || getActiveCurrency();
+    const baseCurrency = getActiveCurrency();
+    const rate = (EXCHANGE_RATES[billCurrency] || 1.0) / (EXCHANGE_RATES[baseCurrency] || 1.0);
     
     // Retrieve latest values from workspace form fields
     const sellerAddress = body.querySelector('#bill-seller-address')?.value || wh?.address || 'Primary Logistics Hub';
@@ -547,20 +575,32 @@ function showBillModal() {
       billNo: "INV-DRAFT",
       customer: customerName,
       warehouseId: warehouseId,
+      currency: billCurrency,
+      exchangeRate: rate,
       items: calculation.items.map(i => ({
         id: i.id,
         name: i.name,
         qty: i.qty,
-        price: i.price,
+        price: i.price * rate,
         taxCategory: i.taxCategory || 'normal',
         taxRate: i.taxRate,
-        taxes: i.taxes
+        taxes: i.taxes ? i.taxes.map(t => ({
+          name: t.name,
+          taxType: t.taxType,
+          rate: t.rate,
+          amount: t.amount * rate
+        })) : null
       })),
-      subtotal: calculation.subtotal,
-      tax: calculation.tax,
-      total: calculation.total,
+      subtotal: calculation.subtotal * rate,
+      tax: calculation.tax * rate,
+      total: calculation.total * rate,
       taxConfigSnapshot: getTaxConfig(warehouseId),
-      taxDetails: calculation.taxDetails,
+      taxDetails: calculation.taxDetails ? calculation.taxDetails.map(t => ({
+        name: t.name,
+        taxType: t.taxType,
+        rate: t.rate,
+        amount: t.amount * rate
+      })) : null,
       createdAt: new Date().toISOString(),
       
       // Extended fields
@@ -586,12 +626,16 @@ function showBillModal() {
     });
 
     // Form Inputs - Live preview refresh on any change
-    ['#bill-customer', '#bill-seller-address', '#bill-seller-contact', '#bill-seller-tax', '#bill-customer-phone', '#bill-customer-email', '#bill-buyer-billing', '#bill-buyer-shipping'].forEach(sel => {
-      body.querySelector(sel)?.addEventListener('input', () => {
-        const wh = whs.find(w => w.id === warehouseId);
-        const calculationLive = calculateTaxesFrontend(billItems, warehouseId);
-        renderLiveInvoicePreview(calculationLive, warehouseId, wh);
-      });
+    ['#bill-customer', '#bill-seller-address', '#bill-seller-contact', '#bill-seller-tax', '#bill-customer-phone', '#bill-customer-email', '#bill-buyer-billing', '#bill-buyer-shipping', '#bill-currency'].forEach(sel => {
+      const el = body.querySelector(sel);
+      if (el) {
+        const eventType = sel === '#bill-currency' ? 'change' : 'input';
+        el.addEventListener(eventType, () => {
+          const wh = whs.find(w => w.id === warehouseId);
+          const calculationLive = calculateTaxesFrontend(billItems, warehouseId);
+          renderLiveInvoicePreview(calculationLive, warehouseId, wh);
+        });
+      }
     });
 
     // Search Input listeners
@@ -761,13 +805,19 @@ function showBillModal() {
       return;
     }
 
+    const billCurrency = document.getElementById('bill-currency')?.value || wh?.currency || getActiveCurrency();
+    const baseCurrency = getActiveCurrency();
+    const rate = (EXCHANGE_RATES[billCurrency] || 1.0) / (EXCHANGE_RATES[baseCurrency] || 1.0);
+
     const payload = {
       customer,
       warehouseId,
+      currency: billCurrency,
+      exchangeRate: rate,
       items: calculation.items.map(i => ({
         id: i.id,
         name: i.name,
-        price: i.price,
+        price: i.price * rate,
         taxCategory: i.taxCategory || 'normal',
         taxRate: i.taxRate,
         qty: i.qty,
@@ -775,17 +825,17 @@ function showBillModal() {
           name: t.name,
           taxType: t.taxType,
           rate: t.rate,
-          amount: t.amount
+          amount: t.amount * rate
         })) : null
       })),
-      subtotal: calculation.subtotal,
-      tax: calculation.tax,
-      total: calculation.total,
+      subtotal: calculation.subtotal * rate,
+      tax: calculation.tax * rate,
+      total: calculation.total * rate,
       taxDetails: calculation.taxDetails ? calculation.taxDetails.map(t => ({
         name: t.name,
         taxType: t.taxType,
         rate: t.rate,
-        amount: t.amount
+        amount: t.amount * rate
       })) : null,
       
       // Extended fields
@@ -804,7 +854,7 @@ function showBillModal() {
       return;
     }
     
-    showToast('Bill generated!', `${res.billNo || 'Invoice'} — ${formatCurrency(calculation.total)}`, 'success');
+    showToast('Bill generated!', `${res.billNo || 'Invoice'} — ${formatCurrency(calculation.total * rate, billCurrency)}`, 'success');
     billItems = [];
     modal.close();
     renderBilling();
@@ -814,8 +864,8 @@ function showBillModal() {
 
 
 function showBillPreview(bill) {
-  const whs = getWarehouses();
-  const wh = whs.find(w=>w.id===bill.warehouseId);
+  const allWhs = getStore().warehouses || [];
+  const wh = allWhs.find(w=>w.id===bill.warehouseId);
   const body = buildInvoiceHTML(bill, wh, 'modal');
   const footer = `
     <button class="btn btn-secondary" id="prev-close">Close</button>
@@ -829,8 +879,8 @@ function showBillPreview(bill) {
 function buildInvoiceHTML(bill, wh, mode) {
   const cfg = bill.taxConfigSnapshot || getTaxConfig();
   
-  // Warehouse-aware currency: use warehouse currency if set, else global
-  const currency = wh?.currency || getActiveCurrency();
+  // Prioritize invoice-level currency, then warehouse currency, then global base currency
+  const currency = bill.currency || wh?.currency || getActiveCurrency();
   const fmt = (v) => formatCurrency(v, currency);
 
   const sellerAddress = bill.sellerAddress || wh?.address || 'Primary Logistics Hub';
@@ -852,7 +902,16 @@ function buildInvoiceHTML(bill, wh, mode) {
     
     if (i.taxes && i.taxes.length > 0) {
       lineTax = i.taxes.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-      taxRateText = i.taxes.map(t => `${t.name}: ${t.taxType === 'percentage' ? (parseFloat(t.rate || 0) * 100).toFixed(0) + '%' : '$' + parseFloat(t.rate || 0)}`).join(', ');
+      taxRateText = i.taxes.map(t => {
+        const tType = t.taxType || t.tax_type || 'percentage';
+        const tRate = parseFloat(t.rate || 0);
+        if (tType === 'percentage') {
+          const pct = tRate <= 1 ? (tRate * 100).toFixed(0) : tRate.toFixed(0);
+          return `${t.name ? t.name + ' (' + pct + '%)' : pct + '%'}`;
+        } else {
+          return `${t.name ? t.name + ' (' + formatCurrency(tRate, currency) + ')' : formatCurrency(tRate, currency)}`;
+        }
+      }).join(', ');
     } else {
       const taxRate = i.taxRate !== undefined ? i.taxRate : (cfg[i.taxCategory] / 100 || cfg.normal / 100);
       lineTax = lineBase * taxRate;
@@ -919,7 +978,8 @@ function buildInvoiceHTML(bill, wh, mode) {
           <strong>Issue Date:</strong> ${formatDate(bill.createdAt)}<br/>
           <strong>Due Date:</strong> ${formatDate(dueDate)}<br/>
           <strong>Billed By:</strong> ${employeeName} (${employeeRole})<br/>
-          <strong>Payment Method:</strong> Bank Transfer (Net 15)
+          <strong>Payment Method:</strong> Bank Transfer (Net 15)<br/>
+          <strong>Currency:</strong> ${bill.currency || 'USD'} ${bill.exchangeRate && parseFloat(bill.exchangeRate) !== 1.0 ? `(Rate: ${bill.exchangeRate})` : ''}
         </div>
       </div>
     </div>
@@ -999,8 +1059,8 @@ export function printBill(billId) {
   const bills = getBills();
   const bill = bills.find(b=>b.id===billId);
   if (!bill) { showToast('Error','Bill not found','error'); return; }
-  const whs = getWarehouses();
-  const wh = whs.find(w=>w.id===bill.warehouseId);
+  const allWhs = getStore().warehouses || [];
+  const wh = allWhs.find(w=>w.id===bill.warehouseId);
   const invoiceHTML = buildInvoiceHTML(bill, wh, 'print');
 
   const win = window.open('', '_blank', 'width=900,height=700');
@@ -1049,19 +1109,13 @@ export function printBill(billId) {
 }
 
 
-function _handleBillingWsEvent(e) {
+function _handleBillingStorageSync() {
   const user = getCurrentUser();
   if (!user) {
-    window.removeEventListener('wareops_ws_event', _handleBillingWsEvent);
+    window.removeEventListener('wareops_storage_sync', _handleBillingStorageSync);
     return;
   }
-  const payload = e.detail;
-  const evType = payload?.type || payload?.event_type;
-  if (evType === 'billing_completion') {
-    syncWithBackend().then(() => {
-      renderBillsTable();
-    });
-  }
+  renderBillsTable();
 }
 
 function calculateTaxesFrontend(items, warehouseId) {

@@ -1,11 +1,11 @@
 /**
  * Workforce Management Page — User CRUD with role assignment, view modes, and user profile panel
  */
-import { getCurrentUser, getAllUsers, createUser, updateUser, deleteUser, getWarehouses, getAuditLogs } from '../modules/store.js';
+import { getCurrentUser, getAllUsers, createUser, updateUser, deleteUser, getWarehouses, getAuditLogs, apiFetch } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { showToast, confirm, createModal, formatDate, formatDateTime, filterData, roleBadge, statusBadge, capitalize, debounce, getSvgIcon, renderAvatar, renderAvatarContainer, generateBarcodeSVG, updateDOMAvatars } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
-import { resolvePermissions, getAllRoles, ALL_MODULES, ALL_ACTIONS } from '../modules/permissions.js';
+import { resolvePermissions, getAllRoles, ALL_MODULES, ALL_ACTIONS, canDo } from '../modules/permissions.js';
 
 let wf_searchQ = '';
 let roleFilter = '';
@@ -16,9 +16,81 @@ let wf_viewMode = localStorage.getItem('wareops_wf_view') || 'table'; // table |
 
 export function renderWorkforce() {
   const user = getCurrentUser();
-  if (!user || user.role === 'employee' || user.role === 'staff') { navigate('/dashboard'); return; }
+  if (!user || !canDo('workforce', 'view')) { navigate('/dashboard'); return; }
 
   const whs = getWarehouses();
+  let activeWfTab = 'members';
+
+  const updateWfTabUI = () => {
+    const tabHeaders = document.querySelectorAll('.wf-tab-header');
+    tabHeaders.forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.tab === activeWfTab);
+    });
+
+    const contentArea = document.getElementById('workforce-tab-content');
+    if (!contentArea) return;
+
+    if (activeWfTab === 'members') {
+      contentArea.innerHTML = `
+        <!-- Table Toolbar -->
+        <div class="table-toolbar">
+          <div class="table-search">
+            <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
+            <input type="text" id="wf-search" placeholder="Search by name, email..." value="${wf_searchQ}" />
+          </div>
+          <div class="table-filter">
+            <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="role-filter">
+              <option value="">All Roles</option>
+              ${getAllRoles().map(r => `<option value="${r.id}" ${roleFilter === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}
+            </select>
+            <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="wh-filter-wf">
+              <option value="">All Warehouses</option>
+              ${whs.map(w=>`<option value="${w.id}" ${wf_whFilter === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}
+            </select>
+          </div>
+          <!-- View Mode Toggle -->
+          <div class="view-mode-toggle" id="wf-view-toggle">
+            <button class="view-mode-btn ${wf_viewMode==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
+            <button class="view-mode-btn ${wf_viewMode==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
+            <button class="view-mode-btn ${wf_viewMode==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
+          </div>
+        </div>
+
+        <!-- User List Container -->
+        <div id="workforce-table-container"></div>
+        <div id="workforce-pagination" style="margin-top:0"></div>
+      `;
+
+      renderWorkforceTable();
+      bindMembersTabEvents();
+    } else {
+      renderPendingDocumentsQueue(contentArea);
+    }
+  };
+
+  const bindMembersTabEvents = () => {
+    document.getElementById('create-user-btn')?.addEventListener('click', () => showUserModal(null));
+    
+    const debouncedSearch = debounce(q => {
+      wf_searchQ = q;
+      wf_page = 1;
+      renderWorkforceTable();
+    }, 300);
+
+    document.getElementById('wf-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
+    document.getElementById('role-filter')?.addEventListener('change', e => { roleFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
+    document.getElementById('wh-filter-wf')?.addEventListener('change', e => { wf_whFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
+
+    // View mode buttons
+    document.getElementById('wf-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        wf_viewMode = btn.dataset.view;
+        localStorage.setItem('wareops_wf_view', wf_viewMode);
+        document.querySelectorAll('#wf-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === wf_viewMode));
+        renderWorkforceTable();
+      });
+    });
+  };
 
   renderShell('Workforce', 'Manage users, roles, and warehouse assignments', `
     <div class="animate-slideUp">
@@ -29,70 +101,55 @@ export function renderWorkforce() {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${user.role === 'super_admin' ? `<button class="btn btn-ghost btn-sm" onclick="location.hash='#/roles'">${getSvgIcon('workforce', 13)} Roles</button>` : ''}
-          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
+          ${canDo('settings', 'manage') ? `<button class="btn btn-ghost btn-sm" onclick="location.hash='#/roles'">${getSvgIcon('workforce', 13)} Roles</button>` : ''}
+          ${canDo('workforce', 'create') ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
       </div>
 
       <!-- Stats Row -->
       <div id="workforce-stats"></div>
 
-      <!-- Table Toolbar -->
-      <div class="table-toolbar">
-        <div class="table-search">
-          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
-          <input type="text" id="wf-search" placeholder="Search by name, email..." />
-        </div>
-        <div class="table-filter">
-          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="role-filter">
-            <option value="">All Roles</option>
-            <option value="admin">Admin</option>
-            <option value="manager">Manager</option>
-            <option value="staff">Staff</option>
-            <option value="employee">Employee</option>
-          </select>
-          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="wh-filter-wf">
-            <option value="">All Warehouses</option>
-            ${whs.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
-          </select>
-        </div>
-        <!-- View Mode Toggle -->
-        <div class="view-mode-toggle" id="wf-view-toggle">
-          <button class="view-mode-btn ${wf_viewMode==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
-          <button class="view-mode-btn ${wf_viewMode==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
-          <button class="view-mode-btn ${wf_viewMode==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
-        </div>
+      <!-- Tab Navigation -->
+      <div class="table-toolbar" style="margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:0;gap:4px">
+        <button class="wf-tab-header btn btn-ghost btn-sm active" data-tab="members" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Workforce Members</button>
+        ${(user.role === 'super_admin' || user.role === 'admin' || user.role === 'manager') ? `
+          <button class="wf-tab-header btn btn-ghost btn-sm" data-tab="documents" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Document Review Queue</button>
+        ` : ''}
       </div>
 
-      <!-- User List Container -->
-      <div id="workforce-table-container"></div>
-      <div id="workforce-pagination" style="margin-top:0"></div>
+      <!-- Tab Content Area -->
+      <div id="workforce-tab-content"></div>
     </div>
   `);
 
   renderWorkforceStats();
-  renderWorkforceTable();
+  updateWfTabUI();
 
-  document.getElementById('create-user-btn')?.addEventListener('click', () => showUserModal(null));
-  const debouncedSearch = debounce(q => {
-    wf_searchQ = q;
-    wf_page = 1;
-    renderWorkforceTable();
-  }, 300);
-
-  document.getElementById('wf-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
-  document.getElementById('role-filter')?.addEventListener('change', e => { roleFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
-  document.getElementById('wh-filter-wf')?.addEventListener('change', e => { wf_whFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
-
-  // View mode buttons
-  document.getElementById('wf-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+  // Bind tab header click events
+  document.querySelectorAll('.wf-tab-header').forEach(btn => {
     btn.addEventListener('click', () => {
-      wf_viewMode = btn.dataset.view;
-      localStorage.setItem('wareops_wf_view', wf_viewMode);
-      document.querySelectorAll('#wf-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === wf_viewMode));
-      renderWorkforceTable();
+      activeWfTab = btn.dataset.tab;
+      updateWfTabUI();
     });
   });
+
+  const _handleWorkforceStorageSync = () => {
+    const u = getCurrentUser();
+    if (!u) {
+      window.removeEventListener('wareops_storage_sync', _handleWorkforceStorageSync);
+      return;
+    }
+    renderWorkforceStats();
+    if (activeWfTab === 'members') {
+      renderWorkforceTable();
+    } else {
+      const contentArea = document.getElementById('workforce-tab-content');
+      if (contentArea) renderPendingDocumentsQueue(contentArea);
+    }
+  };
+
+  window.removeEventListener('wareops_storage_sync', _handleWorkforceStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleWorkforceStorageSync);
 }
 
 
@@ -232,10 +289,9 @@ function renderTableView(pageUsers, whs, currentUser, container, start, total) {
               <td data-label="Actions">
                 <div class="table-actions">
                   <button class="action-btn view profile-btn" data-uid="${u.id}" title="View Profile">${getSvgIcon('view', 14)}</button>
-                  ${['super_admin', 'admin'].includes(currentUser.role) ? `
-                   <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                   <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
-                  ` : ''}
+                  <button class="action-btn view idcard-btn" data-uid="${u.id}" title="Generate ID Card">🪪</button>
+                  ${canDo('workforce', 'edit') ? `<button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>` : ''}
+                  ${canDo('workforce', 'delete') ? `<button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                 </div>
               </td>
             </tr>`;
@@ -280,10 +336,9 @@ function renderCardView(pageUsers, whs, currentUser, container) {
               <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">Since ${formatDate(u.assignedAt || u.createdAt)}</div>
               <div style="display:flex;gap:8px">
                 <button class="btn btn-secondary btn-xs profile-btn" data-uid="${u.id}">${getSvgIcon('view', 12)} Profile</button>
-                ${['super_admin','admin'].includes(currentUser.role) ? `
-                  <button class="action-btn edit btn-xs" data-uid="${u.id}">${getSvgIcon('edit', 12)}</button>
-                  <button class="action-btn delete btn-xs" data-uid="${u.id}">${getSvgIcon('trash', 12)}</button>
-                ` : ''}
+                <button class="btn btn-secondary btn-xs idcard-btn" data-uid="${u.id}">🪪 ID Card</button>
+                ${canDo('workforce', 'edit') ? `<button class="action-btn edit btn-xs" data-uid="${u.id}">${getSvgIcon('edit', 12)}</button>` : ''}
+                ${canDo('workforce', 'delete') ? `<button class="action-btn delete btn-xs" data-uid="${u.id}">${getSvgIcon('trash', 12)}</button>` : ''}
               </div>
             </div>
           </div>
@@ -310,7 +365,8 @@ function renderGridView(pageUsers, whs, currentUser, container) {
             <div style="font-size:11px;color:var(--text-muted)">${wh ? wh.name : '—'}</div>
             <div style="margin-top:10px;display:flex;gap:6px;justify-content:center">
               <button class="action-btn view btn-xs profile-btn" data-uid="${u.id}" title="Profile">${getSvgIcon('view', 12)}</button>
-              ${['super_admin','admin'].includes(currentUser.role) ? `
+              <button class="action-btn view btn-xs idcard-btn" data-uid="${u.id}" title="ID Card">🪪</button>
+              ${canDo('workforce', 'edit') ? `
                 <button class="action-btn edit btn-xs" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 12)}</button>
               ` : ''}
             </div>
@@ -329,6 +385,17 @@ function bindProfileButtons(container) {
       const uid = el.dataset.uid;
       const u = allUsers.find(u => u.id === uid);
       if (u) showUserProfilePanel(u);
+    });
+  });
+  container.querySelectorAll('.idcard-btn').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const uid = el.dataset.uid;
+      const u = allUsers.find(usr => usr.id === uid);
+      if (u) {
+        const { showIDCardModal } = await import('./profile.js');
+        showIDCardModal(u);
+      }
     });
   });
 }
@@ -419,12 +486,18 @@ function showUserProfilePanel(u) {
   const footer = `
     <div style="display:flex;gap:8px">
       <button class="btn btn-ghost" id="pp-close">Close</button>
-      ${['super_admin','admin'].includes(getCurrentUser()?.role) ? `<button class="btn btn-primary" id="pp-edit" data-uid="${u.id}">Edit User</button>` : ''}
+      <button class="btn btn-secondary" id="pp-idcard" data-uid="${u.id}">🪪 ID Card</button>
+      ${canDo('workforce', 'edit') ? `<button class="btn btn-primary" id="pp-edit" data-uid="${u.id}">Edit User</button>` : ''}
     </div>
   `;
 
   const modal = createModal({ title: `User Profile — ${u.name}`, body, footer, width: '820px' });
   modal.el.querySelector('#pp-close')?.addEventListener('click', modal.close);
+  modal.el.querySelector('#pp-idcard')?.addEventListener('click', async () => {
+    modal.close();
+    const { showIDCardModal } = await import('./profile.js');
+    showIDCardModal(u);
+  });
   modal.el.querySelector('#pp-edit')?.addEventListener('click', () => {
     modal.close();
     showUserModal(u);
@@ -436,9 +509,10 @@ function showUserModal(u) {
   const isEdit = !!u;
   const whs = getWarehouses();
   const currentUser = getCurrentUser();
+  const allRoles = getAllRoles();
   const availableRoles = currentUser.role === 'super_admin'
-    ? ['admin','manager','staff','employee']
-    : ['manager','staff','employee'];
+    ? allRoles.filter(r => r.id !== 'super_admin')
+    : allRoles.filter(r => r.id !== 'super_admin' && r.id !== 'admin');
 
   let m_avatar = u?.avatar || '';
   const barcodeUrl = u?.barcode ? `http://localhost:8000/api/v1/registry/barcode?code=${u.barcode}` : '';
@@ -484,12 +558,12 @@ function showUserModal(u) {
         <div class="form-group">
           <label class="form-label">Role <span class="req">*</span></label>
           <select id="m-u-role" class="form-control" required>
-            ${availableRoles.map(r=>`<option value="${r}" ${u?.role===r?'selected':''}>${capitalize(r)}</option>`).join('')}
+            ${availableRoles.map(r=>`<option value="${r.id}" ${u?.role===r.id?'selected':''}>${r.name}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Assign Warehouse <span class="req">*</span></label>
-          <select id="m-u-wh" class="form-control" required>
+          <label class="form-label">Assign Warehouse</label>
+          <select id="m-u-wh" class="form-control">
             <option value="">Select warehouse</option>
             ${whs.map(w=>`<option value="${w.id}" ${u?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
           </select>
@@ -621,7 +695,7 @@ function showUserModal(u) {
     const email = document.getElementById('m-u-email').value.trim();
     const role = document.getElementById('m-u-role').value;
     const warehouseId = document.getElementById('m-u-wh').value;
-    if (!name || !email || !role || !warehouseId) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
+    if (!name || !email || !role || (role !== 'super_admin' && !warehouseId)) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
     
     // Set avatar fallback if empty
     if (!m_avatar) {
@@ -662,5 +736,166 @@ function showUserModal(u) {
     modal.close();
     renderWorkforceStats();
     renderWorkforceTable();
+  });
+}
+
+async function renderPendingDocumentsQueue(container) {
+  container.innerHTML = `
+    <div style="display:flex;justify-content:center;padding:48px" id="doc-queue-spinner">
+      <div class="spinner"></div>
+    </div>
+  `;
+  
+  const res = await apiFetch('/workforce/documents/pending');
+  if (res.error) {
+    container.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="color:var(--text-danger);margin-bottom:12px;display:flex;justify-content:center">${getSvgIcon('warning', 32)}</div>
+        <h3 style="color:var(--text-secondary)">Failed to load documents queue</h3>
+        <p style="color:var(--text-muted);font-size:13px">${res.error}</p>
+      </div>
+    `;
+    return;
+  }
+  
+  const pendingDocs = res.data || [];
+  if (pendingDocs.length === 0) {
+    container.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('audit', 40)}</div>
+        <h3 style="color:var(--text-secondary)">No documents pending review</h3>
+        <p style="color:var(--text-muted);font-size:13px">All workforce compliance documents are currently up to date.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = `
+    <div class="card animate-slideUp">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Compliance Document Queue</div>
+          <div class="card-subtitle">Pending reviews for workforce credentials and identity verifications</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Document Name</th>
+              <th>Type</th>
+              <th>Uploaded Date</th>
+              <th>Expiry Date</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pendingDocs.map(d => `
+              <tr data-docid="${d.id}" data-userid="${d.userId}">
+                <td>
+                  <div>
+                    <div class="primary-cell">${d.userName}</div>
+                    <div class="sub-cell">${d.userEmail}</div>
+                  </div>
+                </td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="color:var(--text-muted)">${getSvgIcon('audit', 16)}</span>
+                    <span style="font-weight:600">${d.name}</span>
+                  </div>
+                </td>
+                <td><span class="badge badge-secondary" style="font-size:11px;padding:2px 8px">${d.type}</span></td>
+                <td>${d.uploadedAt || '—'}</td>
+                <td>${d.expiryDate || '—'}</td>
+                <td style="text-align:right">
+                  <div style="display:flex;gap:6px;justify-content:flex-end">
+                    <button class="btn btn-secondary btn-xs download-btn">Download</button>
+                    <button class="btn btn-success btn-xs approve-btn" style="background:var(--accent-emerald);border-color:var(--accent-emerald)">Approve</button>
+                    <button class="btn btn-danger btn-xs reject-btn" style="background:var(--text-danger);border-color:var(--text-danger)">Reject</button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  
+  // Bind events
+  container.querySelectorAll('tbody tr').forEach(row => {
+    const docId = row.dataset.docid;
+    const userId = row.dataset.userid;
+    const doc = pendingDocs.find(item => item.id === docId);
+    
+    row.querySelector('.download-btn')?.addEventListener('click', () => {
+      showToast('Secure Download', 'Retrieving encrypted document file...', 'info');
+    });
+    
+    row.querySelector('.approve-btn')?.addEventListener('click', () => {
+      handleDocumentReview(userId, docId, 'Approved', doc.name);
+    });
+    
+    row.querySelector('.reject-btn')?.addEventListener('click', () => {
+      handleDocumentReview(userId, docId, 'Rejected', doc.name);
+    });
+  });
+}
+
+function handleDocumentReview(userId, docId, status, docName) {
+  const isApprove = status === 'Approved';
+  const actionTitle = isApprove ? 'Approve Document' : 'Reject Document';
+  const actionBtnClass = isApprove ? 'btn-success' : 'btn-danger';
+  const actionBtnStyle = isApprove ? 'background:var(--accent-emerald);border-color:var(--accent-emerald)' : 'background:var(--text-danger);border-color:var(--text-danger)';
+  
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:16px;font-size:13px;color:var(--text-secondary)">
+      Are you sure you want to <strong>${status.toLowerCase()}</strong> the document <strong>${docName}</strong>?
+    </div>
+    <div class="form-group">
+      <label class="form-label">${isApprove ? 'Approval Remarks (Optional)' : 'Rejection Reason (Required)'}</label>
+      <textarea id="review-remarks" class="form-control" rows="3" placeholder="${isApprove ? 'Add any optional notes...' : 'Please explain why this document is rejected...'}" required></textarea>
+    </div>
+  `;
+  
+  const footer = document.createElement('div');
+  footer.style.display = 'flex';
+  footer.style.gap = '12px';
+  footer.style.justifyContent = 'flex-end';
+  footer.innerHTML = `
+    <button class="btn btn-secondary" id="review-cancel">Cancel</button>
+    <button class="btn ${actionBtnClass}" id="review-submit" style="${actionBtnStyle}">${status}</button>
+  `;
+  
+  const modal = createModal({
+    title: actionTitle,
+    body,
+    footer
+  });
+  
+  modal.el.querySelector('#review-cancel').addEventListener('click', () => modal.close());
+  
+  modal.el.querySelector('#review-submit').addEventListener('click', async () => {
+    const remarks = modal.el.querySelector('#review-remarks').value.trim();
+    if (!isApprove && !remarks) {
+      showToast('Validation Error', 'A rejection reason is required.', 'warning');
+      return;
+    }
+    
+    modal.close();
+    
+    const { reviewDocument } = await import('../modules/store.js');
+    const res = await reviewDocument(userId, docId, status, remarks);
+    if (res && res.error) {
+      showToast('Review Failed', res.error, 'error');
+    } else {
+      showToast('Review Recorded', `Document has been ${status.toLowerCase()}.`, 'success');
+      const contentArea = document.getElementById('workforce-tab-content');
+      if (contentArea) {
+        renderPendingDocumentsQueue(contentArea);
+      }
+    }
   });
 }

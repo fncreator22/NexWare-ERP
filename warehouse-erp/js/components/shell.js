@@ -1,11 +1,11 @@
 /**
  * App Shell — Sidebar + Topbar + Main layout (v3 — Dynamic Nav)
  */
-import { getCurrentUser, logout, getWarehouses, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, getSubscription, getStockHealth } from '../modules/store.js';
+import { getCurrentUser, logout, getWarehouses, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, getSubscription, getStockHealth, getItems } from '../modules/store.js';
 import { navigate, getCurrentPath } from '../modules/router.js';
 import { capitalize, positionFixedElement, getSvgIcon, timeSince, renderAvatar, renderAvatarContainer } from '../modules/ui.js';
 import { initPalette, togglePalette } from './palette.js';
-import { getDynamicNav } from '../modules/permissions.js';
+import { getDynamicNav, canDo } from '../modules/permissions.js';
 
 
 // Navigation is now dynamically generated from permissions — see js/modules/permissions.js
@@ -49,8 +49,16 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   const stockHealth = getStockHealth(user.role === 'super_admin' ? null : user.warehouseId);
   const healthColor = stockHealth > 80 ? 'var(--accent-emerald)' : stockHealth > 50 ? 'var(--accent-amber)' : 'var(--accent-rose)';
 
+  // Find first low stock item for navigation
+  const shellItems = getItems(user.role === 'super_admin' ? null : user.warehouseId);
+  const firstLowStockItem = shellItems.find(i => {
+    const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+    return (i.stock || 0) <= threshold;
+  });
+  const firstLowStockId = firstLowStockItem ? firstLowStockItem.id : '';
+
   const sidebarWidget = `
-    <div class="sidebar-widget">
+    <div class="sidebar-widget" id="sidebar-health-widget" style="cursor:pointer">
       <div class="widget-label">Inventory Health</div>
       <div class="health-bar"><div class="health-bar-fill" style="width:${stockHealth}%; background:${healthColor}"></div></div>
       <div class="health-val">
@@ -119,6 +127,11 @@ export function renderShell(pageTitle, pageSubtitle, content) {
       navigate(item.dataset.path);
       closeSidebar();
     });
+  });
+
+  // Sidebar health widget click
+  document.getElementById('sidebar-health-widget')?.addEventListener('click', () => {
+    navigate(firstLowStockId ? `/items?id=${firstLowStockId}` : '/items');
   });
 
   // Collapsible sidebar toggle
@@ -415,8 +428,9 @@ function showProfileDropdown(anchor) {
       <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
     </div>
+    <div id="dd-profile" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('user', 14)} Profile</div>
     <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
-    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
+    ${canDo('settings', 'manage', user) ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
     <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
     <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
   `;
@@ -467,6 +481,7 @@ function showProfileDropdown(anchor) {
   }, { once: true }), 50);
   
   dropdown.querySelector('#dd-logout')?.addEventListener('click', async () => { dropdown.remove(); await logout(); navigate('/login'); });
+  dropdown.querySelector('#dd-profile')?.addEventListener('click', () => { navigate('/profile'); dropdown.remove(); });
   dropdown.querySelector('#dd-settings')?.addEventListener('click', () => { navigate('/settings'); dropdown.remove(); });
   dropdown.querySelector('#dd-subscription')?.addEventListener('click', () => { navigate('/subscription'); dropdown.remove(); });
 }

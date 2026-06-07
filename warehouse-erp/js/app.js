@@ -19,7 +19,7 @@ import { getSvgIcon, applyTheme } from './modules/ui.js';
 import { canDo } from './modules/permissions.js';
 
 // Pages
-import { renderLogin, renderSignup, renderWarehouseRegistration } from './pages/auth.js';
+import { renderLogin, renderSignup, renderWarehouseRegistration, renderForgotPassword, renderResetPassword } from './pages/auth.js';
 import { renderPrivacy, renderTerms } from './pages/legal.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderWarehouses } from './pages/warehouses.js';
@@ -36,6 +36,7 @@ import { renderLanding } from './pages/landing.js';
 import { renderCustomers } from './pages/customers.js';
 import { renderRoles } from './pages/roles.js';
 import { renderNotifications } from './pages/notifications.js';
+import { renderProfile } from './pages/profile.js';
 
 // Route handler map
 const routes = {
@@ -43,6 +44,8 @@ const routes = {
   '/login': renderLogin,
   '/signup': renderSignup,
   '/register-warehouse': renderWarehouseRegistration,
+  '/forgot-password': renderForgotPassword,
+  '/reset-password': renderResetPassword,
   '/dashboard': renderDashboard,
   '/warehouses': renderWarehouses,
   '/workforce': renderWorkforce,
@@ -58,6 +61,7 @@ const routes = {
   '/customers': renderCustomers,
   '/roles': renderRoles,
   '/notifications': renderNotifications,
+  '/profile': renderProfile,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -98,8 +102,8 @@ function resolveRoute() {
   try {
     const path = getActivePath();
     const user = getCurrentUser();
-    const publicRoutes = ['/', '/login', '/signup', '/privacy', '/terms'];
-    const redirectIfLoggedIn = ['/', '/login', '/signup'];
+    const publicRoutes = ['/', '/login', '/signup', '/privacy', '/terms', '/forgot-password', '/reset-password'];
+    const redirectIfLoggedIn = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
 
     // Not logged in
     if (!user) {
@@ -132,9 +136,15 @@ function resolveRoute() {
         '/audit': 'audit',
         '/settings': 'settings',
         '/customers': 'crm',
+        '/notifications': 'notifications',
       };
 
-      if (['/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
+      if (path === '/subscription' && !canDo('settings', 'manage', user)) {
+        safeNavigate('/dashboard');
+        return;
+      }
+
+      if (path === '/roles' && !canDo('settings', 'manage', user)) {
         safeNavigate('/dashboard');
         return;
       }
@@ -192,9 +202,49 @@ window.addEventListener('wareops_storage_sync', () => {
   resolveRoute();
 });
 
+let _inactivityTimer = null;
+let _lastActivityTime = Date.now();
+
+function updateActivity() {
+  _lastActivityTime = Date.now();
+}
+
+function startInactivityMonitor() {
+  if (typeof window === 'undefined') return;
+  if (_inactivityTimer) clearInterval(_inactivityTimer);
+
+  const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
+  events.forEach(evt => window.addEventListener(evt, updateActivity, { passive: true }));
+
+  _inactivityTimer = setInterval(async () => {
+    const user = getCurrentUser();
+    if (!user || !sessionStorage.getItem('access_token')) return;
+
+    // Get timeout limit in minutes (default 15)
+    const timeoutMin = (user.profile && user.profile.privacy && user.profile.privacy.sessionTimeout) || 15;
+    const timeoutMs = timeoutMin * 60 * 1000;
+
+    if (Date.now() - _lastActivityTime > timeoutMs) {
+      console.log(`[WareOps] Inactivity timeout reached (${timeoutMin}m). Logging out.`);
+      events.forEach(evt => window.removeEventListener(evt, updateActivity));
+      clearInterval(_inactivityTimer);
+      _inactivityTimer = null;
+      
+      const { logout } = await import('./modules/store.js');
+      await logout();
+      const { showToast } = await import('./modules/ui.js');
+      showToast('Session Expired', 'You have been logged out due to inactivity.', 'warning');
+      window.location.hash = '#/login';
+    }
+  }, 10000); // Check every 10 seconds
+}
+
 // Initialize app when DOM is ready
 async function init() {
   try {
+    // Start tracking user inactivity
+    startInactivityMonitor();
+
     // Bind active currency dynamically for formatting sync
     window.wareops_currency = getActiveCurrency();
 
@@ -209,7 +259,7 @@ async function init() {
     const user = getCurrentUser();
 
     // Prioritize full synchronization before routing to prevent race conditions on page load/refresh
-    if (user && localStorage.getItem('access_token')) {
+    if (user && sessionStorage.getItem('access_token')) {
       try {
         await syncWithBackend();
       } catch (syncErr) {

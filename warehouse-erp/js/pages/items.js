@@ -1,10 +1,11 @@
 /**
  * Items / Inventory Management Page
  */
-import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig, syncWithBackend, getStore, apiFetch } from '../modules/store.js';
+import { getCurrentUser, getItems, createItem, updateItem, deleteItem, getWarehouses, getTaxConfig, syncWithBackend, getStore, apiFetch, addAuditLog } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, capitalize, debounce, getSvgIcon, renderEntityImage, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
+import { canDo } from '../modules/permissions.js';
 
 let it_searchQ = '';
 let categoryFilter = '';
@@ -22,7 +23,6 @@ export function renderItems() {
     return;
   }
   const whs = getWarehouses();
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   renderShell('Inventory', 'Manage items, stock, and categories', `
     <div class="animate-slideUp">
@@ -33,8 +33,8 @@ export function renderItems() {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="generate-barcodes-btn">Generate Barcodes</button>
+          ${canDo('inventory', 'manage') ? `<button class="btn btn-secondary btn-sm" id="generate-barcodes-btn">Generate Barcodes</button>` : ''}
+          ${canDo('inventory', 'create') ? `
             <button class="btn btn-secondary btn-sm" id="import-csv-btn">Import CSV</button>
             <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
@@ -106,9 +106,9 @@ export function renderItems() {
     if (item) showItemCardModal(item);
   };
   
-  // Realtime WebSocket auto-refresh for inventory
-  window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
-  window.addEventListener('wareops_ws_event', _handleInventoryWsEvent);
+  // Realtime storage sync auto-refresh for inventory
+  window.removeEventListener('wareops_storage_sync', _handleInventoryStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleInventoryStorageSync);
 
   // Deep-link target item if id query parameter is present in URL hash
   const hash = window.location.hash || '';
@@ -150,7 +150,7 @@ function renderItemStats() {
 function renderItemsTable() {
   const user = getCurrentUser();
   const whs = getWarehouses();
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
+  const canEdit = canDo('inventory', 'edit') || canDo('inventory', 'delete');
   let items = getItems();
   if (it_searchQ) items = filterData(items, it_searchQ, ['name','sku','category']);
   if (categoryFilter) items = items.filter(i => i.category === categoryFilter);
@@ -181,13 +181,16 @@ function renderItemsTable() {
 }
 
 function renderItemsTableView(pageItems, whs, canEdit, container, start, total, it_pages) {
+  const hasEdit = canDo('inventory', 'edit');
+  const hasDelete = canDo('inventory', 'delete');
+  const showActions = hasEdit || hasDelete;
   container.innerHTML = `
     <div class="table-wrap">
       <table>
         <thead><tr>
           <th>Item</th><th>SKU</th><th>Category</th><th>Price</th>
           <th>Stock</th><th>Warehouse</th>
-          ${canEdit ? '<th>Actions</th>' : ''}
+          ${showActions ? '<th>Actions</th>' : ''}
         </tr></thead>
         <tbody>
           ${pageItems.map(item => {
@@ -213,11 +216,13 @@ function renderItemsTableView(pageItems, whs, canEdit, container, start, total, 
               <td data-label="Price"><strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong></td>
               <td data-label="Stock"><span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span></td>
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
-              ${canEdit ? `<td data-label="Actions">
+              ${showActions ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="color:var(--accent-emerald)">${getSvgIcon('plus', 14)}</button>
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                  ${hasEdit ? `
+                    <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="color:var(--accent-emerald)">${getSvgIcon('plus', 14)}</button>
+                    <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  ` : ''}
+                  ${hasDelete ? `<button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                 </div>
               </td>` : ''}
             </tr>`;
@@ -264,8 +269,10 @@ function renderItemsGridView(pageItems, whs, canEdit, container, start, total, i
               <span class="badge badge-brand" style="font-size:10px">${item.category}</span>
               <div style="display:flex;gap:6px">
                 <button class="action-btn view profile-btn" data-iid="${item.id}" title="View Details" style="padding: 4px;">${getSvgIcon('view', 12)}</button>
-                ${canEdit ? `
+                ${canDo('inventory', 'edit') ? `
                   <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                ` : ''}
+                ${canDo('inventory', 'delete') ? `
                   <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
                 ` : ''}
               </div>
@@ -342,9 +349,11 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
               <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-subtle);padding-top:10px;">
                 <button class="btn btn-secondary btn-xs clickable-card" data-iid="${item.id}" style="font-size:11px;">${getSvgIcon('view', 12)} View Details</button>
                 <div style="display:flex;gap:6px">
-                  ${canEdit ? `
+                  ${canDo('inventory', 'edit') ? `
                     <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="padding: 4px;color:var(--accent-emerald)">${getSvgIcon('plus', 12)}</button>
                     <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                  ` : ''}
+                  ${canDo('inventory', 'delete') ? `
                     <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
                   ` : ''}
                 </div>
@@ -367,9 +376,8 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
 
 function bindItemsEvents(container, it_pages) {
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
-  if (canEdit) {
+  if (canDo('inventory', 'edit')) {
     container.querySelectorAll('.add-stock[data-iid]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -384,6 +392,8 @@ function bindItemsEvents(container, it_pages) {
         if (item) showItemModal(item);
       });
     });
+  }
+  if (canDo('inventory', 'delete')) {
     container.querySelectorAll('.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -823,18 +833,14 @@ function showImportModal() {
   });
 }
 
-function _handleInventoryWsEvent(e) {
+function _handleInventoryStorageSync() {
   const user = getCurrentUser();
   if (!user) {
-    window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
+    window.removeEventListener('wareops_storage_sync', _handleInventoryStorageSync);
     return;
   }
-  const payload = e.detail;
-  const evType = payload?.type || payload?.event_type;
-  if (evType === 'inventory_change') {
-    renderItemStats();
-    renderItemsTable();
-  }
+  renderItemStats();
+  renderItemsTable();
 }
 
 function showItemCardModal(item) {
@@ -1215,5 +1221,84 @@ export function showBarcodeGenerationModal() {
   });
 }
 window.showBarcodeGenerationModal = showBarcodeGenerationModal;
+
+export function showAddStockModal(item) {
+  const body = `
+    <form id="add-stock-modal-form" style="display:flex;flex-direction:column;gap:16px">
+      <div style="background:var(--bg-elevated);border-left:4px solid var(--brand-500);padding:12px;border-radius:0 6px 6px 0">
+        <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;font-weight:700">Target Item</div>
+        <div style="font-weight:800;font-size:15px;color:var(--text-primary);margin-top:2px">${item.name}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;font-size:12px">
+          <div><span style="color:var(--text-muted)">SKU:</span> <strong style="font-family:var(--font-mono)">${item.sku || '—'}</strong></div>
+          <div><span style="color:var(--text-muted)">Current Stock:</span> <strong>${item.stock} ${item.unit || 'pcs'}</strong></div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="font-weight:600">Quantity to Add <span class="req">*</span></label>
+        <input type="number" id="stock-qty-add" class="form-control" min="1" required placeholder="Enter positive number..." />
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="font-weight:600">Adjustment Notes / Reason</label>
+        <textarea id="stock-notes" class="form-control" style="resize:vertical;min-height:80px" placeholder="Optional audit trail note (e.g. Restock delivery, supplier check)..."></textarea>
+      </div>
+    </form>
+  `;
+
+  const footer = `
+    <button class="btn btn-secondary" id="add-stock-cancel">Cancel</button>
+    <button class="btn btn-primary" id="add-stock-submit" style="display:inline-flex;align-items:center;gap:6px">
+      ${getSvgIcon('check', 14)} Adjust Stock
+    </button>
+  `;
+
+  const modal = createModal({ title: 'Add Inventory Stock', body, footer });
+
+  modal.el.querySelector('#add-stock-cancel').addEventListener('click', () => modal.close());
+
+  modal.el.querySelector('#add-stock-submit').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const qtyInput = modal.el.querySelector('#stock-qty-add');
+    const notesInput = modal.el.querySelector('#stock-notes');
+    
+    if (!qtyInput.checkValidity()) {
+      qtyInput.reportValidity();
+      return;
+    }
+    
+    const qty = parseInt(qtyInput.value) || 0;
+    if (qty <= 0) {
+      showToast('Validation Error', 'Quantity must be a positive number greater than 0.', 'warning');
+      return;
+    }
+    
+    const newStock = item.stock + qty;
+    const notes = notesInput.value.trim() || 'Manual stock intake';
+    
+    const submitBtn = modal.el.querySelector('#add-stock-submit');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Updating...';
+    
+    const res = await updateItem(item.id, {
+      ...item,
+      stock: newStock
+    });
+    
+    if (res && res.error) {
+      showToast('Error', res.error, 'error');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `${getSvgIcon('check', 14)} Adjust Stock`;
+      return;
+    }
+    
+    const user = getCurrentUser();
+    addAuditLog('stock_adjust', `Added ${qty} units to ${item.name} (New Stock: ${newStock}). Reason: ${notes}`, user.id);
+    
+    showToast('Stock Updated', `Successfully added ${qty} units to ${item.name}.`, 'success');
+    modal.close();
+    renderItemStats();
+    renderItemsTable();
+  });
+}
+window.showAddStockModal = showAddStockModal;
 
 

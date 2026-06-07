@@ -4,11 +4,14 @@
 import { getCurrentUser, apiFetch, getStore } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { formatDateTime, renderAvatarContainer } from '../modules/ui.js';
+import { canDo } from '../modules/permissions.js';
 
 let au_searchQ = '';
 let au_page = 1;
 const au_PER_PAGE = 100;
 let au_actionFilter = '';
+
+let activeAuditTab = 'personal';
 
 export function renderAudit() {
   const user = getCurrentUser();
@@ -16,6 +19,20 @@ export function renderAudit() {
     window.location.hash = '#/login';
     return;
   }
+  
+  const canViewEnterprise = canDo('audit', 'view');
+  if (activeAuditTab === 'enterprise' && !canViewEnterprise) {
+    activeAuditTab = 'personal';
+  }
+
+  const updateAuditTabUI = () => {
+    const tabHeaders = document.querySelectorAll('.audit-tab-header');
+    tabHeaders.forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.tab === activeAuditTab);
+    });
+    au_page = 1;
+    renderAuditTable();
+  };
   
   renderShell('Audit Logs', 'System activity and security trail', `
     <div class="animate-slideUp">
@@ -27,6 +44,14 @@ export function renderAudit() {
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="table-toolbar" style="margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:0;gap:4px">
+        <button class="audit-tab-header btn btn-ghost btn-sm active" data-tab="personal" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">My Activity</button>
+        ${canViewEnterprise ? `
+          <button class="audit-tab-header btn btn-ghost btn-sm" data-tab="enterprise" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Company Activity</button>
+        ` : ''}
       </div>
       
       <div class="table-toolbar">
@@ -60,7 +85,15 @@ export function renderAudit() {
     </div>
   `);
 
-  renderAuditTable();
+  updateAuditTabUI();
+
+  // Bind tab header click events
+  document.querySelectorAll('.audit-tab-header').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeAuditTab = btn.dataset.tab;
+      updateAuditTabUI();
+    });
+  });
   
   // Set up event listeners with debounce for search
   let debounceTimeout;
@@ -124,7 +157,7 @@ async function renderAuditTable() {
   `;
 
   try {
-    let url = `/audit-logs/?page=${au_page}&limit=${au_PER_PAGE}`;
+    let url = `/audit-logs/?page=${au_page}&limit=${au_PER_PAGE}&scope=${activeAuditTab}`;
     if (au_searchQ.trim()) {
       url += `&search=${encodeURIComponent(au_searchQ.trim())}`;
     }

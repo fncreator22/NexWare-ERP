@@ -8,6 +8,7 @@ import {
 import { renderShell } from '../components/shell.js';
 import { showToast, confirm, createModal, formatDate, capitalize, debounce, getSvgIcon, renderAvatar, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
+import { canDo } from '../modules/permissions.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const COLUMN_TYPES   = ['text','number','date','dropdown','checkbox','price','tags','status'];
@@ -54,6 +55,12 @@ export async function renderTables() {
     return;
   }
 
+  if (!canDo('tables', 'view')) {
+    showToast('Access Denied', "You do not have permission to access tables.", 'error');
+    window.location.hash = '#/dashboard';
+    return;
+  }
+
   // Parse deep-linked table ID from hash query parameters if present
   const hash = window.location.hash;
   const match = hash.match(/[?&]id=([^&]+)/);
@@ -64,7 +71,7 @@ export async function renderTables() {
   }
 
   const whs      = getWarehouses();
-  const canManage = ['super_admin','admin'].includes(user.role);
+  const canManage = canDo('tables', 'create');
 
   // Auto-seed system tables on list view entry
   if (!_activeTableId && canManage) {
@@ -94,8 +101,10 @@ async function _renderTableList(user, whs, canManage) {
     });
   }
 
-
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
+  const canCreate = canDo('tables', 'create');
+  const canEditSchema = canDo('tables', 'edit');
+  const canDeleteSchema = canDo('tables', 'delete');
+  const canGenerateBarcodes = canDo('inventory', 'manage');
 
   renderShell('Tables', 'Dynamic table builder and spreadsheet workspace', `
     <div class="animate-slideUp">
@@ -106,8 +115,8 @@ async function _renderTableList(user, whs, canManage) {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${canEdit ? `<button class="btn btn-secondary btn-sm" id="generate-barcodes-btn-tbl">Generate Barcodes</button>` : ''}
-          ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
+          ${canGenerateBarcodes ? `<button class="btn btn-secondary btn-sm" id="generate-barcodes-btn-tbl">Generate Barcodes</button>` : ''}
+          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
         </div>
       </div>
 
@@ -116,7 +125,7 @@ async function _renderTableList(user, whs, canManage) {
           <div style="font-size:48px;margin-bottom:20px;opacity:0.4;display:flex;justify-content:center;color:var(--text-muted)">${getSvgIcon('tables', 48)}</div>
           <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
           <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Create your first table and start tracking data like a spreadsheet</p>
-          ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create First Table</button>` : ''}
+          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create First Table</button>` : ''}
         </div>
       ` : `
         <div class="table-toolbar" style="margin-bottom:16px">
@@ -151,8 +160,8 @@ async function _renderTableList(user, whs, canManage) {
                   <td>
                     <div class="table-actions">
                       <button class="action-btn view" data-tid="${t.id}" title="Open Spreadsheet">${getSvgIcon('analytics', 14)}</button>
-                      ${canManage ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">${getSvgIcon('edit', 14)}</button>` : ''}
-                      ${canManage ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
+                      ${canEditSchema ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">${getSvgIcon('edit', 14)}</button>` : ''}
+                      ${canDeleteSchema ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                     </div>
                   </td>
                 </tr>`;
@@ -257,8 +266,11 @@ async function _openSpreadsheet(user, canManage) {
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
 
   const isRegistry = _activeTableId === 'central_registry';
-  const canEdit   = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
-  const canImport = ['super_admin','admin','manager'].includes(user.role) && !isRegistry;
+  const canEdit   = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
+  const canImport = canDo('tables', 'import') && !isRegistry;
+  const canExport = canDo('tables', 'export');
+  const canCreate = canDo('tables', 'create') && !isRegistry;
   const cols      = _schema.columns || [];
   const headerColor = _schema.headerColor || '#6366f1';
 
@@ -336,13 +348,13 @@ async function _openSpreadsheet(user, canManage) {
         <div class="ss-menu-item">
           <button class="ss-menu-btn">File</button>
           <div class="ss-menu-dropdown">
-            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-file-new">New Spreadsheet</button>` : ''}
+            ${canCreate ? `<button class="ss-menu-dropdown-item" id="menu-file-new">New Spreadsheet</button>` : ''}
             ${canImport ? `<button class="ss-menu-dropdown-item" id="menu-file-import">Import</button>` : ''}
-            <button class="ss-menu-dropdown-item" id="menu-file-export">Download</button>
-            <button class="ss-menu-dropdown-item" id="menu-file-copy">Make a copy</button>
-            <button class="ss-menu-dropdown-item" id="menu-file-share">Share</button>
-            <button class="ss-menu-dropdown-item" id="menu-file-rename">Rename</button>
-            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-file-bin">Move to bin</button>` : ''}
+            ${canExport ? `<button class="ss-menu-dropdown-item" id="menu-file-export">Download</button>` : ''}
+            ${canCreate ? `<button class="ss-menu-dropdown-item" id="menu-file-copy">Make a copy</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-file-share">Share</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-file-rename">Rename</button>` : ''}
+            ${canDelete ? `<button class="ss-menu-dropdown-item" id="menu-file-bin">Move to bin</button>` : ''}
             <button class="ss-menu-dropdown-item" id="menu-file-history">Version history</button>
           </div>
         </div>
@@ -374,8 +386,8 @@ async function _openSpreadsheet(user, canManage) {
         <div class="ss-menu-item">
           <button class="ss-menu-btn">Insert</button>
           <div class="ss-menu-dropdown">
-            <button class="ss-menu-dropdown-item" id="menu-insert-row">Row</button>
-            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-insert-col">Column</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-insert-row">Row</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-insert-col">Column</button>` : ''}
             <button class="ss-menu-dropdown-item" id="menu-insert-image">Image</button>
             <button class="ss-menu-dropdown-item" id="menu-insert-link">Link</button>
             <button class="ss-menu-dropdown-item" id="menu-insert-comment">Comment</button>
@@ -387,6 +399,7 @@ async function _openSpreadsheet(user, canManage) {
           </div>
         </div>
 
+        ${canEdit ? `
         <div class="ss-menu-item">
           <button class="ss-menu-btn">Format</button>
           <div class="ss-menu-dropdown">
@@ -401,10 +414,12 @@ async function _openSpreadsheet(user, canManage) {
             <button class="ss-menu-dropdown-item" id="menu-fmt-dec-dec">Decrease Decimals</button>
           </div>
         </div>
+        ` : ''}
       </div>
 
       <!-- Quick formatting bar -->
       <div class="ss-format-bar">
+        ${canEdit ? `
         <button class="ss-format-btn" id="fmt-bold" title="Bold" style="font-weight:bold">B</button>
         <button class="ss-format-btn" id="fmt-italic" title="Italic" style="font-style:italic">I</button>
         <button class="ss-format-btn" id="fmt-underline" title="Underline" style="text-decoration:underline">U</button>
@@ -448,6 +463,7 @@ async function _openSpreadsheet(user, canManage) {
         </div>
 
         <div class="ss-format-divider"></div>
+        ` : ''}
         
         <!-- Tab pages selector container -->
         <div id="ss-pages-tabs-container" style="display:flex;align-items:center"></div>
@@ -484,11 +500,11 @@ async function _openSpreadsheet(user, canManage) {
                         </div>
                       </th>
                     `).join('')}
-                    ${canEdit ? '<th class="ss-th ss-th-actions">Actions</th>' : ''}
+                    ${canDelete ? '<th class="ss-th ss-th-actions">Actions</th>' : ''}
                   </tr>
                 </thead>
                 <tbody id="ss-tbody">
-                  ${_buildAllRows(cols, canEdit, user)}
+                  ${_buildAllRows(cols, canEdit, canDelete, user)}
                 </tbody>
               </table>
             </div>
@@ -902,7 +918,7 @@ async function _openSpreadsheet(user, canManage) {
   _updateFooterButtons();
 
   // Attach cell + row events
-  _attachGridEvents(cols, canEdit, user);
+  _attachGridEvents(cols, canEdit, canDelete, user);
   _renderPageTabs(canEdit);
   _updatePageMeta();
   _initColumnResizer();
@@ -912,16 +928,16 @@ async function _openSpreadsheet(user, canManage) {
 }
 
 // ─── ROW RENDERING ────────────────────────────────────────────────────────────
-function _buildAllRows(cols, canEdit, user) {
+function _buildAllRows(cols, canEdit, canDelete, user) {
   let html = '';
   // Real rows
   for (let i = 0; i < _rows.length; i++) {
-    html += _buildRow(_rows[i], i, cols, canEdit, user, false);
+    html += _buildRow(_rows[i], i, cols, canEdit, canDelete, user, false);
   }
   // Virtual empty rows to fill up to exactly 100 capacity
   const virtualCount = Math.max(0, 100 - _rows.length);
   for (let v = 0; v < virtualCount; v++) {
-    html += _buildVirtualRow(_rows.length + v, cols, canEdit);
+    html += _buildVirtualRow(_rows.length + v, cols, canEdit, canDelete);
   }
   return html;
 }
@@ -990,10 +1006,11 @@ async function _switchPage(pageNumber) {
   const cols = _schema.columns || [];
   const user = getCurrentUser();
   const isRegistry = _activeTableId === 'central_registry';
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
   
   const sheetNameEl = document.getElementById('ss-active-sheet-name');
@@ -1041,7 +1058,7 @@ function _updatePageMeta() {
   `;
 }
 
-function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
+function _buildRow(row, idx, cols, canEdit, canDelete, user, isNew = false) {
   const locked = _lockedRows.has(row.id);
   const lockInfo = locked ? _lockedRows.get(row.id) : null;
   const isLockedByOther = locked && lockInfo?.userId !== String(user.id || user._id);
@@ -1063,7 +1080,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
         }
       </td>
     `).join('')}
-    ${canEdit ? `
+    ${canDelete ? `
       <td class="ss-td ss-td-actions">
         <button class="ss-action-btn ss-del-row" data-row-id="${row.id}" data-row-idx="${idx}" title="Delete row">${getSvgIcon('trash', 12)}</button>
       </td>
@@ -1071,7 +1088,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
   </tr>`;
 }
 
-function _buildVirtualRow(idx, cols, canEdit) {
+function _buildVirtualRow(idx, cols, canEdit, canDelete) {
   return `<tr class="ss-row ss-row-virtual" data-row-idx="${idx}" data-virtual="true">
     <td class="ss-td ss-td-row-num"><span class="ss-row-num" style="opacity:0.3">${idx + 1}</span></td>
     ${cols.map(col => `
@@ -1080,7 +1097,7 @@ function _buildVirtualRow(idx, cols, canEdit) {
         <span class="ss-cell-placeholder"></span>
       </td>
     `).join('')}
-    ${canEdit ? `<td class="ss-td ss-td-actions"></td>` : ''}
+    ${canDelete ? `<td class="ss-td ss-td-actions"></td>` : ''}
   </tr>`;
 }
 
@@ -1145,6 +1162,16 @@ function _buildEditableCell(value, col, rowId, rowIdx) {
 function _buildReadonlyCell(value, col) {
   const v = value ?? '';
   if (v === '' || v === null || v === undefined) return '<span style="color:var(--text-disabled)">—</span>';
+  
+  if (col.id === 'barcode') {
+    let code = v;
+    if (typeof v === 'string' && v.includes('code=')) {
+      code = v.split('code=')[1];
+    }
+    const srcVal = `http://localhost:8000/api/v1/registry/barcode?code=${code}`;
+    return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" />`;
+  }
+
   switch (col.type) {
     case 'checkbox': return v 
       ? `<span style="color:var(--accent-emerald);font-weight:700;display:inline-flex;align-items:center">${getSvgIcon('check', 12)}</span>` 
@@ -1178,7 +1205,7 @@ function _buildReadonlyCell(value, col) {
 }
 
 // ─── GRID EVENT ATTACHMENT ─────────────────────────────────────────────────────
-function _attachGridEvents(cols, canEdit, user) {
+function _attachGridEvents(cols, canEdit, canDelete, user) {
   const tbody = document.getElementById('ss-tbody');
   if (!tbody) return;
 
@@ -1235,7 +1262,7 @@ function _attachGridEvents(cols, canEdit, user) {
 
     if (inp.dataset.virtual === 'true' || !rowId) {
       // Click on virtual row → promote to real row
-      _handleVirtualCellChange(inp, cols, canEdit, user);
+      _handleVirtualCellChange(inp, cols, canEdit, canDelete, user);
       return;
     }
     _scheduleSave(rowId, rowIdx, cols, inp);
@@ -1268,6 +1295,10 @@ function _attachGridEvents(cols, canEdit, user) {
   tbody.addEventListener('click', e => {
     const btn = e.target.closest('.ss-del-row');
     if (!btn) return;
+    if (!canDelete) {
+      showToast('Permission denied', 'You do not have permission to delete rows.', 'error');
+      return;
+    }
     const rowId  = btn.dataset.rowId;
     const rowIdx = parseInt(btn.dataset.rowIdx);
     _deleteRow(rowId, rowIdx, cols, canEdit, user);
@@ -1566,7 +1597,7 @@ function _handleWsEvent(e) {
   if (!data?.tableId || data.tableId !== _activeTableId) return;
 
   const userId = String(user.id || user._id || '');
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const canEdit = canDo('tables', 'edit');
 
   switch (type) {
     case 'table_page_created': {
@@ -1645,11 +1676,13 @@ async function _refreshRowsFromServer() {
 
   const cols   = _schema?.columns || [];
   const user   = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   const tbody  = document.getElementById('ss-tbody');
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
 }
 
@@ -1712,7 +1745,7 @@ function _applyRowLockStatus(rowId, isLocked, userName = '') {
     }
     // Set cells back to editable if canEdit
     const user = getCurrentUser();
-    const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+    const canEdit = canDo('tables', 'edit') && _activeTableId !== 'central_registry';
     tr.querySelectorAll('.ss-cell').forEach(cell => {
       if (canEdit) {
         delete cell.dataset.readonly;
@@ -1725,7 +1758,7 @@ function _applyRowLockStatus(rowId, isLocked, userName = '') {
   }
 }
 
-async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) {
+async function _promoteAndSaveVirtualRow(tr, cols, canEdit, canDelete, user, changedInput) {
   const rowData = _collectRowData(tr, cols);
   const isBlank = Object.values(rowData).every(v => v === '' || v === null || v === undefined);
   if (isBlank) return;
@@ -1742,7 +1775,7 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
     const idx = _rows.length - 1;
     
     // Replace virtual row with real row in DOM
-    const newTrHtml = _buildRow(res.data, idx, cols, canEdit, user, true);
+    const newTrHtml = _buildRow(res.data, idx, cols, canEdit, canDelete, user, true);
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = `<table><tbody>${newTrHtml}</tbody></table>`;
     const newTr = tempDiv.querySelector('tr');
@@ -1758,7 +1791,7 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
     });
     
     // Re-attach grid events
-    _attachGridEvents(cols, canEdit, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
     
     // Restore focus to the edited cell in the new real row
     if (changedInput) {
@@ -1782,10 +1815,10 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
   }
 }
 
-function _handleVirtualCellChange(inp, cols, canEdit, user) {
+function _handleVirtualCellChange(inp, cols, canEdit, canDelete, user) {
   const tr = inp.closest('tr');
   if (!tr) return;
-  _promoteAndSaveVirtualRow(tr, cols, canEdit, user, inp);
+  _promoteAndSaveVirtualRow(tr, cols, canEdit, canDelete, user, inp);
 }
 
 // ─── CSV EXPORT ────────────────────────────────────────────────────────────────
@@ -2136,7 +2169,7 @@ function _renderAccessUsersStack(schema) {
   const displayUsers = accessUsers.slice(0, limit);
   const remaining = accessUsers.length - limit;
   const currentUser = getCurrentUser() || {};
-  const isAdmin = ['super_admin', 'admin'].includes(currentUser.role);
+  const isAdmin = canDo('workforce', 'view');
 
   const tooltipHtml = accessUsers.map(u => {
     const permLevel = _getPermissionLevel(u.role);
@@ -2372,10 +2405,12 @@ function _sortRows(direction) {
   const tbody = document.getElementById('ss-tbody');
   const cols = _schema.columns || [];
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
   showToast('Sort Complete', `Rows sorted by column`, 'success');
 }
@@ -2862,10 +2897,12 @@ async function _reloadRegistryRows() {
 
   const cols = _schema.columns || [];
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && _activeTableId !== 'central_registry';
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
   
   _renderPageTabs(canEdit);
@@ -2875,14 +2912,15 @@ async function _reloadRegistryRows() {
 function _updateFooterButtons() {
   const user = getCurrentUser();
   const isRegistry = _activeTableId === 'central_registry';
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   const container = document.getElementById('ss-footer-buttons');
   if (!container) return;
 
   container.innerHTML = canEdit ? `
     <button class="btn btn-secondary btn-sm" id="ss-duplicate-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">Duplicate Sheet</button>
     <button class="btn btn-secondary btn-sm" id="ss-add-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">+ New Page</button>
-    ${_schema.pages?.length > 1 ? `
+    ${_schema.pages?.length > 1 && canDelete ? `
       <button class="btn btn-danger btn-sm" id="ss-delete-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600;background:var(--accent-rose);border-color:var(--accent-rose);color:white">Delete Page</button>
     ` : ''}
   ` : '';
@@ -2892,7 +2930,9 @@ function _updateFooterButtons() {
 
 function _bindFooterButtonsEvents() {
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && _activeTableId !== 'central_registry';
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (!canEdit) return;
 
   document.getElementById('ss-duplicate-sheet-btn')?.addEventListener('click', async () => {
@@ -2989,6 +3029,10 @@ function _bindFooterButtonsEvents() {
   });
 
   document.getElementById('ss-delete-sheet-btn')?.addEventListener('click', async () => {
+    if (!canDelete) {
+      showToast('Permission denied', 'You do not have permission to delete pages.', 'error');
+      return;
+    }
     const ok = await confirm(`Are you sure you want to delete Page ${_activePage} and purge all its rows? Subsequent pages will be shifted down contiguously.`, 'Delete Page');
     if (!ok) return;
 
@@ -3133,7 +3177,7 @@ async function _ensureSystemTables() {
   const inventoryExists = schemas.some(s => s.name === 'Inventory Table' || s.name === 'Inventory');
   
   const user = getCurrentUser();
-  if (!user || !['super_admin', 'admin'].includes(user.role)) return;
+  if (!user || !canDo('tables', 'create')) return;
 
   if (!warehouseExists) {
     await apiFetch('/dynamic-tables/', {

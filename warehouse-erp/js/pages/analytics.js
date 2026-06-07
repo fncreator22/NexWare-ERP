@@ -2,6 +2,7 @@
  * Analytics & Reporting Page — Functional filters + stable data
  */
 import { getCurrentUser, getBills, getItems, getAllUsers, getWarehouses, getTaxConfig } from '../modules/store.js';
+import { canDo } from '../modules/permissions.js';
 import { renderShell } from '../components/shell.js';
 import { formatCurrency, formatDate, getSvgIcon, renderWarehouseLogo } from '../modules/ui.js';
 
@@ -19,8 +20,14 @@ export function renderAnalytics() {
     window.location.hash = '#/login';
     return;
   }
+
+  if (!canDo('reports', 'view')) {
+    showToast('Access Denied', 'You do not have permission to access analytics & reports.', 'error');
+    window.location.hash = '#/dashboard';
+    return;
+  }
+
   const isSA   = user.role === 'super_admin';
-  const isAdmin = isSA || user.role === 'admin';
   const whs    = getWarehouses();
 
   // Build year options from actual bill data
@@ -72,6 +79,7 @@ export function renderAnalytics() {
       <div id="an-kpis"></div>
 
       <!-- Charts Grid -->
+      ${canDo('reports', 'manage') ? `
       <div class="dashboard-grid" style="margin-bottom:20px">
         <div class="chart-card col-8">
           <div class="chart-card-header">
@@ -104,6 +112,11 @@ export function renderAnalytics() {
           <div class="chart-container" style="height:200px"><canvas id="analytics-roles"></canvas></div>
         </div>
       </div>
+      ` : `
+      <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:30px;text-align:center;margin-bottom:20px">
+        <p style="color:var(--text-muted);margin:0">Upgrade to enterprise or contact your administrator to access advanced performance graphs (reports:manage required).</p>
+      </div>
+      `}
 
       <!-- Warehouse Revenue Breakdown Table -->
       ${isSA ? `
@@ -421,9 +434,9 @@ function updateStockTable(items, taxCfg) {
           ${sorted.slice(0,10).map(i=>{
             const val = (i.price||0)*(i.stock||0);
             const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-            const healthStatus = i.healthStatus || ((i.stock || 0) === 0 ? 'Critical' : (i.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+            const healthStatus = i.healthStatus || ((i.stock || 0) === 0 ? 'Critical' : (i.stock || 0) <= threshold ? 'Low Stock' : 'Healthy');
             
-            const stockClass = (i.stock||0) === 0 ? 'badge-danger' : (i.stock||0) < threshold ? 'badge-warning' : 'badge-success';
+            const stockClass = (i.stock||0) === 0 ? 'badge-danger' : (i.stock||0) <= threshold ? 'badge-warning' : 'badge-success';
             const statusClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
             const barcodeCount = Array.isArray(i.barcodes) ? i.barcodes.length : (i.barcode ? 1 : 0);
 

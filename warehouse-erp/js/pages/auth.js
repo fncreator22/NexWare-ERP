@@ -30,6 +30,9 @@ export function renderLogin() {
             <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" />
             <button type="button" class="auth-password-toggle" id="toggle-pw">👁️</button>
           </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px;margin-top:-8px">
+            <a href="#/forgot-password" style="font-size:12.5px;color:var(--brand-500);text-decoration:none;font-weight:600">Forgot Password?</a>
+          </div>
           <button type="submit" class="btn btn-primary" id="login-btn">
             Sign In
           </button>
@@ -254,5 +257,160 @@ export function renderWarehouseRegistration() {
     }
     showToast('Warehouse created!', `${wh.name} is ready`, 'success');
     navigate('/dashboard');
+  });
+}
+
+export function renderForgotPassword() {
+  document.getElementById('app').innerHTML = `
+    <div class="auth-page">
+      ${authBgHTML()}
+      <div class="auth-card animate-slideUp">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
+          <div class="auth-logo-icon">⚡</div>
+          <span class="auth-logo-name">WareOps</span>
+        </div>
+        <h1 class="auth-title">Reset password</h1>
+        <p class="auth-subtitle">Enter your email to request a reset token</p>
+        <form id="forgot-form">
+          <div class="auth-input-group">
+            <span class="auth-input-icon">📧</span>
+            <input type="email" id="forgot-email" class="form-control" placeholder="Email address" required autocomplete="email" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="forgot-btn">
+            Send Reset Token
+          </button>
+        </form>
+        <div id="dev-reset-link-container" style="margin-top:16px;display:none;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:12px;font-size:13px;color:var(--text-secondary);text-align:left">
+          <strong>Development Mode reset link:</strong><br/>
+          <a id="dev-reset-link" href="#" style="color:var(--brand-500);word-break:break-all"></a>
+        </div>
+        <div class="auth-footer">
+          Remember password? <a href="#/login">Sign in</a>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('forgot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('forgot-email').value.trim();
+    const btn = document.getElementById('forgot-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Requesting...';
+    
+    const { apiFetch } = await import('../modules/store.js');
+    const res = await apiFetch('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+
+    if (res.error) {
+      showToast('Error', res.error, 'error');
+      btn.disabled = false;
+      btn.innerHTML = 'Send Reset Token';
+      return;
+    }
+
+    showToast('Success', 'Password reset token generated.', 'success');
+    btn.disabled = false;
+    btn.innerHTML = 'Send Reset Token';
+    
+    const token = res.data && res.data.token;
+    if (token) {
+      const resetLink = `${window.location.origin}${window.location.pathname}#/reset-password?token=${token}`;
+      const devContainer = document.getElementById('dev-reset-link-container');
+      const devLink = document.getElementById('dev-reset-link');
+      if (devContainer && devLink) {
+        devLink.href = `#/reset-password?token=${token}`;
+        devLink.textContent = resetLink;
+        devContainer.style.display = 'block';
+      }
+    }
+  });
+}
+
+export function renderResetPassword() {
+  const hash = window.location.hash || '';
+  const queryPart = hash.split('?')[1];
+  const params = new URLSearchParams(queryPart);
+  const token = params.get('token');
+
+  if (!token) {
+    document.getElementById('app').innerHTML = `
+      <div class="auth-page">
+        ${authBgHTML()}
+        <div class="auth-card animate-slideUp">
+          <h1 class="auth-title" style="color:var(--text-danger)">Invalid Request</h1>
+          <p class="auth-subtitle">Password reset token is missing or malformed.</p>
+          <div class="auth-footer">
+            <a href="#/login">Back to Login</a>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="auth-page">
+      ${authBgHTML()}
+      <div class="auth-card animate-slideUp">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
+          <div class="auth-logo-icon">⚡</div>
+          <span class="auth-logo-name">WareOps</span>
+        </div>
+        <h1 class="auth-title">Create new password</h1>
+        <p class="auth-subtitle">Enter your new secure password (min 8 characters)</p>
+        <form id="reset-form">
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reset-password" class="form-control" placeholder="New Password" required minlength="8" />
+          </div>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reset-confirm" class="form-control" placeholder="Confirm New Password" required minlength="8" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="reset-btn">
+            Reset Password
+          </button>
+        </form>
+        <div class="auth-footer">
+          Remember password? <a href="#/login">Sign in</a>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const newPassword = document.getElementById('reset-password').value;
+    const confirmPassword = document.getElementById('reset-confirm').value;
+    const btn = document.getElementById('reset-btn');
+
+    if (newPassword !== confirmPassword) {
+      showToast('Validation Error', 'Passwords do not match.', 'warning');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Resetting...';
+
+    const { apiFetch } = await import('../modules/store.js');
+    const res = await apiFetch('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword })
+    });
+
+    if (res.error) {
+      showToast('Reset failed', res.error, 'error');
+      btn.disabled = false;
+      btn.innerHTML = 'Reset Password';
+      return;
+    }
+
+    showToast('Success', 'Password has been reset successfully.', 'success');
+    setTimeout(() => {
+      navigate('/login');
+    }, 1500);
   });
 }

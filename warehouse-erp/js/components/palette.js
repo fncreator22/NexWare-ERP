@@ -4,6 +4,7 @@
  */
 import { getItems, getWarehouses, getCurrentUser, getBills, getStockHealth, getStore, getAllUsers } from '../modules/store.js';
 import { navigate } from '../modules/router.js';
+import { canDo } from '../modules/permissions.js';
 import { formatCurrency, formatNumber, getSvgIcon, capitalize } from '../modules/ui.js';
 
 const HISTORY_KEY = 'wareops_search_history';
@@ -181,7 +182,7 @@ function updateResults() {
   const bills    = getBills();
   const allUsers = getAllUsers();
   const tables   = getStore().tables || [];
-  const isAdmin  = ['super_admin','admin'].includes(user.role);
+  const isAdmin  = canDo('settings', 'edit', user);
   const isSA     = user.role === 'super_admin';
 
   const matches = [];

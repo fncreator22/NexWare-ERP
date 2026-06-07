@@ -45,7 +45,7 @@ export function renderDashboard() {
   // Low stock items calculated dynamically based on threshold
   const allLowStockItems = items.filter(i => {
     const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-    return (i.stock || 0) < threshold;
+    return (i.stock || 0) <= threshold;
   });
   const lowStock = allLowStockItems.slice(0, 5);
 
@@ -63,7 +63,7 @@ export function renderDashboard() {
   const restockSuggestions = items
     .filter(i => {
       const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-      return (i.stock || 0) < threshold;
+      return (i.stock || 0) <= threshold;
     })
     .map(i => {
       const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
@@ -126,7 +126,7 @@ export function renderDashboard() {
           <div class="stat-card-label">Active Users</div>
           <div class="stat-card-trend">${users.length} total</div>
         </div>` : ''}
-        ${canViewInventory ? `<div class="stat-card">
+        ${canViewInventory ? `<div class="stat-card" id="dash-stock-units-card" style="cursor:pointer">
           <div class="stat-card-glow" style="background:#f59e0b"></div>
           <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
@@ -275,7 +275,7 @@ export function renderDashboard() {
             : lowStock.map(i=>`
               <div class="clickable-list-item" onclick="location.hash='#/items?id=${i.id}'" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-subtle);cursor:pointer;border-radius:4px;transition:background 0.15s;" onmouseenter="this.style.background='var(--bg-input)'" onmouseleave="this.style.background='transparent'">
                 <div style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${i.name}</div>
-                <span style="font-size:11px;font-weight:700;color:${i.stock<(i.lowStockThreshold !== undefined ? i.lowStockThreshold/2 : 10)?'var(--accent-rose)':'var(--accent-amber)'};flex-shrink:0;margin-left:8px">${i.stock} left</span>
+                <span style="font-size:11px;font-weight:700;color:${i.stock<=(i.lowStockThreshold !== undefined ? i.lowStockThreshold/2 : 10)?'var(--accent-rose)':'var(--accent-amber)'};flex-shrink:0;margin-left:8px">${i.stock} left</span>
               </div>
             `).join('')}
           <div style="margin-top:12px;border-top:1px solid var(--border-subtle);padding-top:12px">
@@ -318,7 +318,7 @@ export function renderDashboard() {
                     <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} units sold · Priority: ${s.priority > (s.lowStockThreshold !== undefined ? s.lowStockThreshold*1.5 : 30) ? 'High' : 'Normal'}</div>
                   </div>
                   <div style="text-align:right">
-                    <div style="font-size:14px;font-weight:800;color:${s.stock < (s.lowStockThreshold !== undefined ? s.lowStockThreshold/2 : 10) ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
+                    <div style="font-size:14px;font-weight:800;color:${s.stock <= (s.lowStockThreshold !== undefined ? s.lowStockThreshold/2 : 10) ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
                     <div style="font-size:10px;color:var(--text-muted)">In Stock</div>
                   </div>
                 </div>
@@ -461,8 +461,15 @@ async function initDashboardCharts(whs) {
 
     const rc = document.getElementById('revenue-chart');
     if (rc) {
-      if (_dashboardCharts.revenue) _dashboardCharts.revenue.destroy();
-      _dashboardCharts.revenue = new Chart(rc, {
+      if (_dashboardCharts.revenue) {
+        try { _dashboardCharts.revenue.destroy(); } catch(e) {}
+      }
+      const parent = rc.parentElement;
+      const newCanvas = document.createElement('canvas');
+      newCanvas.id = 'revenue-chart';
+      parent.replaceChild(newCanvas, rc);
+      
+      _dashboardCharts.revenue = new Chart(newCanvas, {
         type: 'bar',
         data: {
           labels,
@@ -522,16 +529,30 @@ async function initDashboardCharts(whs) {
     });
   }
 
+  const stockCard = document.getElementById('dash-stock-units-card');
+  if (stockCard) {
+    stockCard.addEventListener('click', () => {
+      const firstLowStockId = allLowStockItems[0]?.id || '';
+      window.location.hash = '#/items' + (firstLowStockId ? '?id=' + firstLowStockId : '');
+    });
+  }
+
   // Doughnut chart
   const wc = document.getElementById('wh-chart');
   if (wc && whs.length > 0) {
-    if (_dashboardCharts.wh) _dashboardCharts.wh.destroy();
+    if (_dashboardCharts.wh) {
+      try { _dashboardCharts.wh.destroy(); } catch(e) {}
+    }
+    const parent = wc.parentElement;
+    const newCanvas = document.createElement('canvas');
+    newCanvas.id = 'wh-chart';
+    parent.replaceChild(newCanvas, wc);
     
     // Generate colors cyclically based on number of warehouses
     const palette = ['rgba(99,102,241,0.85)', 'rgba(16,185,129,0.85)', 'rgba(6,182,212,0.85)', 'rgba(245,158,11,0.85)', 'rgba(168,85,247,0.85)'];
     const bgColors = whs.map((_, i) => palette[i % palette.length]);
     
-    _dashboardCharts.wh = new Chart(wc, {
+    _dashboardCharts.wh = new Chart(newCanvas, {
       type: 'doughnut',
       data: {
         labels: whs.map(w=>w.name),

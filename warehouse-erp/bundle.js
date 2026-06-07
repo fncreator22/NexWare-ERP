@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-06-05T18:58:21.806Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-06-07T08:40:43.006Z
 
 
 // ===== modules/store.js =====
@@ -7,7 +7,22 @@
  * Simulates a database using localStorage + in-memory state
  */
 
-const STORAGE_KEY = 'wareops_data';
+function getStorageKey() {
+  if (typeof window === 'undefined') return 'wareops_data_guest';
+  const token = sessionStorage.getItem('access_token');
+  if (token) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        if (payload && payload.user_id) {
+          return `wareops_data_${payload.user_id}`;
+        }
+      }
+    } catch (e) {}
+  }
+  return 'wareops_data_guest';
+}
 
 function getDefaultData() {
   const now = new Date().toISOString();
@@ -39,7 +54,8 @@ let _store = null;
 // Cross-tab synchronization: Listen for changes from other tabs
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === STORAGE_KEY && e.newValue) {
+    const activeKey = getStorageKey();
+    if (e.key === activeKey && e.newValue) {
       try {
         _store = JSON.parse(e.newValue);
         // Dispatch event for UI components to optionally re-render
@@ -54,11 +70,12 @@ if (typeof window !== 'undefined') {
 function getStore() {
   if (_store) return _store;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const key = getStorageKey();
+    const raw = localStorage.getItem(key);
     _store = raw ? JSON.parse(raw) : getDefaultData();
 
     // Trigger silent background synchronization if access token exists
-    if (typeof window !== 'undefined' && localStorage.getItem('access_token')) {
+    if (typeof window !== 'undefined' && sessionStorage.getItem('access_token')) {
       setTimeout(syncWithBackend, 0);
     }
 
@@ -86,7 +103,8 @@ function getStore() {
 }
 
 function saveStore() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(_store));
+  const key = getStorageKey();
+  localStorage.setItem(key, JSON.stringify(_store));
   if (typeof window !== 'undefined') {
     window.wareops_currency = getActiveCurrency();
   }
@@ -102,7 +120,7 @@ const API_BASE_URL = 'http://localhost:8000/api/v1';
 
 async function apiFetch(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   
   const headers = {
     'Content-Type': 'application/json',
@@ -121,11 +139,38 @@ async function apiFetch(path, options = {}) {
   try {
     const res = await fetch(url, config);
     if (res.status === 401) {
-      localStorage.removeItem('access_token');
-      if (_store) {
-        _store.currentUserId = null;
-        saveStore();
+      if (path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/signup') {
+        console.log('[Store] Access token expired. Attempting silent token rotation...');
+        try {
+          const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json();
+            if (refreshData && refreshData.success && refreshData.data && refreshData.data.access_token) {
+              const newAccessToken = refreshData.data.access_token;
+              sessionStorage.setItem('access_token', newAccessToken);
+              console.log('[Store] Token rotation succeeded. Retrying original request.');
+              
+              config.headers['Authorization'] = `Bearer ${newAccessToken}`;
+              const retryRes = await fetch(url, config);
+              if (retryRes.status !== 401) {
+                const retryData = await retryRes.json();
+                return retryData;
+              }
+            }
+          }
+        } catch (refreshErr) {
+          console.error('[Store] Silent refresh failed:', refreshErr);
+        }
       }
+      
+      sessionStorage.removeItem('access_token');
+      _store = null;
+      const s = getStore();
+      s.currentUserId = null;
+      saveStore();
       if (typeof window !== 'undefined') {
         window.location.hash = '#/login';
       }
@@ -154,7 +199,7 @@ async function apiFetch(path, options = {}) {
 }
 
 async function syncWithBackend() {
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   if (!token) return;
   
   try {
@@ -180,15 +225,24 @@ async function syncWithBackend() {
       _store.warehouses = [];
     }
 
-    // 2. Fetch Workforce (Users)
+    // 2. Fetch Workforce (Users) and Current User Profile
+    let currentUser = getCurrentUser();
+    const meRes = await apiFetch('/auth/me');
+    if (meRes && meRes.success && meRes.data) {
+      const fresh = meRes.data;
+      if (fresh._id && !fresh.id) fresh.id = fresh._id;
+      if (fresh.page_order && !fresh.pageOrder) fresh.pageOrder = fresh.page_order;
+      if (fresh.module_visibility && !fresh.moduleVisibility) fresh.moduleVisibility = fresh.module_visibility;
+      if (fresh.feature_access && !fresh.featureAccess) fresh.featureAccess = fresh.feature_access;
+      currentUser = currentUser ? { ...currentUser, ...fresh } : fresh;
+    }
+
     const wfRes = await apiFetch('/workforce/');
     if (wfRes && wfRes.success && Array.isArray(wfRes.data)) {
       const normalizedWf = normalize(wfRes.data);
-      const currentUser = getCurrentUser();
       const otherUsers = normalizedWf.filter(u => u.id !== _store.currentUserId);
       _store.users = currentUser ? [currentUser, ...otherUsers] : normalizedWf;
     } else {
-      const currentUser = getCurrentUser();
       _store.users = currentUser ? [currentUser] : [];
     }
 
@@ -265,8 +319,10 @@ async function login(email, password) {
   }
   
   const { access_token, user } = res.data;
-  localStorage.setItem('access_token', access_token);
+  sessionStorage.setItem('access_token', access_token);
   
+  // Scoping Reset: Reset store pointer to reload the store scoped by this user ID
+  _store = null;
   const s = getStore();
   s.currentUserId = user.id;
   
@@ -287,11 +343,12 @@ async function login(email, password) {
 }
 
 async function logout() {
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   if (token) {
     await apiFetch('/auth/logout', { method: 'POST' });
   }
-  localStorage.removeItem('access_token');
+  sessionStorage.removeItem('access_token');
+  _store = null;
   const s = getStore();
   s.currentUserId = null;
   saveStore();
@@ -355,7 +412,7 @@ function getStockHealth(warehouseId) {
   if (items.length === 0) return 0;
   const lowStock = items.filter(i => {
     const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-    return (i.stock || 0) < threshold;
+    return (i.stock || 0) <= threshold;
   }).length;
   return Math.round(((items.length - lowStock) / items.length) * 100);
 }
@@ -511,6 +568,20 @@ async function deleteUser(id) {
   
   await syncWithBackend();
   return { success: true };
+}
+
+async function reviewDocument(userId, docId, status, remarks) {
+  const res = await apiFetch(`/workforce/documents/${docId}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ status, remarks })
+  });
+  
+  if (res.error) {
+    return { error: res.error };
+  }
+  
+  await syncWithBackend();
+  return res.data;
 }
 
 // ---- ITEMS / INVENTORY ----
@@ -774,7 +845,7 @@ function addAuditLog(action, description, userId) {
   saveStore();
 
   // Async push to backend in background (don't block caller)
-  if (localStorage.getItem('access_token')) {
+  if (sessionStorage.getItem('access_token')) {
     apiFetch('/audit-logs/', {
       method: 'POST',
       body: JSON.stringify({
@@ -963,7 +1034,7 @@ function seedDemoData() {
 let ws = null;
 function connectWebSocket() {
   if (typeof window === 'undefined') return;
-  const token = localStorage.getItem('access_token');
+  const token = sessionStorage.getItem('access_token');
   if (!token) return;
 
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
@@ -1000,7 +1071,7 @@ function connectWebSocket() {
   ws.onclose = (event) => {
     console.log('[WebSocket] Connection closed. Reason:', event.reason);
     // Exponential backoff / auto reconnect in 5 seconds
-    if (localStorage.getItem('access_token')) {
+    if (sessionStorage.getItem('access_token')) {
       setTimeout(connectWebSocket, 5000);
     }
   };
@@ -1825,6 +1896,7 @@ window.showImagePreviewModal = function(src) {
  */
 
 
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function esc(v) {
@@ -1861,20 +1933,15 @@ function getExportableData() {
   const user = getCurrentUser();
   if (!user) return null;
 
-  const role = user.role;
-  const isSuperAdmin = role === 'super_admin';
-  const isAdmin = role === 'admin' || isSuperAdmin;
-  const isManager = role === 'manager' || isAdmin;
-
-  const warehouses = isSuperAdmin ? getWarehouses() : [];
-  const users = isAdmin ? getAllUsers() : [];
+  const warehouses = canDo('warehouses', 'view', user) ? getWarehouses() : [];
+  const users = canDo('workforce', 'view', user) ? getAllUsers() : [];
   const items = getItems();         // already role-filtered in store
   const bills = getBills();         // already role-filtered in store
   const tables = getTables();       // already role-filtered in store
-  const audit = isSuperAdmin ? getAuditLogs().slice(0, 500) : [];
-  const taxCfg = isAdmin ? getTaxConfig() : null;
+  const audit = canDo('audit', 'view', user) ? getAuditLogs().slice(0, 500) : [];
+  const taxCfg = canDo('settings', 'view', user) ? getTaxConfig() : null;
 
-  return { user, role, isSuperAdmin, isAdmin, isManager, warehouses, users, items, bills, tables, audit, taxCfg };
+  return { user, warehouses, users, items, bills, tables, audit, taxCfg };
 }
 
 // ─── CSV exports ─────────────────────────────────────────────────────────────
@@ -1887,7 +1954,7 @@ function exportCSV(entity) {
 
   switch (entity) {
     case 'bills': {
-      if (!d.isManager) return { error: 'Permission denied' };
+      if (!canDo('billing', 'view', d.user)) return { error: 'Permission denied' };
       const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
       const rows = d.bills.map(b => ({
         'Invoice #': b.billNo,
@@ -1907,7 +1974,7 @@ function exportCSV(entity) {
     }
 
     case 'workforce': {
-      if (!d.isAdmin) return { error: 'Permission denied: Admin+ required' };
+      if (!canDo('workforce', 'view', d.user)) return { error: 'Permission denied: workforce:view required' };
       const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
       const rows = d.users.map(u => ({
         'Name': u.name,
@@ -1926,7 +1993,7 @@ function exportCSV(entity) {
     }
 
     case 'inventory': {
-      if (!d.isManager) return { error: 'Permission denied' };
+      if (!canDo('inventory', 'view', d.user)) return { error: 'Permission denied' };
       const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
       const rows = d.items.map(i => ({
         'Name': i.name,
@@ -1946,7 +2013,7 @@ function exportCSV(entity) {
     }
 
     case 'warehouses': {
-      if (!d.isSuperAdmin) return { error: 'Permission denied: Super Admin only' };
+      if (!canDo('warehouses', 'view', d.user)) return { error: 'Permission denied: warehouses:view required' };
       const rows = d.warehouses.map(w => ({
         'Name': w.name,
         'Business': w.businessName,
@@ -1967,7 +2034,7 @@ function exportCSV(entity) {
     }
 
     case 'audit': {
-      if (!d.isSuperAdmin) return { error: 'Permission denied: Super Admin only' };
+      if (!canDo('audit', 'view', d.user)) return { error: 'Permission denied: audit:view required' };
       const rows = d.audit.map(l => ({
         'Action': l.action,
         'Description': l.description,
@@ -1983,18 +2050,18 @@ function exportCSV(entity) {
     }
 
     case 'all': {
-      if (!d.isAdmin) return { error: 'Permission denied: Admin+ required' };
+      if (!canDo('settings', 'manage', d.user)) return { error: 'Permission denied: settings:manage required' };
       // Multi-sheet CSV separated by section markers
       const sections = [];
 
-      if (d.isSuperAdmin && d.warehouses.length) {
+      if (canDo('warehouses', 'view', d.user) && d.warehouses.length) {
         sections.push('## WAREHOUSES');
         const cols = ['name','businessName','address','contact','email','taxPreference','status','revenue'];
         const headers = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue'];
         sections.push(toCSV(d.warehouses, cols, headers));
       }
 
-      if (d.users.length) {
+      if (canDo('workforce', 'view', d.user) && d.users.length) {
         sections.push('\n## WORKFORCE');
         const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
         const rows = d.users.map(u => ({ ...u, warehouseName: whs[u.warehouseId]||'' }));
@@ -2002,7 +2069,7 @@ function exportCSV(entity) {
           ['Name','Email','Role','Warehouse','Status','Joined']));
       }
 
-      if (d.items.length) {
+      if (canDo('inventory', 'view', d.user) && d.items.length) {
         sections.push('\n## INVENTORY');
         const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
         const rows = d.items.map(i => ({ ...i, warehouseName: whs[i.warehouseId]||'' }));
@@ -2010,7 +2077,7 @@ function exportCSV(entity) {
           ['Name','SKU','Category','Tax Cat','Price','Stock','Warehouse']));
       }
 
-      if (d.bills.length) {
+      if (canDo('billing', 'view', d.user) && d.bills.length) {
         sections.push('\n## BILLING');
         const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
         const rows = d.bills.map(b => ({ ...b, warehouseName: whs[b.warehouseId]||'' }));
@@ -2018,7 +2085,7 @@ function exportCSV(entity) {
           ['Invoice #','Customer','Warehouse','Subtotal','Tax','Total','Date']));
       }
 
-      const full = `WareOps ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.role})\n\n` + sections.join('\n');
+      const full = `WareOps ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.user.role})\n\n` + sections.join('\n');
       download(full, `wareops-full-export-${ts}.csv`, 'text/csv');
       return { count: d.bills.length + d.users.length + d.items.length, entity: 'Full Export' };
     }
@@ -2046,7 +2113,7 @@ function exportXLSX(entity) {
   }
 
   if (entity === 'bills' || entity === 'all') {
-    if (!d.isManager) return { error: 'Permission denied' };
+    if (!canDo('billing', 'view', d.user)) return { error: 'Permission denied' };
     const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
     const headers = ['Invoice #','Customer','Warehouse','Subtotal','Tax','Total','Date'];
     const rows = d.bills.map(b => ({
@@ -2059,7 +2126,7 @@ function exportXLSX(entity) {
   }
 
   if (entity === 'workforce' || entity === 'all') {
-    if (!d.isAdmin) return { error: 'Permission denied' };
+    if (!canDo('workforce', 'view', d.user)) return { error: 'Permission denied' };
     const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
     const headers = ['Name','Email','Role','Warehouse','Status','Employee ID','Joined'];
     const rows = d.users.map(u => ({
@@ -2071,7 +2138,7 @@ function exportXLSX(entity) {
   }
 
   if (entity === 'inventory' || entity === 'all') {
-    if (!d.isManager) return { error: 'Permission denied' };
+    if (!canDo('inventory', 'view', d.user)) return { error: 'Permission denied' };
     const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
     const headers = ['Name','SKU','Category','Tax Cat','Price','Stock','Warehouse'];
     const rows = d.items.map(i => ({
@@ -2083,16 +2150,14 @@ function exportXLSX(entity) {
   }
 
   if (entity === 'warehouses' || entity === 'all') {
-    if (!d.isSuperAdmin) return entity === 'warehouses' ? { error: 'Super Admin only' } : null;
-    if (d.isSuperAdmin) {
-      const headers = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue'];
-      const rows = d.warehouses.map(w => ({
-        a: w.name, b: w.businessName, c: w.address, d: w.contact,
-        e: w.email, f: w.taxPreference, g: w.status, h: (w.revenue||0).toFixed(2)
-      }));
-      sheetHTML += `<h2 style="color:#1e1b4b">Warehouses (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-      if (entity === 'warehouses') filename = `wareops-warehouses-${ts}.xls`;
-    }
+    if (!canDo('warehouses', 'view', d.user)) return entity === 'warehouses' ? { error: 'Permission denied' } : null;
+    const headers = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue'];
+    const rows = d.warehouses.map(w => ({
+      a: w.name, b: w.businessName, c: w.address, d: w.contact,
+      e: w.email, f: w.taxPreference, g: w.status, h: (w.revenue||0).toFixed(2)
+    }));
+    sheetHTML += `<h2 style="color:#1e1b4b">Warehouses (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
+    if (entity === 'warehouses') filename = `wareops-warehouses-${ts}.xls`;
   }
 
   if (entity === 'all') filename = `wareops-full-export-${ts}.xls`;
@@ -2106,7 +2171,7 @@ function exportXLSX(entity) {
     <style>body{font-family:Arial,sans-serif}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px}</style>
     </head><body>
     <h1 style="color:#1e1b4b">WareOps ERP Export</h1>
-    <p>Generated: ${new Date().toLocaleString()} | User: ${d.user.name} (${d.role})</p>
+    <p>Generated: ${new Date().toLocaleString()} | User: ${d.user.name} (${d.user.role})</p>
     ${sheetHTML}
     </body></html>`;
 
@@ -2119,46 +2184,60 @@ function exportXLSX(entity) {
 function exportPDF(entity) {
   const d = getExportableData();
   if (!d) return { error: 'Not logged in' };
-  if (!d.isManager) return { error: 'Permission denied' };
 
+  const user = d.user;
   const ts = new Date().toLocaleString();
   const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
 
   let sections = '';
 
   if (entity === 'bills' || entity === 'all') {
-    const rows = d.bills.map(b => `
-      <tr>
-        <td>${b.billNo}</td><td>${b.customer}</td>
-        <td>${whs[b.warehouseId]||''}</td>
-        <td>$${b.subtotal?.toFixed(2)}</td>
-        <td>$${b.tax?.toFixed(2)}</td>
-        <td><strong>$${b.total?.toFixed(2)}</strong></td>
-        <td>${new Date(b.createdAt).toLocaleDateString()}</td>
-      </tr>`).join('');
-    sections += `<h2>💰 Billing (${d.bills.length} invoices)</h2>
-      <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Warehouse</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Date</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    if (!canDo('billing', 'view', user)) {
+      if (entity === 'bills') return { error: 'Permission denied' };
+    } else {
+      const rows = d.bills.map(b => `
+        <tr>
+          <td>${b.billNo}</td><td>${b.customer}</td>
+          <td>${whs[b.warehouseId]||''}</td>
+          <td>$${b.subtotal?.toFixed(2)}</td>
+          <td>$${b.tax?.toFixed(2)}</td>
+          <td><strong>$${b.total?.toFixed(2)}</strong></td>
+          <td>${new Date(b.createdAt).toLocaleDateString()}</td>
+        </tr>`).join('');
+      sections += `<h2>💰 Billing (${d.bills.length} invoices)</h2>
+        <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Warehouse</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Date</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
   }
 
-  if ((entity === 'workforce' || entity === 'all') && d.isAdmin) {
-    const rows = d.users.map(u => `
-      <tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td>
-      <td>${whs[u.warehouseId]||'Global'}</td><td>${u.status}</td></tr>`).join('');
-    sections += `<h2>👥 Workforce (${d.users.length} members)</h2>
-      <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Warehouse</th><th>Status</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+  if (entity === 'workforce' || entity === 'all') {
+    if (!canDo('workforce', 'view', user)) {
+      if (entity === 'workforce') return { error: 'Permission denied' };
+    } else {
+      const rows = d.users.map(u => `
+        <tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td>
+        <td>${whs[u.warehouseId]||'Global'}</td><td>${u.status}</td></tr>`).join('');
+      sections += `<h2>👥 Workforce (${d.users.length} members)</h2>
+        <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Warehouse</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
   }
 
   if (entity === 'inventory' || entity === 'all') {
-    const rows = d.items.map(i => `
-      <tr><td>${i.name}</td><td>${i.sku}</td><td>${i.category}</td>
-      <td>${i.taxCategory}</td><td>$${i.price?.toFixed(2)}</td><td>${i.stock}</td>
-      <td>${whs[i.warehouseId]||''}</td></tr>`).join('');
-    sections += `<h2>📦 Inventory (${d.items.length} items)</h2>
-      <table><thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Tax Cat</th><th>Price</th><th>Stock</th><th>Warehouse</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    if (!canDo('inventory', 'view', user)) {
+      if (entity === 'inventory') return { error: 'Permission denied' };
+    } else {
+      const rows = d.items.map(i => `
+        <tr><td>${i.name}</td><td>${i.sku}</td><td>${i.category}</td>
+        <td>${i.taxCategory}</td><td>$${i.price?.toFixed(2)}</td><td>${i.stock}</td>
+        <td>${whs[i.warehouseId]||''}</td></tr>`).join('');
+      sections += `<h2>📦 Inventory (${d.items.length} items)</h2>
+        <table><thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Tax Cat</th><th>Price</th><th>Stock</th><th>Warehouse</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
   }
+
+  if (!sections) return { error: 'Permission denied: No sections visible' };
 
   const win = window.open('', '_blank', 'width=1000,height=700');
   if (!win) {
@@ -2182,7 +2261,7 @@ function exportPDF(entity) {
   <div class="no-print" onclick="window.print()">🖨️ Click to Print / Save as PDF</div>
   <h1>WareOps ERP — Data Export</h1>
   <p>Generated: ${ts}</p>
-  <p>User: ${d.user.name} · Role: ${d.role}</p>
+  <p>User: ${user.name} · Role: ${user.role}</p>
   ${sections}
   <script>setTimeout(()=>window.print(),500);<\/script>
   </body></html>`);
@@ -2607,8 +2686,16 @@ function renderShell(pageTitle, pageSubtitle, content) {
   const stockHealth = getStockHealth(user.role === 'super_admin' ? null : user.warehouseId);
   const healthColor = stockHealth > 80 ? 'var(--accent-emerald)' : stockHealth > 50 ? 'var(--accent-amber)' : 'var(--accent-rose)';
 
+  // Find first low stock item for navigation
+  const shellItems = getItems(user.role === 'super_admin' ? null : user.warehouseId);
+  const firstLowStockItem = shellItems.find(i => {
+    const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+    return (i.stock || 0) <= threshold;
+  });
+  const firstLowStockId = firstLowStockItem ? firstLowStockItem.id : '';
+
   const sidebarWidget = `
-    <div class="sidebar-widget">
+    <div class="sidebar-widget" id="sidebar-health-widget" style="cursor:pointer">
       <div class="widget-label">Inventory Health</div>
       <div class="health-bar"><div class="health-bar-fill" style="width:${stockHealth}%; background:${healthColor}"></div></div>
       <div class="health-val">
@@ -2677,6 +2764,11 @@ function renderShell(pageTitle, pageSubtitle, content) {
       navigate(item.dataset.path);
       closeSidebar();
     });
+  });
+
+  // Sidebar health widget click
+  document.getElementById('sidebar-health-widget')?.addEventListener('click', () => {
+    navigate(firstLowStockId ? `/items?id=${firstLowStockId}` : '/items');
   });
 
   // Collapsible sidebar toggle
@@ -2973,8 +3065,9 @@ function showProfileDropdown(anchor) {
       <div style="font-size:12px;color:var(--text-muted)">${user.email}</div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-muted)">Plan: ${planBadge}</div>
     </div>
+    <div id="dd-profile" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('user', 14)} Profile</div>
     <div id="dd-settings" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('settings', 14)} Settings</div>
-    ${user.role === 'super_admin' ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
+    ${canDo('settings', 'manage', user) ? `<div id="dd-subscription" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:8px">${getSvgIcon('subscription', 14)} Subscription</div>` : ''}
     <div style="height:1px;background:var(--border-subtle);margin:4px 0"></div>
     <div id="dd-logout" class="dropdown-item" style="padding:10px 16px;cursor:pointer;font-size:13px;color:var(--accent-rose);display:flex;align-items:center;gap:8px">${getSvgIcon('logout', 14)} Sign Out</div>
   `;
@@ -3025,6 +3118,7 @@ function showProfileDropdown(anchor) {
   }, { once: true }), 50);
   
   dropdown.querySelector('#dd-logout')?.addEventListener('click', async () => { dropdown.remove(); await logout(); navigate('/login'); });
+  dropdown.querySelector('#dd-profile')?.addEventListener('click', () => { navigate('/profile'); dropdown.remove(); });
   dropdown.querySelector('#dd-settings')?.addEventListener('click', () => { navigate('/settings'); dropdown.remove(); });
   dropdown.querySelector('#dd-subscription')?.addEventListener('click', () => { navigate('/subscription'); dropdown.remove(); });
 }
@@ -3137,6 +3231,7 @@ function initGlobalTooltips() {
  * Command Palette — Enterprise Search (Ctrl+K)
  * Features: instant results, text highlight, search history, keyboard navigation
  */
+
 
 
 
@@ -3316,7 +3411,7 @@ function updateResults() {
   const bills    = getBills();
   const allUsers = getAllUsers();
   const tables   = getStore().tables || [];
-  const isAdmin  = ['super_admin','admin'].includes(user.role);
+  const isAdmin  = canDo('settings', 'edit', user);
   const isSA     = user.role === 'super_admin';
 
   const matches = [];
@@ -3599,6 +3694,9 @@ function renderLogin() {
             <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" />
             <button type="button" class="auth-password-toggle" id="toggle-pw">👁️</button>
           </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px;margin-top:-8px">
+            <a href="#/forgot-password" style="font-size:12.5px;color:var(--brand-500);text-decoration:none;font-weight:600">Forgot Password?</a>
+          </div>
           <button type="submit" class="btn btn-primary" id="login-btn">
             Sign In
           </button>
@@ -3823,6 +3921,161 @@ function renderWarehouseRegistration() {
     }
     showToast('Warehouse created!', `${wh.name} is ready`, 'success');
     navigate('/dashboard');
+  });
+}
+
+function renderForgotPassword() {
+  document.getElementById('app').innerHTML = `
+    <div class="auth-page">
+      ${authBgHTML()}
+      <div class="auth-card animate-slideUp">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
+          <div class="auth-logo-icon">⚡</div>
+          <span class="auth-logo-name">WareOps</span>
+        </div>
+        <h1 class="auth-title">Reset password</h1>
+        <p class="auth-subtitle">Enter your email to request a reset token</p>
+        <form id="forgot-form">
+          <div class="auth-input-group">
+            <span class="auth-input-icon">📧</span>
+            <input type="email" id="forgot-email" class="form-control" placeholder="Email address" required autocomplete="email" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="forgot-btn">
+            Send Reset Token
+          </button>
+        </form>
+        <div id="dev-reset-link-container" style="margin-top:16px;display:none;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:12px;font-size:13px;color:var(--text-secondary);text-align:left">
+          <strong>Development Mode reset link:</strong><br/>
+          <a id="dev-reset-link" href="#" style="color:var(--brand-500);word-break:break-all"></a>
+        </div>
+        <div class="auth-footer">
+          Remember password? <a href="#/login">Sign in</a>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('forgot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('forgot-email').value.trim();
+    const btn = document.getElementById('forgot-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Requesting...';
+    
+    const { apiFetch } = await import('../modules/store.js');
+    const res = await apiFetch('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+
+    if (res.error) {
+      showToast('Error', res.error, 'error');
+      btn.disabled = false;
+      btn.innerHTML = 'Send Reset Token';
+      return;
+    }
+
+    showToast('Success', 'Password reset token generated.', 'success');
+    btn.disabled = false;
+    btn.innerHTML = 'Send Reset Token';
+    
+    const token = res.data && res.data.token;
+    if (token) {
+      const resetLink = `${window.location.origin}${window.location.pathname}#/reset-password?token=${token}`;
+      const devContainer = document.getElementById('dev-reset-link-container');
+      const devLink = document.getElementById('dev-reset-link');
+      if (devContainer && devLink) {
+        devLink.href = `#/reset-password?token=${token}`;
+        devLink.textContent = resetLink;
+        devContainer.style.display = 'block';
+      }
+    }
+  });
+}
+
+function renderResetPassword() {
+  const hash = window.location.hash || '';
+  const queryPart = hash.split('?')[1];
+  const params = new URLSearchParams(queryPart);
+  const token = params.get('token');
+
+  if (!token) {
+    document.getElementById('app').innerHTML = `
+      <div class="auth-page">
+        ${authBgHTML()}
+        <div class="auth-card animate-slideUp">
+          <h1 class="auth-title" style="color:var(--text-danger)">Invalid Request</h1>
+          <p class="auth-subtitle">Password reset token is missing or malformed.</p>
+          <div class="auth-footer">
+            <a href="#/login">Back to Login</a>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="auth-page">
+      ${authBgHTML()}
+      <div class="auth-card animate-slideUp">
+        <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
+          <div class="auth-logo-icon">⚡</div>
+          <span class="auth-logo-name">WareOps</span>
+        </div>
+        <h1 class="auth-title">Create new password</h1>
+        <p class="auth-subtitle">Enter your new secure password (min 8 characters)</p>
+        <form id="reset-form">
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reset-password" class="form-control" placeholder="New Password" required minlength="8" />
+          </div>
+          <div class="auth-input-group">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="reset-confirm" class="form-control" placeholder="Confirm New Password" required minlength="8" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="reset-btn">
+            Reset Password
+          </button>
+        </form>
+        <div class="auth-footer">
+          Remember password? <a href="#/login">Sign in</a>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const newPassword = document.getElementById('reset-password').value;
+    const confirmPassword = document.getElementById('reset-confirm').value;
+    const btn = document.getElementById('reset-btn');
+
+    if (newPassword !== confirmPassword) {
+      showToast('Validation Error', 'Passwords do not match.', 'warning');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Resetting...';
+
+    const { apiFetch } = await import('../modules/store.js');
+    const res = await apiFetch('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword })
+    });
+
+    if (res.error) {
+      showToast('Reset failed', res.error, 'error');
+      btn.disabled = false;
+      btn.innerHTML = 'Reset Password';
+      return;
+    }
+
+    showToast('Success', 'Password has been reset successfully.', 'success');
+    setTimeout(() => {
+      navigate('/login');
+    }, 1500);
   });
 }
 
@@ -5040,7 +5293,7 @@ function renderDashboard() {
   // Low stock items calculated dynamically based on threshold
   const allLowStockItems = items.filter(i => {
     const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-    return (i.stock || 0) < threshold;
+    return (i.stock || 0) <= threshold;
   });
   const lowStock = allLowStockItems.slice(0, 5);
 
@@ -5058,7 +5311,7 @@ function renderDashboard() {
   const restockSuggestions = items
     .filter(i => {
       const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-      return (i.stock || 0) < threshold;
+      return (i.stock || 0) <= threshold;
     })
     .map(i => {
       const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
@@ -5121,7 +5374,7 @@ function renderDashboard() {
           <div class="stat-card-label">Active Users</div>
           <div class="stat-card-trend">${users.length} total</div>
         </div>` : ''}
-        ${canViewInventory ? `<div class="stat-card">
+        ${canViewInventory ? `<div class="stat-card" id="dash-stock-units-card" style="cursor:pointer">
           <div class="stat-card-glow" style="background:#f59e0b"></div>
           <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
@@ -5270,7 +5523,7 @@ function renderDashboard() {
             : lowStock.map(i=>`
               <div class="clickable-list-item" onclick="location.hash='#/items?id=${i.id}'" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-subtle);cursor:pointer;border-radius:4px;transition:background 0.15s;" onmouseenter="this.style.background='var(--bg-input)'" onmouseleave="this.style.background='transparent'">
                 <div style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${i.name}</div>
-                <span style="font-size:11px;font-weight:700;color:${i.stock<(i.lowStockThreshold !== undefined ? i.lowStockThreshold/2 : 10)?'var(--accent-rose)':'var(--accent-amber)'};flex-shrink:0;margin-left:8px">${i.stock} left</span>
+                <span style="font-size:11px;font-weight:700;color:${i.stock<=(i.lowStockThreshold !== undefined ? i.lowStockThreshold/2 : 10)?'var(--accent-rose)':'var(--accent-amber)'};flex-shrink:0;margin-left:8px">${i.stock} left</span>
               </div>
             `).join('')}
           <div style="margin-top:12px;border-top:1px solid var(--border-subtle);padding-top:12px">
@@ -5313,7 +5566,7 @@ function renderDashboard() {
                     <div style="font-size:11px;color:var(--text-muted)">${s.salesCount} units sold · Priority: ${s.priority > (s.lowStockThreshold !== undefined ? s.lowStockThreshold*1.5 : 30) ? 'High' : 'Normal'}</div>
                   </div>
                   <div style="text-align:right">
-                    <div style="font-size:14px;font-weight:800;color:${s.stock < (s.lowStockThreshold !== undefined ? s.lowStockThreshold/2 : 10) ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
+                    <div style="font-size:14px;font-weight:800;color:${s.stock <= (s.lowStockThreshold !== undefined ? s.lowStockThreshold/2 : 10) ? 'var(--accent-rose)' : 'var(--accent-amber)'}">${s.stock}</div>
                     <div style="font-size:10px;color:var(--text-muted)">In Stock</div>
                   </div>
                 </div>
@@ -5456,8 +5709,15 @@ async function initDashboardCharts(whs) {
 
     const rc = document.getElementById('revenue-chart');
     if (rc) {
-      if (_dashboardCharts.revenue) _dashboardCharts.revenue.destroy();
-      _dashboardCharts.revenue = new Chart(rc, {
+      if (_dashboardCharts.revenue) {
+        try { _dashboardCharts.revenue.destroy(); } catch(e) {}
+      }
+      const parent = rc.parentElement;
+      const newCanvas = document.createElement('canvas');
+      newCanvas.id = 'revenue-chart';
+      parent.replaceChild(newCanvas, rc);
+      
+      _dashboardCharts.revenue = new Chart(newCanvas, {
         type: 'bar',
         data: {
           labels,
@@ -5517,16 +5777,30 @@ async function initDashboardCharts(whs) {
     });
   }
 
+  const stockCard = document.getElementById('dash-stock-units-card');
+  if (stockCard) {
+    stockCard.addEventListener('click', () => {
+      const firstLowStockId = allLowStockItems[0]?.id || '';
+      window.location.hash = '#/items' + (firstLowStockId ? '?id=' + firstLowStockId : '');
+    });
+  }
+
   // Doughnut chart
   const wc = document.getElementById('wh-chart');
   if (wc && whs.length > 0) {
-    if (_dashboardCharts.wh) _dashboardCharts.wh.destroy();
+    if (_dashboardCharts.wh) {
+      try { _dashboardCharts.wh.destroy(); } catch(e) {}
+    }
+    const parent = wc.parentElement;
+    const newCanvas = document.createElement('canvas');
+    newCanvas.id = 'wh-chart';
+    parent.replaceChild(newCanvas, wc);
     
     // Generate colors cyclically based on number of warehouses
     const palette = ['rgba(99,102,241,0.85)', 'rgba(16,185,129,0.85)', 'rgba(6,182,212,0.85)', 'rgba(245,158,11,0.85)', 'rgba(168,85,247,0.85)'];
     const bgColors = whs.map((_, i) => palette[i % palette.length]);
     
-    _dashboardCharts.wh = new Chart(wc, {
+    _dashboardCharts.wh = new Chart(newCanvas, {
       type: 'doughnut',
       data: {
         labels: whs.map(w=>w.name),
@@ -5559,6 +5833,7 @@ async function initDashboardCharts(whs) {
 
 
 
+
 let wh_currentView = 'grid';
 let wh_searchQuery = '';
 
@@ -5567,6 +5842,18 @@ function renderWarehouses() {
   if (!user || user.role !== 'super_admin') { navigate('/dashboard'); return; }
 
   refreshShell();
+
+  const _handleWarehousesStorageSync = () => {
+    const u = getCurrentUser();
+    if (!u || u.role !== 'super_admin') {
+      window.removeEventListener('wareops_storage_sync', _handleWarehousesStorageSync);
+      return;
+    }
+    refreshShell();
+  };
+
+  window.removeEventListener('wareops_storage_sync', _handleWarehousesStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleWarehousesStorageSync);
 }
 
 function refreshShell() {
@@ -6070,7 +6357,7 @@ function showWarehouseModal(wh) {
 function renderWarehouseDetail(whId) {
   const user    = getCurrentUser();
   const isSA    = user.role === 'super_admin';
-  const isAdmin = isSA || user.role === 'admin';
+  const canManageWorkforce = canDo('workforce', 'view', user);
 
   const whs = getWarehouses();
   const wh  = whs.find(w => w.id === whId);
@@ -6189,7 +6476,7 @@ function renderWarehouseDetail(whId) {
         <div class="card col-6">
           <div class="card-header">
             <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 16)} Team (${staff.length})</div>
-            ${isAdmin?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
+            ${canManageWorkforce?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
           </div>
           ${staff.length===0
             ?`<div style="text-align:center;padding:24px;color:var(--text-muted)">No staff assigned</div>`
@@ -6326,9 +6613,11 @@ function renderWarehouseDetail(whId) {
         const h = maxRevenue > 0 ? Math.max(Math.round(val / maxRevenue * 100), 2) : 2;
         const isLast = i === trends.length - 1;
         return `
-          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-            <div style="font-size:10px;color:var(--text-muted)">${val > 0 ? '$' + (val / 1000).toFixed(1) + 'k' : ''}</div>
-            <div style="width:100%;height:${h}%;background:${isLast ? 'var(--brand-500)' : 'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px" title="$${val.toLocaleString()}"></div>
+          <div style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px">
+            <div style="font-size:10px;color:var(--text-muted);white-space:nowrap">${val > 0 ? '$' + (val / 1000).toFixed(1) + 'k' : '&nbsp;'}</div>
+            <div style="width:100%;height:60px;display:flex;align-items:flex-end;justify-content:center">
+              <div style="width:100%;height:${h}%;background:${isLast ? 'var(--brand-500)' : 'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px" title="$${val.toLocaleString()}"></div>
+            </div>
             <div style="font-size:10px;color:var(--text-muted)">${t.monthName.split(' ')[0]}</div>
           </div>
         `;
@@ -6343,6 +6632,18 @@ function renderWarehouseDetail(whId) {
       barsContainer.innerHTML = '<div style="width:100%;text-align:center;color:var(--accent-rose);font-size:12px">Error loading trend data</div>';
     }
   });
+
+  const _handleWarehouseDetailStorageSync = () => {
+    const u = getCurrentUser();
+    if (!u) {
+      window.removeEventListener('wareops_storage_sync', _handleWarehouseDetailStorageSync);
+      return;
+    }
+    renderWarehouseDetail(whId);
+  };
+
+  window.removeEventListener('wareops_storage_sync', _handleWarehouseDetailStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleWarehouseDetailStorageSync);
 }
 
 // ===== pages/workforce.js =====
@@ -6364,9 +6665,81 @@ let wf_viewMode = localStorage.getItem('wareops_wf_view') || 'table'; // table |
 
 function renderWorkforce() {
   const user = getCurrentUser();
-  if (!user || user.role === 'employee' || user.role === 'staff') { navigate('/dashboard'); return; }
+  if (!user || !canDo('workforce', 'view')) { navigate('/dashboard'); return; }
 
   const whs = getWarehouses();
+  let activeWfTab = 'members';
+
+  const updateWfTabUI = () => {
+    const tabHeaders = document.querySelectorAll('.wf-tab-header');
+    tabHeaders.forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.tab === activeWfTab);
+    });
+
+    const contentArea = document.getElementById('workforce-tab-content');
+    if (!contentArea) return;
+
+    if (activeWfTab === 'members') {
+      contentArea.innerHTML = `
+        <!-- Table Toolbar -->
+        <div class="table-toolbar">
+          <div class="table-search">
+            <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
+            <input type="text" id="wf-search" placeholder="Search by name, email..." value="${wf_searchQ}" />
+          </div>
+          <div class="table-filter">
+            <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="role-filter">
+              <option value="">All Roles</option>
+              ${getAllRoles().map(r => `<option value="${r.id}" ${roleFilter === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}
+            </select>
+            <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="wh-filter-wf">
+              <option value="">All Warehouses</option>
+              ${whs.map(w=>`<option value="${w.id}" ${wf_whFilter === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}
+            </select>
+          </div>
+          <!-- View Mode Toggle -->
+          <div class="view-mode-toggle" id="wf-view-toggle">
+            <button class="view-mode-btn ${wf_viewMode==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
+            <button class="view-mode-btn ${wf_viewMode==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
+            <button class="view-mode-btn ${wf_viewMode==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
+          </div>
+        </div>
+
+        <!-- User List Container -->
+        <div id="workforce-table-container"></div>
+        <div id="workforce-pagination" style="margin-top:0"></div>
+      `;
+
+      renderWorkforceTable();
+      bindMembersTabEvents();
+    } else {
+      renderPendingDocumentsQueue(contentArea);
+    }
+  };
+
+  const bindMembersTabEvents = () => {
+    document.getElementById('create-user-btn')?.addEventListener('click', () => showUserModal(null));
+    
+    const debouncedSearch = debounce(q => {
+      wf_searchQ = q;
+      wf_page = 1;
+      renderWorkforceTable();
+    }, 300);
+
+    document.getElementById('wf-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
+    document.getElementById('role-filter')?.addEventListener('change', e => { roleFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
+    document.getElementById('wh-filter-wf')?.addEventListener('change', e => { wf_whFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
+
+    // View mode buttons
+    document.getElementById('wf-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        wf_viewMode = btn.dataset.view;
+        localStorage.setItem('wareops_wf_view', wf_viewMode);
+        document.querySelectorAll('#wf-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === wf_viewMode));
+        renderWorkforceTable();
+      });
+    });
+  };
 
   renderShell('Workforce', 'Manage users, roles, and warehouse assignments', `
     <div class="animate-slideUp">
@@ -6377,70 +6750,55 @@ function renderWorkforce() {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${user.role === 'super_admin' ? `<button class="btn btn-ghost btn-sm" onclick="location.hash='#/roles'">${getSvgIcon('workforce', 13)} Roles</button>` : ''}
-          ${['super_admin', 'admin'].includes(user.role) ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
+          ${canDo('settings', 'manage') ? `<button class="btn btn-ghost btn-sm" onclick="location.hash='#/roles'">${getSvgIcon('workforce', 13)} Roles</button>` : ''}
+          ${canDo('workforce', 'create') ? `<button class="btn btn-primary" id="create-user-btn">+ Add User</button>` : ''}
         </div>
       </div>
 
       <!-- Stats Row -->
       <div id="workforce-stats"></div>
 
-      <!-- Table Toolbar -->
-      <div class="table-toolbar">
-        <div class="table-search">
-          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
-          <input type="text" id="wf-search" placeholder="Search by name, email..." />
-        </div>
-        <div class="table-filter">
-          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="role-filter">
-            <option value="">All Roles</option>
-            <option value="admin">Admin</option>
-            <option value="manager">Manager</option>
-            <option value="staff">Staff</option>
-            <option value="employee">Employee</option>
-          </select>
-          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="wh-filter-wf">
-            <option value="">All Warehouses</option>
-            ${whs.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
-          </select>
-        </div>
-        <!-- View Mode Toggle -->
-        <div class="view-mode-toggle" id="wf-view-toggle">
-          <button class="view-mode-btn ${wf_viewMode==='table'?'active':''}" data-view="table" title="Table View">${getSvgIcon('tables', 14)}</button>
-          <button class="view-mode-btn ${wf_viewMode==='card'?'active':''}" data-view="card" title="Card View">${getSvgIcon('warehouse', 14)}</button>
-          <button class="view-mode-btn ${wf_viewMode==='grid'?'active':''}" data-view="grid" title="Grid View">${getSvgIcon('dashboard', 14)}</button>
-        </div>
+      <!-- Tab Navigation -->
+      <div class="table-toolbar" style="margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:0;gap:4px">
+        <button class="wf-tab-header btn btn-ghost btn-sm active" data-tab="members" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Workforce Members</button>
+        ${(user.role === 'super_admin' || user.role === 'admin' || user.role === 'manager') ? `
+          <button class="wf-tab-header btn btn-ghost btn-sm" data-tab="documents" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Document Review Queue</button>
+        ` : ''}
       </div>
 
-      <!-- User List Container -->
-      <div id="workforce-table-container"></div>
-      <div id="workforce-pagination" style="margin-top:0"></div>
+      <!-- Tab Content Area -->
+      <div id="workforce-tab-content"></div>
     </div>
   `);
 
   renderWorkforceStats();
-  renderWorkforceTable();
+  updateWfTabUI();
 
-  document.getElementById('create-user-btn')?.addEventListener('click', () => showUserModal(null));
-  const debouncedSearch = debounce(q => {
-    wf_searchQ = q;
-    wf_page = 1;
-    renderWorkforceTable();
-  }, 300);
-
-  document.getElementById('wf-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
-  document.getElementById('role-filter')?.addEventListener('change', e => { roleFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
-  document.getElementById('wh-filter-wf')?.addEventListener('change', e => { wf_whFilter = e.target.value; wf_page = 1; renderWorkforceTable(); });
-
-  // View mode buttons
-  document.getElementById('wf-view-toggle')?.querySelectorAll('.view-mode-btn').forEach(btn => {
+  // Bind tab header click events
+  document.querySelectorAll('.wf-tab-header').forEach(btn => {
     btn.addEventListener('click', () => {
-      wf_viewMode = btn.dataset.view;
-      localStorage.setItem('wareops_wf_view', wf_viewMode);
-      document.querySelectorAll('#wf-view-toggle .view-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.view === wf_viewMode));
-      renderWorkforceTable();
+      activeWfTab = btn.dataset.tab;
+      updateWfTabUI();
     });
   });
+
+  const _handleWorkforceStorageSync = () => {
+    const u = getCurrentUser();
+    if (!u) {
+      window.removeEventListener('wareops_storage_sync', _handleWorkforceStorageSync);
+      return;
+    }
+    renderWorkforceStats();
+    if (activeWfTab === 'members') {
+      renderWorkforceTable();
+    } else {
+      const contentArea = document.getElementById('workforce-tab-content');
+      if (contentArea) renderPendingDocumentsQueue(contentArea);
+    }
+  };
+
+  window.removeEventListener('wareops_storage_sync', _handleWorkforceStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleWorkforceStorageSync);
 }
 
 
@@ -6580,10 +6938,9 @@ function renderTableView(pageUsers, whs, currentUser, container, start, total) {
               <td data-label="Actions">
                 <div class="table-actions">
                   <button class="action-btn view profile-btn" data-uid="${u.id}" title="View Profile">${getSvgIcon('view', 14)}</button>
-                  ${['super_admin', 'admin'].includes(currentUser.role) ? `
-                   <button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                   <button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
-                  ` : ''}
+                  <button class="action-btn view idcard-btn" data-uid="${u.id}" title="Generate ID Card">🪪</button>
+                  ${canDo('workforce', 'edit') ? `<button class="action-btn edit" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 14)}</button>` : ''}
+                  ${canDo('workforce', 'delete') ? `<button class="action-btn delete" data-uid="${u.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                 </div>
               </td>
             </tr>`;
@@ -6628,10 +6985,9 @@ function renderCardView(pageUsers, whs, currentUser, container) {
               <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">Since ${formatDate(u.assignedAt || u.createdAt)}</div>
               <div style="display:flex;gap:8px">
                 <button class="btn btn-secondary btn-xs profile-btn" data-uid="${u.id}">${getSvgIcon('view', 12)} Profile</button>
-                ${['super_admin','admin'].includes(currentUser.role) ? `
-                  <button class="action-btn edit btn-xs" data-uid="${u.id}">${getSvgIcon('edit', 12)}</button>
-                  <button class="action-btn delete btn-xs" data-uid="${u.id}">${getSvgIcon('trash', 12)}</button>
-                ` : ''}
+                <button class="btn btn-secondary btn-xs idcard-btn" data-uid="${u.id}">🪪 ID Card</button>
+                ${canDo('workforce', 'edit') ? `<button class="action-btn edit btn-xs" data-uid="${u.id}">${getSvgIcon('edit', 12)}</button>` : ''}
+                ${canDo('workforce', 'delete') ? `<button class="action-btn delete btn-xs" data-uid="${u.id}">${getSvgIcon('trash', 12)}</button>` : ''}
               </div>
             </div>
           </div>
@@ -6658,7 +7014,8 @@ function renderGridView(pageUsers, whs, currentUser, container) {
             <div style="font-size:11px;color:var(--text-muted)">${wh ? wh.name : '—'}</div>
             <div style="margin-top:10px;display:flex;gap:6px;justify-content:center">
               <button class="action-btn view btn-xs profile-btn" data-uid="${u.id}" title="Profile">${getSvgIcon('view', 12)}</button>
-              ${['super_admin','admin'].includes(currentUser.role) ? `
+              <button class="action-btn view btn-xs idcard-btn" data-uid="${u.id}" title="ID Card">🪪</button>
+              ${canDo('workforce', 'edit') ? `
                 <button class="action-btn edit btn-xs" data-uid="${u.id}" title="Edit">${getSvgIcon('edit', 12)}</button>
               ` : ''}
             </div>
@@ -6677,6 +7034,17 @@ function bindProfileButtons(container) {
       const uid = el.dataset.uid;
       const u = allUsers.find(u => u.id === uid);
       if (u) showUserProfilePanel(u);
+    });
+  });
+  container.querySelectorAll('.idcard-btn').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const uid = el.dataset.uid;
+      const u = allUsers.find(usr => usr.id === uid);
+      if (u) {
+        const { showIDCardModal } = await import('./profile.js');
+        showIDCardModal(u);
+      }
     });
   });
 }
@@ -6767,12 +7135,18 @@ function showUserProfilePanel(u) {
   const footer = `
     <div style="display:flex;gap:8px">
       <button class="btn btn-ghost" id="pp-close">Close</button>
-      ${['super_admin','admin'].includes(getCurrentUser()?.role) ? `<button class="btn btn-primary" id="pp-edit" data-uid="${u.id}">Edit User</button>` : ''}
+      <button class="btn btn-secondary" id="pp-idcard" data-uid="${u.id}">🪪 ID Card</button>
+      ${canDo('workforce', 'edit') ? `<button class="btn btn-primary" id="pp-edit" data-uid="${u.id}">Edit User</button>` : ''}
     </div>
   `;
 
   const modal = createModal({ title: `User Profile — ${u.name}`, body, footer, width: '820px' });
   modal.el.querySelector('#pp-close')?.addEventListener('click', modal.close);
+  modal.el.querySelector('#pp-idcard')?.addEventListener('click', async () => {
+    modal.close();
+    const { showIDCardModal } = await import('./profile.js');
+    showIDCardModal(u);
+  });
   modal.el.querySelector('#pp-edit')?.addEventListener('click', () => {
     modal.close();
     showUserModal(u);
@@ -6784,9 +7158,10 @@ function showUserModal(u) {
   const isEdit = !!u;
   const whs = getWarehouses();
   const currentUser = getCurrentUser();
+  const allRoles = getAllRoles();
   const availableRoles = currentUser.role === 'super_admin'
-    ? ['admin','manager','staff','employee']
-    : ['manager','staff','employee'];
+    ? allRoles.filter(r => r.id !== 'super_admin')
+    : allRoles.filter(r => r.id !== 'super_admin' && r.id !== 'admin');
 
   let m_avatar = u?.avatar || '';
   const barcodeUrl = u?.barcode ? `http://localhost:8000/api/v1/registry/barcode?code=${u.barcode}` : '';
@@ -6832,12 +7207,12 @@ function showUserModal(u) {
         <div class="form-group">
           <label class="form-label">Role <span class="req">*</span></label>
           <select id="m-u-role" class="form-control" required>
-            ${availableRoles.map(r=>`<option value="${r}" ${u?.role===r?'selected':''}>${capitalize(r)}</option>`).join('')}
+            ${availableRoles.map(r=>`<option value="${r.id}" ${u?.role===r.id?'selected':''}>${r.name}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Assign Warehouse <span class="req">*</span></label>
-          <select id="m-u-wh" class="form-control" required>
+          <label class="form-label">Assign Warehouse</label>
+          <select id="m-u-wh" class="form-control">
             <option value="">Select warehouse</option>
             ${whs.map(w=>`<option value="${w.id}" ${u?.warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
           </select>
@@ -6969,7 +7344,7 @@ function showUserModal(u) {
     const email = document.getElementById('m-u-email').value.trim();
     const role = document.getElementById('m-u-role').value;
     const warehouseId = document.getElementById('m-u-wh').value;
-    if (!name || !email || !role || !warehouseId) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
+    if (!name || !email || !role || (role !== 'super_admin' && !warehouseId)) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
     
     // Set avatar fallback if empty
     if (!m_avatar) {
@@ -7013,10 +7388,172 @@ function showUserModal(u) {
   });
 }
 
+async function renderPendingDocumentsQueue(container) {
+  container.innerHTML = `
+    <div style="display:flex;justify-content:center;padding:48px" id="doc-queue-spinner">
+      <div class="spinner"></div>
+    </div>
+  `;
+  
+  const res = await apiFetch('/workforce/documents/pending');
+  if (res.error) {
+    container.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="color:var(--text-danger);margin-bottom:12px;display:flex;justify-content:center">${getSvgIcon('warning', 32)}</div>
+        <h3 style="color:var(--text-secondary)">Failed to load documents queue</h3>
+        <p style="color:var(--text-muted);font-size:13px">${res.error}</p>
+      </div>
+    `;
+    return;
+  }
+  
+  const pendingDocs = res.data || [];
+  if (pendingDocs.length === 0) {
+    container.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center">${getSvgIcon('audit', 40)}</div>
+        <h3 style="color:var(--text-secondary)">No documents pending review</h3>
+        <p style="color:var(--text-muted);font-size:13px">All workforce compliance documents are currently up to date.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = `
+    <div class="card animate-slideUp">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Compliance Document Queue</div>
+          <div class="card-subtitle">Pending reviews for workforce credentials and identity verifications</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Document Name</th>
+              <th>Type</th>
+              <th>Uploaded Date</th>
+              <th>Expiry Date</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pendingDocs.map(d => `
+              <tr data-docid="${d.id}" data-userid="${d.userId}">
+                <td>
+                  <div>
+                    <div class="primary-cell">${d.userName}</div>
+                    <div class="sub-cell">${d.userEmail}</div>
+                  </div>
+                </td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="color:var(--text-muted)">${getSvgIcon('audit', 16)}</span>
+                    <span style="font-weight:600">${d.name}</span>
+                  </div>
+                </td>
+                <td><span class="badge badge-secondary" style="font-size:11px;padding:2px 8px">${d.type}</span></td>
+                <td>${d.uploadedAt || '—'}</td>
+                <td>${d.expiryDate || '—'}</td>
+                <td style="text-align:right">
+                  <div style="display:flex;gap:6px;justify-content:flex-end">
+                    <button class="btn btn-secondary btn-xs download-btn">Download</button>
+                    <button class="btn btn-success btn-xs approve-btn" style="background:var(--accent-emerald);border-color:var(--accent-emerald)">Approve</button>
+                    <button class="btn btn-danger btn-xs reject-btn" style="background:var(--text-danger);border-color:var(--text-danger)">Reject</button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  
+  // Bind events
+  container.querySelectorAll('tbody tr').forEach(row => {
+    const docId = row.dataset.docid;
+    const userId = row.dataset.userid;
+    const doc = pendingDocs.find(item => item.id === docId);
+    
+    row.querySelector('.download-btn')?.addEventListener('click', () => {
+      showToast('Secure Download', 'Retrieving encrypted document file...', 'info');
+    });
+    
+    row.querySelector('.approve-btn')?.addEventListener('click', () => {
+      handleDocumentReview(userId, docId, 'Approved', doc.name);
+    });
+    
+    row.querySelector('.reject-btn')?.addEventListener('click', () => {
+      handleDocumentReview(userId, docId, 'Rejected', doc.name);
+    });
+  });
+}
+
+function handleDocumentReview(userId, docId, status, docName) {
+  const isApprove = status === 'Approved';
+  const actionTitle = isApprove ? 'Approve Document' : 'Reject Document';
+  const actionBtnClass = isApprove ? 'btn-success' : 'btn-danger';
+  const actionBtnStyle = isApprove ? 'background:var(--accent-emerald);border-color:var(--accent-emerald)' : 'background:var(--text-danger);border-color:var(--text-danger)';
+  
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div style="margin-bottom:16px;font-size:13px;color:var(--text-secondary)">
+      Are you sure you want to <strong>${status.toLowerCase()}</strong> the document <strong>${docName}</strong>?
+    </div>
+    <div class="form-group">
+      <label class="form-label">${isApprove ? 'Approval Remarks (Optional)' : 'Rejection Reason (Required)'}</label>
+      <textarea id="review-remarks" class="form-control" rows="3" placeholder="${isApprove ? 'Add any optional notes...' : 'Please explain why this document is rejected...'}" required></textarea>
+    </div>
+  `;
+  
+  const footer = document.createElement('div');
+  footer.style.display = 'flex';
+  footer.style.gap = '12px';
+  footer.style.justifyContent = 'flex-end';
+  footer.innerHTML = `
+    <button class="btn btn-secondary" id="review-cancel">Cancel</button>
+    <button class="btn ${actionBtnClass}" id="review-submit" style="${actionBtnStyle}">${status}</button>
+  `;
+  
+  const modal = createModal({
+    title: actionTitle,
+    body,
+    footer
+  });
+  
+  modal.el.querySelector('#review-cancel').addEventListener('click', () => modal.close());
+  
+  modal.el.querySelector('#review-submit').addEventListener('click', async () => {
+    const remarks = modal.el.querySelector('#review-remarks').value.trim();
+    if (!isApprove && !remarks) {
+      showToast('Validation Error', 'A rejection reason is required.', 'warning');
+      return;
+    }
+    
+    modal.close();
+    
+    const { reviewDocument } = await import('../modules/store.js');
+    const res = await reviewDocument(userId, docId, status, remarks);
+    if (res && res.error) {
+      showToast('Review Failed', res.error, 'error');
+    } else {
+      showToast('Review Recorded', `Document has been ${status.toLowerCase()}.`, 'success');
+      const contentArea = document.getElementById('workforce-tab-content');
+      if (contentArea) {
+        renderPendingDocumentsQueue(contentArea);
+      }
+    }
+  });
+}
+
 // ===== pages/items.js =====
 /**
  * Items / Inventory Management Page
  */
+
 
 
 
@@ -7038,7 +7575,6 @@ function renderItems() {
     return;
   }
   const whs = getWarehouses();
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
   renderShell('Inventory', 'Manage items, stock, and categories', `
     <div class="animate-slideUp">
@@ -7049,8 +7585,8 @@ function renderItems() {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${canEdit ? `
-            <button class="btn btn-secondary btn-sm" id="generate-barcodes-btn">Generate Barcodes</button>
+          ${canDo('inventory', 'manage') ? `<button class="btn btn-secondary btn-sm" id="generate-barcodes-btn">Generate Barcodes</button>` : ''}
+          ${canDo('inventory', 'create') ? `
             <button class="btn btn-secondary btn-sm" id="import-csv-btn">Import CSV</button>
             <button class="btn btn-primary" id="create-item-btn">+ Add Item</button>
           ` : ''}
@@ -7122,9 +7658,9 @@ function renderItems() {
     if (item) showItemCardModal(item);
   };
   
-  // Realtime WebSocket auto-refresh for inventory
-  window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
-  window.addEventListener('wareops_ws_event', _handleInventoryWsEvent);
+  // Realtime storage sync auto-refresh for inventory
+  window.removeEventListener('wareops_storage_sync', _handleInventoryStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleInventoryStorageSync);
 
   // Deep-link target item if id query parameter is present in URL hash
   const hash = window.location.hash || '';
@@ -7166,7 +7702,7 @@ function renderItemStats() {
 function renderItemsTable() {
   const user = getCurrentUser();
   const whs = getWarehouses();
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
+  const canEdit = canDo('inventory', 'edit') || canDo('inventory', 'delete');
   let items = getItems();
   if (it_searchQ) items = filterData(items, it_searchQ, ['name','sku','category']);
   if (categoryFilter) items = items.filter(i => i.category === categoryFilter);
@@ -7197,13 +7733,16 @@ function renderItemsTable() {
 }
 
 function renderItemsTableView(pageItems, whs, canEdit, container, start, total, it_pages) {
+  const hasEdit = canDo('inventory', 'edit');
+  const hasDelete = canDo('inventory', 'delete');
+  const showActions = hasEdit || hasDelete;
   container.innerHTML = `
     <div class="table-wrap">
       <table>
         <thead><tr>
           <th>Item</th><th>SKU</th><th>Category</th><th>Price</th>
           <th>Stock</th><th>Warehouse</th>
-          ${canEdit ? '<th>Actions</th>' : ''}
+          ${showActions ? '<th>Actions</th>' : ''}
         </tr></thead>
         <tbody>
           ${pageItems.map(item => {
@@ -7229,11 +7768,13 @@ function renderItemsTableView(pageItems, whs, canEdit, container, start, total, 
               <td data-label="Price"><strong style="color:var(--text-primary)">${formatCurrency(item.price||0)}</strong></td>
               <td data-label="Stock"><span class="badge ${stockClass}">${item.stock||0} ${item.unit||'pcs'}</span></td>
               <td data-label="Warehouse"><span class="badge badge-muted">${wh?.name||'—'}</span></td>
-              ${canEdit ? `<td data-label="Actions">
+              ${showActions ? `<td data-label="Actions">
                 <div class="table-actions">
-                  <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="color:var(--accent-emerald)">${getSvgIcon('plus', 14)}</button>
-                  <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
-                  <button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>
+                  ${hasEdit ? `
+                    <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="color:var(--accent-emerald)">${getSvgIcon('plus', 14)}</button>
+                    <button class="action-btn edit" data-iid="${item.id}" title="Edit">${getSvgIcon('edit', 14)}</button>
+                  ` : ''}
+                  ${hasDelete ? `<button class="action-btn delete" data-iid="${item.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                 </div>
               </td>` : ''}
             </tr>`;
@@ -7280,8 +7821,10 @@ function renderItemsGridView(pageItems, whs, canEdit, container, start, total, i
               <span class="badge badge-brand" style="font-size:10px">${item.category}</span>
               <div style="display:flex;gap:6px">
                 <button class="action-btn view profile-btn" data-iid="${item.id}" title="View Details" style="padding: 4px;">${getSvgIcon('view', 12)}</button>
-                ${canEdit ? `
+                ${canDo('inventory', 'edit') ? `
                   <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                ` : ''}
+                ${canDo('inventory', 'delete') ? `
                   <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
                 ` : ''}
               </div>
@@ -7358,9 +7901,11 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
               <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-subtle);padding-top:10px;">
                 <button class="btn btn-secondary btn-xs clickable-card" data-iid="${item.id}" style="font-size:11px;">${getSvgIcon('view', 12)} View Details</button>
                 <div style="display:flex;gap:6px">
-                  ${canEdit ? `
+                  ${canDo('inventory', 'edit') ? `
                     <button class="action-btn add-stock" data-iid="${item.id}" title="Add Stock" style="padding: 4px;color:var(--accent-emerald)">${getSvgIcon('plus', 12)}</button>
                     <button class="action-btn edit" data-iid="${item.id}" title="Edit" style="padding: 4px;">${getSvgIcon('edit', 12)}</button>
+                  ` : ''}
+                  ${canDo('inventory', 'delete') ? `
                     <button class="action-btn delete" data-iid="${item.id}" title="Delete" style="padding: 4px;">${getSvgIcon('trash', 12)}</button>
                   ` : ''}
                 </div>
@@ -7383,9 +7928,8 @@ function renderItemsCardView(pageItems, whs, canEdit, container, start, total, i
 
 function bindItemsEvents(container, it_pages) {
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
 
-  if (canEdit) {
+  if (canDo('inventory', 'edit')) {
     container.querySelectorAll('.add-stock[data-iid]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -7400,6 +7944,8 @@ function bindItemsEvents(container, it_pages) {
         if (item) showItemModal(item);
       });
     });
+  }
+  if (canDo('inventory', 'delete')) {
     container.querySelectorAll('.delete[data-iid]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -7839,18 +8385,14 @@ function showImportModal() {
   });
 }
 
-function _handleInventoryWsEvent(e) {
+function _handleInventoryStorageSync() {
   const user = getCurrentUser();
   if (!user) {
-    window.removeEventListener('wareops_ws_event', _handleInventoryWsEvent);
+    window.removeEventListener('wareops_storage_sync', _handleInventoryStorageSync);
     return;
   }
-  const payload = e.detail;
-  const evType = payload?.type || payload?.event_type;
-  if (evType === 'inventory_change') {
-    renderItemStats();
-    renderItemsTable();
-  }
+  renderItemStats();
+  renderItemsTable();
 }
 
 function showItemCardModal(item) {
@@ -8232,11 +8774,91 @@ function showBarcodeGenerationModal() {
 }
 window.showBarcodeGenerationModal = showBarcodeGenerationModal;
 
+function showAddStockModal(item) {
+  const body = `
+    <form id="add-stock-modal-form" style="display:flex;flex-direction:column;gap:16px">
+      <div style="background:var(--bg-elevated);border-left:4px solid var(--brand-500);padding:12px;border-radius:0 6px 6px 0">
+        <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;font-weight:700">Target Item</div>
+        <div style="font-weight:800;font-size:15px;color:var(--text-primary);margin-top:2px">${item.name}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;font-size:12px">
+          <div><span style="color:var(--text-muted)">SKU:</span> <strong style="font-family:var(--font-mono)">${item.sku || '—'}</strong></div>
+          <div><span style="color:var(--text-muted)">Current Stock:</span> <strong>${item.stock} ${item.unit || 'pcs'}</strong></div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="font-weight:600">Quantity to Add <span class="req">*</span></label>
+        <input type="number" id="stock-qty-add" class="form-control" min="1" required placeholder="Enter positive number..." />
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="font-weight:600">Adjustment Notes / Reason</label>
+        <textarea id="stock-notes" class="form-control" style="resize:vertical;min-height:80px" placeholder="Optional audit trail note (e.g. Restock delivery, supplier check)..."></textarea>
+      </div>
+    </form>
+  `;
+
+  const footer = `
+    <button class="btn btn-secondary" id="add-stock-cancel">Cancel</button>
+    <button class="btn btn-primary" id="add-stock-submit" style="display:inline-flex;align-items:center;gap:6px">
+      ${getSvgIcon('check', 14)} Adjust Stock
+    </button>
+  `;
+
+  const modal = createModal({ title: 'Add Inventory Stock', body, footer });
+
+  modal.el.querySelector('#add-stock-cancel').addEventListener('click', () => modal.close());
+
+  modal.el.querySelector('#add-stock-submit').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const qtyInput = modal.el.querySelector('#stock-qty-add');
+    const notesInput = modal.el.querySelector('#stock-notes');
+    
+    if (!qtyInput.checkValidity()) {
+      qtyInput.reportValidity();
+      return;
+    }
+    
+    const qty = parseInt(qtyInput.value) || 0;
+    if (qty <= 0) {
+      showToast('Validation Error', 'Quantity must be a positive number greater than 0.', 'warning');
+      return;
+    }
+    
+    const newStock = item.stock + qty;
+    const notes = notesInput.value.trim() || 'Manual stock intake';
+    
+    const submitBtn = modal.el.querySelector('#add-stock-submit');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Updating...';
+    
+    const res = await updateItem(item.id, {
+      ...item,
+      stock: newStock
+    });
+    
+    if (res && res.error) {
+      showToast('Error', res.error, 'error');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `${getSvgIcon('check', 14)} Adjust Stock`;
+      return;
+    }
+    
+    const user = getCurrentUser();
+    addAuditLog('stock_adjust', `Added ${qty} units to ${item.name} (New Stock: ${newStock}). Reason: ${notes}`, user.id);
+    
+    showToast('Stock Updated', `Successfully added ${qty} units to ${item.name}.`, 'success');
+    modal.close();
+    renderItemStats();
+    renderItemsTable();
+  });
+}
+window.showAddStockModal = showAddStockModal;
+
 // ===== pages/tables.js =====
 /**
  * WareOps ERP — Dynamic Tables Spreadsheet Workspace
  * Airtable / Notion style inline-editable grid with realtime collaboration
  */
+
 
 
 
@@ -8287,6 +8909,12 @@ async function renderTables() {
     return;
   }
 
+  if (!canDo('tables', 'view')) {
+    showToast('Access Denied', "You do not have permission to access tables.", 'error');
+    window.location.hash = '#/dashboard';
+    return;
+  }
+
   // Parse deep-linked table ID from hash query parameters if present
   const hash = window.location.hash;
   const match = hash.match(/[?&]id=([^&]+)/);
@@ -8297,7 +8925,7 @@ async function renderTables() {
   }
 
   const whs      = getWarehouses();
-  const canManage = ['super_admin','admin'].includes(user.role);
+  const canManage = canDo('tables', 'create');
 
   // Auto-seed system tables on list view entry
   if (!_activeTableId && canManage) {
@@ -8327,8 +8955,10 @@ async function _renderTableList(user, whs, canManage) {
     });
   }
 
-
-  const canEdit = ['super_admin','admin','manager'].includes(user.role);
+  const canCreate = canDo('tables', 'create');
+  const canEditSchema = canDo('tables', 'edit');
+  const canDeleteSchema = canDo('tables', 'delete');
+  const canGenerateBarcodes = canDo('inventory', 'manage');
 
   renderShell('Tables', 'Dynamic table builder and spreadsheet workspace', `
     <div class="animate-slideUp">
@@ -8339,8 +8969,8 @@ async function _renderTableList(user, whs, canManage) {
         </div>
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          ${canEdit ? `<button class="btn btn-secondary btn-sm" id="generate-barcodes-btn-tbl">Generate Barcodes</button>` : ''}
-          ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
+          ${canGenerateBarcodes ? `<button class="btn btn-secondary btn-sm" id="generate-barcodes-btn-tbl">Generate Barcodes</button>` : ''}
+          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn">+ New Table</button>` : ''}
         </div>
       </div>
 
@@ -8349,7 +8979,7 @@ async function _renderTableList(user, whs, canManage) {
           <div style="font-size:48px;margin-bottom:20px;opacity:0.4;display:flex;justify-content:center;color:var(--text-muted)">${getSvgIcon('tables', 48)}</div>
           <h2 style="color:var(--text-secondary);margin-bottom:8px">No tables yet</h2>
           <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px">Create your first table and start tracking data like a spreadsheet</p>
-          ${canManage ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create First Table</button>` : ''}
+          ${canCreate ? `<button class="btn btn-primary" id="create-tbl-btn-empty">+ Create First Table</button>` : ''}
         </div>
       ` : `
         <div class="table-toolbar" style="margin-bottom:16px">
@@ -8384,8 +9014,8 @@ async function _renderTableList(user, whs, canManage) {
                   <td>
                     <div class="table-actions">
                       <button class="action-btn view" data-tid="${t.id}" title="Open Spreadsheet">${getSvgIcon('analytics', 14)}</button>
-                      ${canManage ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">${getSvgIcon('edit', 14)}</button>` : ''}
-                      ${canManage ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
+                      ${canEditSchema ? `<button class="action-btn edit" data-tid="${t.id}" title="Edit Schema">${getSvgIcon('edit', 14)}</button>` : ''}
+                      ${canDeleteSchema ? `<button class="action-btn delete" data-tid="${t.id}" title="Delete">${getSvgIcon('trash', 14)}</button>` : ''}
                     </div>
                   </td>
                 </tr>`;
@@ -8490,8 +9120,11 @@ async function _openSpreadsheet(user, canManage) {
   _rows = (rowsRes?.success && Array.isArray(rowsRes.data)) ? rowsRes.data : [];
 
   const isRegistry = _activeTableId === 'central_registry';
-  const canEdit   = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
-  const canImport = ['super_admin','admin','manager'].includes(user.role) && !isRegistry;
+  const canEdit   = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
+  const canImport = canDo('tables', 'import') && !isRegistry;
+  const canExport = canDo('tables', 'export');
+  const canCreate = canDo('tables', 'create') && !isRegistry;
   const cols      = _schema.columns || [];
   const headerColor = _schema.headerColor || '#6366f1';
 
@@ -8569,13 +9202,13 @@ async function _openSpreadsheet(user, canManage) {
         <div class="ss-menu-item">
           <button class="ss-menu-btn">File</button>
           <div class="ss-menu-dropdown">
-            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-file-new">New Spreadsheet</button>` : ''}
+            ${canCreate ? `<button class="ss-menu-dropdown-item" id="menu-file-new">New Spreadsheet</button>` : ''}
             ${canImport ? `<button class="ss-menu-dropdown-item" id="menu-file-import">Import</button>` : ''}
-            <button class="ss-menu-dropdown-item" id="menu-file-export">Download</button>
-            <button class="ss-menu-dropdown-item" id="menu-file-copy">Make a copy</button>
-            <button class="ss-menu-dropdown-item" id="menu-file-share">Share</button>
-            <button class="ss-menu-dropdown-item" id="menu-file-rename">Rename</button>
-            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-file-bin">Move to bin</button>` : ''}
+            ${canExport ? `<button class="ss-menu-dropdown-item" id="menu-file-export">Download</button>` : ''}
+            ${canCreate ? `<button class="ss-menu-dropdown-item" id="menu-file-copy">Make a copy</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-file-share">Share</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-file-rename">Rename</button>` : ''}
+            ${canDelete ? `<button class="ss-menu-dropdown-item" id="menu-file-bin">Move to bin</button>` : ''}
             <button class="ss-menu-dropdown-item" id="menu-file-history">Version history</button>
           </div>
         </div>
@@ -8607,8 +9240,8 @@ async function _openSpreadsheet(user, canManage) {
         <div class="ss-menu-item">
           <button class="ss-menu-btn">Insert</button>
           <div class="ss-menu-dropdown">
-            <button class="ss-menu-dropdown-item" id="menu-insert-row">Row</button>
-            ${canManage ? `<button class="ss-menu-dropdown-item" id="menu-insert-col">Column</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-insert-row">Row</button>` : ''}
+            ${canEdit ? `<button class="ss-menu-dropdown-item" id="menu-insert-col">Column</button>` : ''}
             <button class="ss-menu-dropdown-item" id="menu-insert-image">Image</button>
             <button class="ss-menu-dropdown-item" id="menu-insert-link">Link</button>
             <button class="ss-menu-dropdown-item" id="menu-insert-comment">Comment</button>
@@ -8620,6 +9253,7 @@ async function _openSpreadsheet(user, canManage) {
           </div>
         </div>
 
+        ${canEdit ? `
         <div class="ss-menu-item">
           <button class="ss-menu-btn">Format</button>
           <div class="ss-menu-dropdown">
@@ -8634,10 +9268,12 @@ async function _openSpreadsheet(user, canManage) {
             <button class="ss-menu-dropdown-item" id="menu-fmt-dec-dec">Decrease Decimals</button>
           </div>
         </div>
+        ` : ''}
       </div>
 
       <!-- Quick formatting bar -->
       <div class="ss-format-bar">
+        ${canEdit ? `
         <button class="ss-format-btn" id="fmt-bold" title="Bold" style="font-weight:bold">B</button>
         <button class="ss-format-btn" id="fmt-italic" title="Italic" style="font-style:italic">I</button>
         <button class="ss-format-btn" id="fmt-underline" title="Underline" style="text-decoration:underline">U</button>
@@ -8681,6 +9317,7 @@ async function _openSpreadsheet(user, canManage) {
         </div>
 
         <div class="ss-format-divider"></div>
+        ` : ''}
         
         <!-- Tab pages selector container -->
         <div id="ss-pages-tabs-container" style="display:flex;align-items:center"></div>
@@ -8717,11 +9354,11 @@ async function _openSpreadsheet(user, canManage) {
                         </div>
                       </th>
                     `).join('')}
-                    ${canEdit ? '<th class="ss-th ss-th-actions">Actions</th>' : ''}
+                    ${canDelete ? '<th class="ss-th ss-th-actions">Actions</th>' : ''}
                   </tr>
                 </thead>
                 <tbody id="ss-tbody">
-                  ${_buildAllRows(cols, canEdit, user)}
+                  ${_buildAllRows(cols, canEdit, canDelete, user)}
                 </tbody>
               </table>
             </div>
@@ -9135,7 +9772,7 @@ async function _openSpreadsheet(user, canManage) {
   _updateFooterButtons();
 
   // Attach cell + row events
-  _attachGridEvents(cols, canEdit, user);
+  _attachGridEvents(cols, canEdit, canDelete, user);
   _renderPageTabs(canEdit);
   _updatePageMeta();
   _initColumnResizer();
@@ -9145,16 +9782,16 @@ async function _openSpreadsheet(user, canManage) {
 }
 
 // ─── ROW RENDERING ────────────────────────────────────────────────────────────
-function _buildAllRows(cols, canEdit, user) {
+function _buildAllRows(cols, canEdit, canDelete, user) {
   let html = '';
   // Real rows
   for (let i = 0; i < _rows.length; i++) {
-    html += _buildRow(_rows[i], i, cols, canEdit, user, false);
+    html += _buildRow(_rows[i], i, cols, canEdit, canDelete, user, false);
   }
   // Virtual empty rows to fill up to exactly 100 capacity
   const virtualCount = Math.max(0, 100 - _rows.length);
   for (let v = 0; v < virtualCount; v++) {
-    html += _buildVirtualRow(_rows.length + v, cols, canEdit);
+    html += _buildVirtualRow(_rows.length + v, cols, canEdit, canDelete);
   }
   return html;
 }
@@ -9223,10 +9860,11 @@ async function _switchPage(pageNumber) {
   const cols = _schema.columns || [];
   const user = getCurrentUser();
   const isRegistry = _activeTableId === 'central_registry';
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
   
   const sheetNameEl = document.getElementById('ss-active-sheet-name');
@@ -9274,7 +9912,7 @@ function _updatePageMeta() {
   `;
 }
 
-function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
+function _buildRow(row, idx, cols, canEdit, canDelete, user, isNew = false) {
   const locked = _lockedRows.has(row.id);
   const lockInfo = locked ? _lockedRows.get(row.id) : null;
   const isLockedByOther = locked && lockInfo?.userId !== String(user.id || user._id);
@@ -9296,7 +9934,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
         }
       </td>
     `).join('')}
-    ${canEdit ? `
+    ${canDelete ? `
       <td class="ss-td ss-td-actions">
         <button class="ss-action-btn ss-del-row" data-row-id="${row.id}" data-row-idx="${idx}" title="Delete row">${getSvgIcon('trash', 12)}</button>
       </td>
@@ -9304,7 +9942,7 @@ function _buildRow(row, idx, cols, canEdit, user, isNew = false) {
   </tr>`;
 }
 
-function _buildVirtualRow(idx, cols, canEdit) {
+function _buildVirtualRow(idx, cols, canEdit, canDelete) {
   return `<tr class="ss-row ss-row-virtual" data-row-idx="${idx}" data-virtual="true">
     <td class="ss-td ss-td-row-num"><span class="ss-row-num" style="opacity:0.3">${idx + 1}</span></td>
     ${cols.map(col => `
@@ -9313,7 +9951,7 @@ function _buildVirtualRow(idx, cols, canEdit) {
         <span class="ss-cell-placeholder"></span>
       </td>
     `).join('')}
-    ${canEdit ? `<td class="ss-td ss-td-actions"></td>` : ''}
+    ${canDelete ? `<td class="ss-td ss-td-actions"></td>` : ''}
   </tr>`;
 }
 
@@ -9378,6 +10016,16 @@ function _buildEditableCell(value, col, rowId, rowIdx) {
 function _buildReadonlyCell(value, col) {
   const v = value ?? '';
   if (v === '' || v === null || v === undefined) return '<span style="color:var(--text-disabled)">—</span>';
+  
+  if (col.id === 'barcode') {
+    let code = v;
+    if (typeof v === 'string' && v.includes('code=')) {
+      code = v.split('code=')[1];
+    }
+    const srcVal = `http://localhost:8000/api/v1/registry/barcode?code=${code}`;
+    return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" />`;
+  }
+
   switch (col.type) {
     case 'checkbox': return v 
       ? `<span style="color:var(--accent-emerald);font-weight:700;display:inline-flex;align-items:center">${getSvgIcon('check', 12)}</span>` 
@@ -9411,7 +10059,7 @@ function _buildReadonlyCell(value, col) {
 }
 
 // ─── GRID EVENT ATTACHMENT ─────────────────────────────────────────────────────
-function _attachGridEvents(cols, canEdit, user) {
+function _attachGridEvents(cols, canEdit, canDelete, user) {
   const tbody = document.getElementById('ss-tbody');
   if (!tbody) return;
 
@@ -9468,7 +10116,7 @@ function _attachGridEvents(cols, canEdit, user) {
 
     if (inp.dataset.virtual === 'true' || !rowId) {
       // Click on virtual row → promote to real row
-      _handleVirtualCellChange(inp, cols, canEdit, user);
+      _handleVirtualCellChange(inp, cols, canEdit, canDelete, user);
       return;
     }
     _scheduleSave(rowId, rowIdx, cols, inp);
@@ -9501,6 +10149,10 @@ function _attachGridEvents(cols, canEdit, user) {
   tbody.addEventListener('click', e => {
     const btn = e.target.closest('.ss-del-row');
     if (!btn) return;
+    if (!canDelete) {
+      showToast('Permission denied', 'You do not have permission to delete rows.', 'error');
+      return;
+    }
     const rowId  = btn.dataset.rowId;
     const rowIdx = parseInt(btn.dataset.rowIdx);
     _deleteRow(rowId, rowIdx, cols, canEdit, user);
@@ -9799,7 +10451,7 @@ function _handleWsEvent(e) {
   if (!data?.tableId || data.tableId !== _activeTableId) return;
 
   const userId = String(user.id || user._id || '');
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const canEdit = canDo('tables', 'edit');
 
   switch (type) {
     case 'table_page_created': {
@@ -9878,11 +10530,13 @@ async function _refreshRowsFromServer() {
 
   const cols   = _schema?.columns || [];
   const user   = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   const tbody  = document.getElementById('ss-tbody');
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
 }
 
@@ -9945,7 +10599,7 @@ function _applyRowLockStatus(rowId, isLocked, userName = '') {
     }
     // Set cells back to editable if canEdit
     const user = getCurrentUser();
-    const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+    const canEdit = canDo('tables', 'edit') && _activeTableId !== 'central_registry';
     tr.querySelectorAll('.ss-cell').forEach(cell => {
       if (canEdit) {
         delete cell.dataset.readonly;
@@ -9958,7 +10612,7 @@ function _applyRowLockStatus(rowId, isLocked, userName = '') {
   }
 }
 
-async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) {
+async function _promoteAndSaveVirtualRow(tr, cols, canEdit, canDelete, user, changedInput) {
   const rowData = _collectRowData(tr, cols);
   const isBlank = Object.values(rowData).every(v => v === '' || v === null || v === undefined);
   if (isBlank) return;
@@ -9975,7 +10629,7 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
     const idx = _rows.length - 1;
     
     // Replace virtual row with real row in DOM
-    const newTrHtml = _buildRow(res.data, idx, cols, canEdit, user, true);
+    const newTrHtml = _buildRow(res.data, idx, cols, canEdit, canDelete, user, true);
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = `<table><tbody>${newTrHtml}</tbody></table>`;
     const newTr = tempDiv.querySelector('tr');
@@ -9991,7 +10645,7 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
     });
     
     // Re-attach grid events
-    _attachGridEvents(cols, canEdit, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
     
     // Restore focus to the edited cell in the new real row
     if (changedInput) {
@@ -10015,10 +10669,10 @@ async function _promoteAndSaveVirtualRow(tr, cols, canEdit, user, changedInput) 
   }
 }
 
-function _handleVirtualCellChange(inp, cols, canEdit, user) {
+function _handleVirtualCellChange(inp, cols, canEdit, canDelete, user) {
   const tr = inp.closest('tr');
   if (!tr) return;
-  _promoteAndSaveVirtualRow(tr, cols, canEdit, user, inp);
+  _promoteAndSaveVirtualRow(tr, cols, canEdit, canDelete, user, inp);
 }
 
 // ─── CSV EXPORT ────────────────────────────────────────────────────────────────
@@ -10369,7 +11023,7 @@ function _renderAccessUsersStack(schema) {
   const displayUsers = accessUsers.slice(0, limit);
   const remaining = accessUsers.length - limit;
   const currentUser = getCurrentUser() || {};
-  const isAdmin = ['super_admin', 'admin'].includes(currentUser.role);
+  const isAdmin = canDo('workforce', 'view');
 
   const tooltipHtml = accessUsers.map(u => {
     const permLevel = _getPermissionLevel(u.role);
@@ -10605,10 +11259,12 @@ function _sortRows(direction) {
   const tbody = document.getElementById('ss-tbody');
   const cols = _schema.columns || [];
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role);
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
   showToast('Sort Complete', `Rows sorted by column`, 'success');
 }
@@ -11095,10 +11751,12 @@ async function _reloadRegistryRows() {
 
   const cols = _schema.columns || [];
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && _activeTableId !== 'central_registry';
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (tbody) {
-    tbody.innerHTML = _buildAllRows(cols, canEdit, user);
-    _attachGridEvents(cols, canEdit, user);
+    tbody.innerHTML = _buildAllRows(cols, canEdit, canDelete, user);
+    _attachGridEvents(cols, canEdit, canDelete, user);
   }
   
   _renderPageTabs(canEdit);
@@ -11108,14 +11766,15 @@ async function _reloadRegistryRows() {
 function _updateFooterButtons() {
   const user = getCurrentUser();
   const isRegistry = _activeTableId === 'central_registry';
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && !isRegistry;
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   const container = document.getElementById('ss-footer-buttons');
   if (!container) return;
 
   container.innerHTML = canEdit ? `
     <button class="btn btn-secondary btn-sm" id="ss-duplicate-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">Duplicate Sheet</button>
     <button class="btn btn-secondary btn-sm" id="ss-add-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600">+ New Page</button>
-    ${_schema.pages?.length > 1 ? `
+    ${_schema.pages?.length > 1 && canDelete ? `
       <button class="btn btn-danger btn-sm" id="ss-delete-sheet-btn" style="padding:4px 8px;font-size:11px;font-weight:600;background:var(--accent-rose);border-color:var(--accent-rose);color:white">Delete Page</button>
     ` : ''}
   ` : '';
@@ -11125,7 +11784,9 @@ function _updateFooterButtons() {
 
 function _bindFooterButtonsEvents() {
   const user = getCurrentUser();
-  const canEdit = ['super_admin','admin','manager','staff'].includes(user.role) && _activeTableId !== 'central_registry';
+  const isRegistry = _activeTableId === 'central_registry';
+  const canEdit = canDo('tables', 'edit') && !isRegistry;
+  const canDelete = canDo('tables', 'delete') && !isRegistry;
   if (!canEdit) return;
 
   document.getElementById('ss-duplicate-sheet-btn')?.addEventListener('click', async () => {
@@ -11222,6 +11883,10 @@ function _bindFooterButtonsEvents() {
   });
 
   document.getElementById('ss-delete-sheet-btn')?.addEventListener('click', async () => {
+    if (!canDelete) {
+      showToast('Permission denied', 'You do not have permission to delete pages.', 'error');
+      return;
+    }
     const ok = await confirm(`Are you sure you want to delete Page ${_activePage} and purge all its rows? Subsequent pages will be shifted down contiguously.`, 'Delete Page');
     if (!ok) return;
 
@@ -11366,7 +12031,7 @@ async function _ensureSystemTables() {
   const inventoryExists = schemas.some(s => s.name === 'Inventory Table' || s.name === 'Inventory');
   
   const user = getCurrentUser();
-  if (!user || !['super_admin', 'admin'].includes(user.role)) return;
+  if (!user || !canDo('tables', 'create')) return;
 
   if (!warehouseExists) {
     await apiFetch('/dynamic-tables/', {
@@ -11443,6 +12108,18 @@ async function _ensureSystemTables() {
 
 
 
+
+
+
+const EXCHANGE_RATES = {
+  USD: 1.0,
+  INR: 83.0,
+  EUR: 0.92,
+  GBP: 0.79,
+  AED: 3.67,
+  SGD: 1.34
+};
+
 let billItems = [];
 let bl_searchQ = '';
 let bl_page = 1;
@@ -11454,8 +12131,7 @@ function renderBilling() {
     window.location.hash = '#/login';
     return;
   }
-  const allowed = ['super_admin','admin','manager','staff'];
-  if (!allowed.includes(user.role)) { navigate('/dashboard'); return; }
+
 
   const bills = getBills();
   const totalRev = bills.reduce((s,b)=>s+b.total,0);
@@ -11499,7 +12175,7 @@ function renderBilling() {
       <div class="table-toolbar">
         <div class="table-search"><span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span><input type="text" id="bill-search" placeholder="Search bills, customers..." /></div>
         <div class="table-filter">
-          ${user.role === 'super_admin' ? `
+          ${(canDo('warehouses', 'view') || canDo('reports', 'manage')) ? `
           <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="bill-wh-filter">
             <option value="">All Warehouses</option>
             ${whs.map(w=>`<option value="${w.id}">${w.name}</option>`).join('')}
@@ -11513,9 +12189,9 @@ function renderBilling() {
   renderBillsTable();
   document.getElementById('new-bill-btn')?.addEventListener('click', () => showBillModal());
   
-  // Realtime WebSocket auto-refresh for invoices
-  window.removeEventListener('wareops_ws_event', _handleBillingWsEvent);
-  window.addEventListener('wareops_ws_event', _handleBillingWsEvent);
+  // Realtime storage sync auto-refresh for invoices
+  window.removeEventListener('wareops_storage_sync', _handleBillingStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleBillingStorageSync);
   const debouncedSearch = debounce(q => {
     bl_searchQ = q;
     bl_page = 1;
@@ -11564,7 +12240,8 @@ function renderBillsTable() {
         </tr></thead>
         <tbody>
           ${pageBills.map(b => {
-            const wh = whs.find(w=>w.id===b.warehouseId);
+            const allWhs = getStore().warehouses || [];
+            const wh = allWhs.find(w=>w.id===b.warehouseId);
             return `<tr>
               <td data-label="Bill No"><span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text-brand)">${b.billNo}</span></td>
               <td data-label="Customer"><div class="primary-cell">${b.customer}</div></td>
@@ -11572,7 +12249,7 @@ function renderBillsTable() {
               <td data-label="Subtotal">${formatCurrency(b.subtotal)}</td>
               <td data-label="Tax"><span style="color:var(--accent-amber)">${formatCurrency(b.tax)}</span></td>
               <td data-label="Total"><strong style="color:var(--text-primary);font-size:15px">${formatCurrency(b.total)}</strong></td>
-              <td data-label="Warehouse"><span class="badge badge-info">${wh?.name||'—'}</span></td>
+              <td data-label="Warehouse"><span class="badge badge-info">${wh?.name || b.warehouseId || '—'}</span></td>
               <td data-label="Date" style="font-size:12px;color:var(--text-muted)">${formatDate(b.createdAt)}</td>
               <td data-label="Actions">
                 <div class="table-actions">
@@ -11622,6 +12299,7 @@ function showBillModal() {
     const savedWh = body.querySelector('#bill-wh')?.value || '';
     const warehouseId = savedWh || whs[0]?.id;
     const wh = whs.find(w => w.id === warehouseId);
+    const savedCurrency = body.querySelector('#bill-currency')?.value || wh?.currency || getActiveCurrency();
     
     const whEmail = wh?.email || '';
     const whContact = wh?.contact || '';
@@ -11650,7 +12328,7 @@ function showBillModal() {
       <div style="display:flex; gap:24px; min-height:550px; flex-wrap:wrap; width:100%;">
         <!-- Left Column: Interactive Checkout Desk -->
         <div style="flex:1.2; min-width:320px; display:flex; flex-direction:column; gap:16px;">
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
             <div class="form-group" style="margin:0">
               <label class="form-label" style="font-weight:600;">Customer Name <span class="req">*</span></label>
               <input type="text" id="bill-customer" class="form-control" placeholder="Customer name" value="${savedCustomer}" />
@@ -11659,6 +12337,17 @@ function showBillModal() {
               <label class="form-label" style="font-weight:600;">Warehouse Hub</label>
               <select id="bill-wh" class="form-control">
                 ${whs.map(w=>`<option value="${w.id}" ${warehouseId===w.id?'selected':''}>${w.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label" style="font-weight:600;">Currency</label>
+              <select id="bill-currency" class="form-control">
+                <option value="USD" ${savedCurrency==='USD'?'selected':''}>USD ($)</option>
+                <option value="INR" ${savedCurrency==='INR'?'selected':''}>INR (₹)</option>
+                <option value="EUR" ${savedCurrency==='EUR'?'selected':''}>EUR (€)</option>
+                <option value="GBP" ${savedCurrency==='GBP'?'selected':''}>GBP (£)</option>
+                <option value="AED" ${savedCurrency==='AED'?'selected':''}>AED (د.إ)</option>
+                <option value="SGD" ${savedCurrency==='SGD'?'selected':''}>SGD (S$)</option>
               </select>
             </div>
           </div>
@@ -11866,7 +12555,8 @@ function showBillModal() {
     }
 
     listContainer.innerHTML = filteredItems.map((i, idx) => {
-      const isLowStock = i.stock < 20;
+      const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
+      const isLowStock = i.stock <= threshold;
       const isHighlighted = idx === highlightedIndex;
       return `
         <div class="sku-dropdown-item" data-id="${i.id}" data-index="${idx}" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; transition:background 0.15s; background:${isHighlighted ? 'rgba(99,102,241,0.08)' : 'transparent'};">
@@ -11971,6 +12661,9 @@ function showBillModal() {
     if (!previewContainer) return;
 
     const customerName = body.querySelector('#bill-customer')?.value.trim() || 'Valued Client';
+    const billCurrency = body.querySelector('#bill-currency')?.value || wh?.currency || getActiveCurrency();
+    const baseCurrency = getActiveCurrency();
+    const rate = (EXCHANGE_RATES[billCurrency] || 1.0) / (EXCHANGE_RATES[baseCurrency] || 1.0);
     
     // Retrieve latest values from workspace form fields
     const sellerAddress = body.querySelector('#bill-seller-address')?.value || wh?.address || 'Primary Logistics Hub';
@@ -11985,20 +12678,32 @@ function showBillModal() {
       billNo: "INV-DRAFT",
       customer: customerName,
       warehouseId: warehouseId,
+      currency: billCurrency,
+      exchangeRate: rate,
       items: calculation.items.map(i => ({
         id: i.id,
         name: i.name,
         qty: i.qty,
-        price: i.price,
+        price: i.price * rate,
         taxCategory: i.taxCategory || 'normal',
         taxRate: i.taxRate,
-        taxes: i.taxes
+        taxes: i.taxes ? i.taxes.map(t => ({
+          name: t.name,
+          taxType: t.taxType,
+          rate: t.rate,
+          amount: t.amount * rate
+        })) : null
       })),
-      subtotal: calculation.subtotal,
-      tax: calculation.tax,
-      total: calculation.total,
+      subtotal: calculation.subtotal * rate,
+      tax: calculation.tax * rate,
+      total: calculation.total * rate,
       taxConfigSnapshot: getTaxConfig(warehouseId),
-      taxDetails: calculation.taxDetails,
+      taxDetails: calculation.taxDetails ? calculation.taxDetails.map(t => ({
+        name: t.name,
+        taxType: t.taxType,
+        rate: t.rate,
+        amount: t.amount * rate
+      })) : null,
       createdAt: new Date().toISOString(),
       
       // Extended fields
@@ -12024,12 +12729,16 @@ function showBillModal() {
     });
 
     // Form Inputs - Live preview refresh on any change
-    ['#bill-customer', '#bill-seller-address', '#bill-seller-contact', '#bill-seller-tax', '#bill-customer-phone', '#bill-customer-email', '#bill-buyer-billing', '#bill-buyer-shipping'].forEach(sel => {
-      body.querySelector(sel)?.addEventListener('input', () => {
-        const wh = whs.find(w => w.id === warehouseId);
-        const calculationLive = calculateTaxesFrontend(billItems, warehouseId);
-        renderLiveInvoicePreview(calculationLive, warehouseId, wh);
-      });
+    ['#bill-customer', '#bill-seller-address', '#bill-seller-contact', '#bill-seller-tax', '#bill-customer-phone', '#bill-customer-email', '#bill-buyer-billing', '#bill-buyer-shipping', '#bill-currency'].forEach(sel => {
+      const el = body.querySelector(sel);
+      if (el) {
+        const eventType = sel === '#bill-currency' ? 'change' : 'input';
+        el.addEventListener(eventType, () => {
+          const wh = whs.find(w => w.id === warehouseId);
+          const calculationLive = calculateTaxesFrontend(billItems, warehouseId);
+          renderLiveInvoicePreview(calculationLive, warehouseId, wh);
+        });
+      }
     });
 
     // Search Input listeners
@@ -12199,13 +12908,19 @@ function showBillModal() {
       return;
     }
 
+    const billCurrency = document.getElementById('bill-currency')?.value || wh?.currency || getActiveCurrency();
+    const baseCurrency = getActiveCurrency();
+    const rate = (EXCHANGE_RATES[billCurrency] || 1.0) / (EXCHANGE_RATES[baseCurrency] || 1.0);
+
     const payload = {
       customer,
       warehouseId,
+      currency: billCurrency,
+      exchangeRate: rate,
       items: calculation.items.map(i => ({
         id: i.id,
         name: i.name,
-        price: i.price,
+        price: i.price * rate,
         taxCategory: i.taxCategory || 'normal',
         taxRate: i.taxRate,
         qty: i.qty,
@@ -12213,17 +12928,17 @@ function showBillModal() {
           name: t.name,
           taxType: t.taxType,
           rate: t.rate,
-          amount: t.amount
+          amount: t.amount * rate
         })) : null
       })),
-      subtotal: calculation.subtotal,
-      tax: calculation.tax,
-      total: calculation.total,
+      subtotal: calculation.subtotal * rate,
+      tax: calculation.tax * rate,
+      total: calculation.total * rate,
       taxDetails: calculation.taxDetails ? calculation.taxDetails.map(t => ({
         name: t.name,
         taxType: t.taxType,
         rate: t.rate,
-        amount: t.amount
+        amount: t.amount * rate
       })) : null,
       
       // Extended fields
@@ -12242,7 +12957,7 @@ function showBillModal() {
       return;
     }
     
-    showToast('Bill generated!', `${res.billNo || 'Invoice'} — ${formatCurrency(calculation.total)}`, 'success');
+    showToast('Bill generated!', `${res.billNo || 'Invoice'} — ${formatCurrency(calculation.total * rate, billCurrency)}`, 'success');
     billItems = [];
     modal.close();
     renderBilling();
@@ -12252,8 +12967,8 @@ function showBillModal() {
 
 
 function showBillPreview(bill) {
-  const whs = getWarehouses();
-  const wh = whs.find(w=>w.id===bill.warehouseId);
+  const allWhs = getStore().warehouses || [];
+  const wh = allWhs.find(w=>w.id===bill.warehouseId);
   const body = buildInvoiceHTML(bill, wh, 'modal');
   const footer = `
     <button class="btn btn-secondary" id="prev-close">Close</button>
@@ -12267,8 +12982,8 @@ function showBillPreview(bill) {
 function buildInvoiceHTML(bill, wh, mode) {
   const cfg = bill.taxConfigSnapshot || getTaxConfig();
   
-  // Warehouse-aware currency: use warehouse currency if set, else global
-  const currency = wh?.currency || getActiveCurrency();
+  // Prioritize invoice-level currency, then warehouse currency, then global base currency
+  const currency = bill.currency || wh?.currency || getActiveCurrency();
   const fmt = (v) => formatCurrency(v, currency);
 
   const sellerAddress = bill.sellerAddress || wh?.address || 'Primary Logistics Hub';
@@ -12290,7 +13005,16 @@ function buildInvoiceHTML(bill, wh, mode) {
     
     if (i.taxes && i.taxes.length > 0) {
       lineTax = i.taxes.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-      taxRateText = i.taxes.map(t => `${t.name}: ${t.taxType === 'percentage' ? (parseFloat(t.rate || 0) * 100).toFixed(0) + '%' : '$' + parseFloat(t.rate || 0)}`).join(', ');
+      taxRateText = i.taxes.map(t => {
+        const tType = t.taxType || t.tax_type || 'percentage';
+        const tRate = parseFloat(t.rate || 0);
+        if (tType === 'percentage') {
+          const pct = tRate <= 1 ? (tRate * 100).toFixed(0) : tRate.toFixed(0);
+          return `${t.name ? t.name + ' (' + pct + '%)' : pct + '%'}`;
+        } else {
+          return `${t.name ? t.name + ' (' + formatCurrency(tRate, currency) + ')' : formatCurrency(tRate, currency)}`;
+        }
+      }).join(', ');
     } else {
       const taxRate = i.taxRate !== undefined ? i.taxRate : (cfg[i.taxCategory] / 100 || cfg.normal / 100);
       lineTax = lineBase * taxRate;
@@ -12357,7 +13081,8 @@ function buildInvoiceHTML(bill, wh, mode) {
           <strong>Issue Date:</strong> ${formatDate(bill.createdAt)}<br/>
           <strong>Due Date:</strong> ${formatDate(dueDate)}<br/>
           <strong>Billed By:</strong> ${employeeName} (${employeeRole})<br/>
-          <strong>Payment Method:</strong> Bank Transfer (Net 15)
+          <strong>Payment Method:</strong> Bank Transfer (Net 15)<br/>
+          <strong>Currency:</strong> ${bill.currency || 'USD'} ${bill.exchangeRate && parseFloat(bill.exchangeRate) !== 1.0 ? `(Rate: ${bill.exchangeRate})` : ''}
         </div>
       </div>
     </div>
@@ -12437,8 +13162,8 @@ function printBill(billId) {
   const bills = getBills();
   const bill = bills.find(b=>b.id===billId);
   if (!bill) { showToast('Error','Bill not found','error'); return; }
-  const whs = getWarehouses();
-  const wh = whs.find(w=>w.id===bill.warehouseId);
+  const allWhs = getStore().warehouses || [];
+  const wh = allWhs.find(w=>w.id===bill.warehouseId);
   const invoiceHTML = buildInvoiceHTML(bill, wh, 'print');
 
   const win = window.open('', '_blank', 'width=900,height=700');
@@ -12487,19 +13212,13 @@ function printBill(billId) {
 }
 
 
-function _handleBillingWsEvent(e) {
+function _handleBillingStorageSync() {
   const user = getCurrentUser();
   if (!user) {
-    window.removeEventListener('wareops_ws_event', _handleBillingWsEvent);
+    window.removeEventListener('wareops_storage_sync', _handleBillingStorageSync);
     return;
   }
-  const payload = e.detail;
-  const evType = payload?.type || payload?.event_type;
-  if (evType === 'billing_completion') {
-    syncWithBackend().then(() => {
-      renderBillsTable();
-    });
-  }
+  renderBillsTable();
 }
 
 function calculateTaxesFrontend(items, warehouseId) {
@@ -12589,6 +13308,7 @@ function groupTaxesFrontend(items) {
 
 
 
+
 // Persisted filter state (survives re-renders within session)
 let an_whFilter  = '';
 let an_year      = new Date().getFullYear();
@@ -12603,8 +13323,14 @@ function renderAnalytics() {
     window.location.hash = '#/login';
     return;
   }
+
+  if (!canDo('reports', 'view')) {
+    showToast('Access Denied', 'You do not have permission to access analytics & reports.', 'error');
+    window.location.hash = '#/dashboard';
+    return;
+  }
+
   const isSA   = user.role === 'super_admin';
-  const isAdmin = isSA || user.role === 'admin';
   const whs    = getWarehouses();
 
   // Build year options from actual bill data
@@ -12656,6 +13382,7 @@ function renderAnalytics() {
       <div id="an-kpis"></div>
 
       <!-- Charts Grid -->
+      ${canDo('reports', 'manage') ? `
       <div class="dashboard-grid" style="margin-bottom:20px">
         <div class="chart-card col-8">
           <div class="chart-card-header">
@@ -12688,6 +13415,11 @@ function renderAnalytics() {
           <div class="chart-container" style="height:200px"><canvas id="analytics-roles"></canvas></div>
         </div>
       </div>
+      ` : `
+      <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:30px;text-align:center;margin-bottom:20px">
+        <p style="color:var(--text-muted);margin:0">Upgrade to enterprise or contact your administrator to access advanced performance graphs (reports:manage required).</p>
+      </div>
+      `}
 
       <!-- Warehouse Revenue Breakdown Table -->
       ${isSA ? `
@@ -13005,9 +13737,9 @@ function updateStockTable(items, taxCfg) {
           ${sorted.slice(0,10).map(i=>{
             const val = (i.price||0)*(i.stock||0);
             const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-            const healthStatus = i.healthStatus || ((i.stock || 0) === 0 ? 'Critical' : (i.stock || 0) < threshold ? 'Low Stock' : 'Healthy');
+            const healthStatus = i.healthStatus || ((i.stock || 0) === 0 ? 'Critical' : (i.stock || 0) <= threshold ? 'Low Stock' : 'Healthy');
             
-            const stockClass = (i.stock||0) === 0 ? 'badge-danger' : (i.stock||0) < threshold ? 'badge-warning' : 'badge-success';
+            const stockClass = (i.stock||0) === 0 ? 'badge-danger' : (i.stock||0) <= threshold ? 'badge-warning' : 'badge-success';
             const statusClass = healthStatus === 'Critical' ? 'badge-danger' : healthStatus === 'Low Stock' ? 'badge-warning' : 'badge-success';
             const barcodeCount = Array.isArray(i.barcodes) ? i.barcodes.length : (i.barcode ? 1 : 0);
 
@@ -13035,10 +13767,13 @@ function updateStockTable(items, taxCfg) {
 
 
 
+
 let au_searchQ = '';
 let au_page = 1;
 const au_PER_PAGE = 100;
 let au_actionFilter = '';
+
+let activeAuditTab = 'personal';
 
 function renderAudit() {
   const user = getCurrentUser();
@@ -13046,6 +13781,20 @@ function renderAudit() {
     window.location.hash = '#/login';
     return;
   }
+  
+  const canViewEnterprise = canDo('audit', 'view');
+  if (activeAuditTab === 'enterprise' && !canViewEnterprise) {
+    activeAuditTab = 'personal';
+  }
+
+  const updateAuditTabUI = () => {
+    const tabHeaders = document.querySelectorAll('.audit-tab-header');
+    tabHeaders.forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.tab === activeAuditTab);
+    });
+    au_page = 1;
+    renderAuditTable();
+  };
   
   renderShell('Audit Logs', 'System activity and security trail', `
     <div class="animate-slideUp">
@@ -13057,6 +13806,14 @@ function renderAudit() {
         <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
         </div>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="table-toolbar" style="margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:0;gap:4px">
+        <button class="audit-tab-header btn btn-ghost btn-sm active" data-tab="personal" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">My Activity</button>
+        ${canViewEnterprise ? `
+          <button class="audit-tab-header btn btn-ghost btn-sm" data-tab="enterprise" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Company Activity</button>
+        ` : ''}
       </div>
       
       <div class="table-toolbar">
@@ -13090,7 +13847,15 @@ function renderAudit() {
     </div>
   `);
 
-  renderAuditTable();
+  updateAuditTabUI();
+
+  // Bind tab header click events
+  document.querySelectorAll('.audit-tab-header').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeAuditTab = btn.dataset.tab;
+      updateAuditTabUI();
+    });
+  });
   
   // Set up event listeners with debounce for search
   let debounceTimeout;
@@ -13154,7 +13919,7 @@ async function renderAuditTable() {
   `;
 
   try {
-    let url = `/audit-logs/?page=${au_page}&limit=${au_PER_PAGE}`;
+    let url = `/audit-logs/?page=${au_page}&limit=${au_PER_PAGE}&scope=${activeAuditTab}`;
     if (au_searchQ.trim()) {
       url += `&search=${encodeURIComponent(au_searchQ.trim())}`;
     }
@@ -13299,7 +14064,6 @@ function renderSettings() {
     return;
   }
   const isSuperAdmin = user.role === 'super_admin';
-  const isAdmin = ['super_admin','admin'].includes(user.role);
   const taxCfg = getTaxConfig();
   const currency = getCurrency();
 
@@ -13375,7 +14139,7 @@ function renderSettings() {
           </form>
         </div>
 
-        ${isAdmin ? `
+        ${canDo('settings', 'view', user) ? `
         <!-- Tax Configuration -->
         <div class="card col-12">
           <div class="card-header">
@@ -13389,7 +14153,7 @@ function renderSettings() {
             <div>
               The enterprise tax engine supports stacked percentage taxes (e.g. CGST + SGST) and flat fixed transaction fees. 
               Past invoices remain structurally unchanged.
-              ${!isSuperAdmin ? '<br><span style="color:var(--accent-amber)">Note: Editing requires Super Admin role.</span>' : ''}
+              ${!canDo('settings', 'edit', user) ? '<br><span style="color:var(--accent-amber)">Note: Editing requires edit permissions.</span>' : ''}
             </div>
           </div>
           
@@ -13410,14 +14174,15 @@ function renderSettings() {
           </div>
 
           <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 12px; gap: 16px; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-sm" id="add-tax-row-btn" ${!isSuperAdmin ? 'disabled' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('plus', 14)} Add Tax Component</button>
+            <button class="btn btn-secondary btn-sm" id="add-tax-row-btn" ${!canDo('settings', 'edit', user) ? 'disabled' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('plus', 14)} Add Tax Component</button>
             <div style="display:flex;align-items:center;gap:12px">
-              <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Tax Rules</button>
+              <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!canDo('settings', 'manage', user) ? 'disabled title="Requires manage permissions"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Tax Rules</button>
               <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
             </div>
           </div>
         </div>` : ''}
 
+        ${canDo('settings', 'view', user) ? `
         <!-- Currency Configuration -->
         <div class="card col-6">
           <div class="card-header">
@@ -13428,7 +14193,7 @@ function renderSettings() {
           </div>
           <div class="form-group">
             <label class="form-label">Global Base Currency</label>
-            <select id="s-global-currency" class="form-control" ${!isSuperAdmin ? 'disabled style="opacity:0.7"' : ''}>
+            <select id="s-global-currency" class="form-control" ${!canDo('settings', 'manage', user) ? 'disabled style="opacity:0.7"' : ''}>
               <option value="USD" ${currency==='USD'?'selected':''}>USD ($) - US Dollar</option>
               <option value="INR" ${currency==='INR'?'selected':''}>INR (₹) - Indian Rupee</option>
               <option value="EUR" ${currency==='EUR'?'selected':''}>EUR (€) - Euro</option>
@@ -13439,10 +14204,10 @@ function renderSettings() {
             <div class="form-hint">Sets the base currency for global financial metrics, invoices, and analytics.</div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Currency</button>
+            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!canDo('settings', 'manage', user) ? 'disabled title="Requires manage permissions"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Currency</button>
             <span id="currency-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
           </div>
-        </div>
+        </div>` : ''}
 
         <!-- Theme Configuration -->
         <div class="card col-6">
@@ -13454,7 +14219,7 @@ function renderSettings() {
           </div>
           <div class="form-group">
             <label class="form-label">Active Theme</label>
-            <select id="s-theme" class="form-control">
+            <select id="s-theme" class="form-control" ${!canDo('settings', 'edit', user) ? 'disabled style="opacity:0.7"' : ''}>
               <option value="enterprise" ${getStore().theme==='enterprise'||!getStore().theme?'selected':''}>Grayscale B&W (Default)</option>
               <option value="dark"       ${getStore().theme==='dark'?'selected':''}>Slate-Blue Premium Dark</option>
               <option value="light"      ${getStore().theme==='light'?'selected':''}>Enterprise Light</option>
@@ -13463,26 +14228,26 @@ function renderSettings() {
             <div class="form-hint">Theme is applied immediately across all pages. Changes persist after saving.</div>
           </div>
           <!-- Live theme preview swatches -->
-          <div style="display:flex;gap:8px;margin-bottom:16px;" id="theme-swatches">
+          <div style="display:flex;gap:8px;margin-bottom:16px;${!canDo('settings', 'edit', user) ? 'pointer-events:none' : ''}" id="theme-swatches">
             <div data-theme="enterprise" class="theme-swatch ${!getStore().theme||getStore().theme==='enterprise'?'swatch-active':''}" title="Grayscale B&W"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#09090b,#18181b);border:2px solid ${!getStore().theme||getStore().theme==='enterprise'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#09090b,#18181b);border:2px solid ${!getStore().theme||getStore().theme==='enterprise'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#a1a1aa;font-weight:700">B&W</div>
             </div>
             <div data-theme="dark" class="theme-swatch ${getStore().theme==='dark'?'swatch-active':''}" title="Slate-Blue Dark"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#0b0f19,#1e293b);border:2px solid ${getStore().theme==='dark'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#0b0f19,#1e293b);border:2px solid ${getStore().theme==='dark'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#60a5fa;font-weight:700">DARK</div>
             </div>
             <div data-theme="light" class="theme-swatch ${getStore().theme==='light'?'swatch-active':''}" title="Enterprise Light"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);border:2px solid ${getStore().theme==='light'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);border:2px solid ${getStore().theme==='light'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#475569;font-weight:700">LIGHT</div>
             </div>
             <div data-theme="classic" class="theme-swatch ${getStore().theme==='classic'?'swatch-active':''}" title="Classic Neon"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);border:2px solid ${getStore().theme==='classic'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);border:2px solid ${getStore().theme==='classic'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:white;font-weight:700">NEON</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-theme-btn" style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Theme</button>
+            <button class="btn btn-primary btn-sm" id="save-theme-btn" ${!canDo('settings', 'edit', user) ? 'disabled title="Requires settings:edit permission"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Theme</button>
             <span id="theme-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
           </div>
         </div>
@@ -13517,7 +14282,10 @@ function renderSettings() {
                 </label>
               </div>`;
             }).join('')}
-                  <!-- Export Panel -->
+          </div>
+        </div>
+        ${(canDo('settings', 'export', user) || canDo('settings', 'view', user)) ? `
+        <!-- Export Panel -->
         <div class="card col-6">
           <div class="card-header">
             <div>
@@ -13528,11 +14296,12 @@ function renderSettings() {
           <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.5">
             Access secure, tenant-scoped data exports. Select custom modular ranges, formats, and export categories in our secure center.
           </p>
-          <button class="btn btn-secondary btn-sm" id="open-export-center-btn" style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-secondary btn-sm" id="open-export-center-btn" ${!canDo('settings', 'export', user) ? 'disabled title="Requires export permissions"' : ''} style="display:flex;align-items:center;gap:6px">
             ${getSvgIcon('export', 16)} Open Export Center
           </button>
-        </div>
+        </div>` : ''}
 
+        ${(user.role === 'super_admin' && canDo('settings', 'delete', user)) ? `
         <!-- Danger Zone -->
         <div class="card col-6" style="border-color:rgba(244,63,94,0.2);background:rgba(244,63,94,0.03)">
           <div class="card-header">
@@ -13547,9 +14316,9 @@ function renderSettings() {
           <button class="btn btn-danger btn-sm" id="reset-btn" style="display:flex;align-items:center;gap:6px">
             ${getSvgIcon('trash', 16)} Reset System Data
           </button>
-        </div>
+        </div>` : ''}
 
-        ${isSuperAdmin ? `
+        ${canDo('settings', 'manage', user) ? `
         <!-- Role Manager Card -->
         <div class="card col-6" style="border-color:rgba(99,102,241,0.25);background:rgba(99,102,241,0.04)">
           <div class="card-header">
@@ -13557,7 +14326,7 @@ function renderSettings() {
               <div class="card-title" style="display:flex;align-items:center;gap:8px">
                 ${getSvgIcon('workforce', 16)}
                 Role Manager
-                <span class="badge badge-success" style="font-size:10px">Super Admin</span>
+                <span class="badge badge-success" style="font-size:10px">Manage Mode</span>
               </div>
               <div class="card-subtitle">Create custom roles with granular permission matrices</div>
             </div>
@@ -13591,19 +14360,19 @@ function renderSettings() {
     tbody.innerHTML = localTaxes.map((tax, idx) => `
       <tr data-index="${idx}" style="border-bottom: 1px solid var(--border-default);">
         <td style="padding: 8px;">
-          <input type="text" class="form-control tax-row-name" value="${tax.name}" placeholder="e.g. CGST" ${!isSuperAdmin ? 'readonly' : ''} style="width: 100%;" />
+          <input type="text" class="form-control tax-row-name" value="${tax.name}" placeholder="e.g. CGST" ${!canDo('settings', 'edit', user) ? 'readonly' : ''} style="width: 100%;" />
         </td>
         <td style="padding: 8px;">
-          <select class="form-control tax-row-type" ${!isSuperAdmin ? 'disabled' : ''} style="width: 100%; border: 1px solid var(--border-default); border-radius: 6px; padding: 4px 8px; background: var(--bg-card); color: var(--text-primary);">
+          <select class="form-control tax-row-type" ${!canDo('settings', 'edit', user) ? 'disabled' : ''} style="width: 100%; border: 1px solid var(--border-default); border-radius: 6px; padding: 4px 8px; background: var(--bg-card); color: var(--text-primary);">
             <option value="percentage" ${tax.taxType === 'percentage' ? 'selected' : ''}>Percentage (%)</option>
             <option value="fixed" ${tax.taxType === 'fixed' ? 'selected' : ''}>Fixed Fee ($)</option>
           </select>
         </td>
         <td style="padding: 8px;">
-          <input type="number" class="form-control tax-row-rate" value="${tax.rate}" step="0.01" min="0" ${!isSuperAdmin ? 'readonly' : ''} style="width: 100%;" />
+          <input type="number" class="form-control tax-row-rate" value="${tax.rate}" step="0.01" min="0" ${!canDo('settings', 'edit', user) ? 'readonly' : ''} style="width: 100%;" />
         </td>
         <td style="padding: 8px; text-align: center;">
-          <button class="btn btn-danger btn-sm remove-tax-row-btn" data-index="${idx}" ${!isSuperAdmin ? 'disabled' : ''} style="padding: 4px 8px;">${getSvgIcon('trash', 14)}</button>
+          <button class="btn btn-danger btn-sm remove-tax-row-btn" data-index="${idx}" ${!canDo('settings', 'edit', user) ? 'disabled' : ''} style="padding: 4px 8px;">${getSvgIcon('trash', 14)}</button>
         </td>
       </tr>
     `).join('');
@@ -13639,9 +14408,10 @@ function renderSettings() {
     });
   }
 
-  if (isAdmin) {
+  if (canDo('settings', 'view', user)) {
     setTimeout(renderTaxRows, 50);
     document.getElementById('add-tax-row-btn')?.addEventListener('click', () => {
+      if (!canDo('settings', 'edit', user)) return;
       localTaxes.push({ name: '', taxType: 'percentage', rate: 0 });
       renderTaxRows();
     });
@@ -13732,7 +14502,7 @@ function renderSettings() {
 
   // TAX SAVE — actually persist to store
   document.getElementById('save-tax-btn')?.addEventListener('click', () => {
-    if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change tax rates','error'); return; }
+    if (!canDo('settings', 'manage', user)) { showToast('Permission denied','Only managers or administrators can change tax rates','error'); return; }
     
     // Validate inputs
     for (const tax of localTaxes) {
@@ -13770,7 +14540,7 @@ function renderSettings() {
 
   // CURRENCY SAVE — actually persist to store
   document.getElementById('save-currency-btn')?.addEventListener('click', () => {
-    if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change base currency','error'); return; }
+    if (!canDo('settings', 'manage', user)) { showToast('Permission denied','Only managers or administrators can change base currency','error'); return; }
     const currency = document.getElementById('s-global-currency').value;
     saveCurrency(currency);
     showToast('Currency updated', `Platform currency set to: ${currency}`, 'success');
@@ -13780,6 +14550,10 @@ function renderSettings() {
 
   // THEME SAVE — persist to store, apply globally
   document.getElementById('save-theme-btn')?.addEventListener('click', () => {
+    if (!canDo('settings', 'edit', user)) {
+      showToast('Permission Denied', 'You do not have permission to change themes.', 'error');
+      return;
+    }
     const selectedTheme = document.getElementById('s-theme').value;
     const s = getStore();
     s.theme = selectedTheme;
@@ -13795,6 +14569,7 @@ function renderSettings() {
   // THEME SWATCHES — live preview on click
   document.querySelectorAll('.theme-swatch').forEach(sw => {
     sw.addEventListener('click', () => {
+      if (!canDo('settings', 'edit', user)) return;
       const t = sw.dataset.theme;
       document.getElementById('s-theme').value = t;
       applyTheme(t);
@@ -13805,6 +14580,7 @@ function renderSettings() {
 
   // Theme select dropdown change — live preview
   document.getElementById('s-theme')?.addEventListener('change', (e) => {
+    if (!canDo('settings', 'edit', user)) return;
     applyTheme(e.target.value);
     document.querySelectorAll('.theme-swatch').forEach(s => {
       s.style.borderColor = s.dataset.theme === e.target.value ? 'var(--accent-emerald)' : 'var(--border-default)';
@@ -13827,23 +14603,14 @@ function renderSettings() {
 
   // EXPORT POPUP CENTER
   document.getElementById('open-export-center-btn')?.addEventListener('click', () => {
-    const isSuperAdmin = user.role === 'super_admin';
-    const isAdmin = ['super_admin','admin'].includes(user.role);
-    const isManager = ['super_admin','admin','manager'].includes(user.role);
-
     const categories = [
-      { key:'bills',      label:'Billing & Invoices (Manager+)',   role:'manager' },
-      { key:'inventory',  label:'Inventory Records (Manager+)',    role:'manager' },
-      { key:'workforce',  label:'Workforce Members (Admin+)',      role:'admin'   },
-      { key:'warehouses', label:'Warehouse Hubs (Super Admin)',    role:'super_admin' },
-      { key:'audit',      label:'Security Audit Logs (Super Admin)', role:'super_admin' },
-      { key:'all',        label:'Full Platform Ledger (Admin+)',   role:'admin'   },
-    ].filter(e => {
-      if (e.role === 'super_admin') return isSuperAdmin;
-      if (e.role === 'admin') return isAdmin;
-      if (e.role === 'manager') return isManager;
-      return true;
-    });
+      { key:'bills',      label:'Billing & Invoices (Manager+)',   check: () => canDo('billing', 'view', user) },
+      { key:'inventory',  label:'Inventory Records (Manager+)',    check: () => canDo('inventory', 'view', user) },
+      { key:'workforce',  label:'Workforce Members (Admin+)',      check: () => canDo('workforce', 'view', user) },
+      { key:'warehouses', label:'Warehouse Hubs (Super Admin)',    check: () => canDo('warehouses', 'view', user) },
+      { key:'audit',      label:'Security Audit Logs (Super Admin)', check: () => canDo('audit', 'view', user) },
+      { key:'all',        label:'Full Platform Ledger (Admin+)',   check: () => user.role === 'super_admin' || canDo('settings', 'manage', user) },
+    ].filter(e => e.check());
 
     // Create Modal Body Element
     const modalBody = document.createElement('div');
@@ -13885,50 +14652,52 @@ function renderSettings() {
     `;
 
     // Create custom modal wrapper
-    import('../modules/ui.js').then(({ createModal }) => {
-      const modal = createModal({
-        title: 'Secure Export Center',
-        body: modalBody,
-        footer: modalFooter
-      });
+    const modal = createModal({
+      title: 'Secure Export Center',
+      body: modalBody,
+      footer: modalFooter
+    });
 
-      modal.el.querySelector('#export-modal-cancel').addEventListener('click', () => modal.close());
-      modal.el.querySelector('#export-modal-run').addEventListener('click', () => {
-        const category = modal.el.querySelector('#export-category').value;
-        const fmt = modal.el.querySelector('input[name="export-fmt"]:checked').value;
-        const runBtn = modal.el.querySelector('#export-modal-run');
+    modal.el.querySelector('#export-modal-cancel').addEventListener('click', () => modal.close());
+    modal.el.querySelector('#export-modal-run').addEventListener('click', () => {
+      if (!canDo('settings', 'export', user)) {
+        showToast('Permission denied', 'You do not have permission to run exports', 'error');
+        return;
+      }
+      const category = modal.el.querySelector('#export-category').value;
+      const fmt = modal.el.querySelector('input[name="export-fmt"]:checked').value;
+      const runBtn = modal.el.querySelector('#export-modal-run');
 
-        runBtn.textContent = '⏳ Exporting...';
-        runBtn.disabled = true;
+      runBtn.textContent = '⏳ Exporting...';
+      runBtn.disabled = true;
 
-        setTimeout(() => {
-          try {
-            let result;
-            if (fmt === 'csv')  result = exportCSV(category);
-            else if (fmt === 'xlsx') result = exportXLSX(category);
-            else if (fmt === 'pdf')  result = exportPDF(category);
-            
-            if (result?.error) {
-              showToast('Export failed', result.error, 'error');
-            } else {
-              showToast('Export complete', `${result?.entity}: ${result?.count} records exported`, 'success');
-              addAuditLog('export', `Exported ${category} data as ${fmt.toUpperCase()} (${result?.count || 0} records)`, user.id);
-              modal.close();
-            }
-          } catch(e) {
-            showToast('Export error', e.message, 'error');
+      setTimeout(() => {
+        try {
+          let result;
+          if (fmt === 'csv')  result = exportCSV(category);
+          else if (fmt === 'xlsx') result = exportXLSX(category);
+          else if (fmt === 'pdf')  result = exportPDF(category);
+          
+          if (result?.error) {
+            showToast('Export failed', result.error, 'error');
+          } else {
+            showToast('Export complete', `${result?.entity}: ${result?.count} records exported`, 'success');
+            addAuditLog('export', `Exported ${category} data as ${fmt.toUpperCase()} (${result?.count || 0} records)`, user.id);
+            modal.close();
           }
-          runBtn.textContent = 'Run Export';
-          runBtn.disabled = false;
-        }, 400);
-      });
+        } catch(e) {
+          showToast('Export error', e.message, 'error');
+        }
+        runBtn.textContent = 'Run Export';
+        runBtn.disabled = false;
+      }, 400);
     });
   });
 
   // SECURE PASSWORD-CONFIRMED RESET
   document.getElementById('reset-btn')?.addEventListener('click', () => {
-    if (!isSuperAdmin) {
-      showToast('Unauthorized Action', 'Only the Super Administrator role is permitted to perform platform resets.', 'error');
+    if (user.role !== 'super_admin' || !canDo('settings', 'delete', user)) {
+      showToast('Unauthorized Action', 'Only the Super Administrator with delete permissions is permitted to perform platform resets.', 'error');
       return;
     }
 
@@ -13956,36 +14725,34 @@ function renderSettings() {
       <button class="btn btn-danger btn-sm" id="reset-modal-confirm">Confirm System Reset</button>
     `;
 
-    import('../modules/ui.js').then(({ createModal }) => {
-      const modal = createModal({
-        title: 'Secure System Reset Confirmation',
-        body: modalBody,
-        footer: modalFooter
-      });
+    const modal = createModal({
+      title: 'Secure System Reset Confirmation',
+      body: modalBody,
+      footer: modalFooter
+    });
 
-      modal.el.querySelector('#reset-modal-cancel').addEventListener('click', () => modal.close());
-      modal.el.querySelector('#reset-modal-confirm').addEventListener('click', () => {
-        const passwordVal = modal.el.querySelector('#reset-confirm-password').value;
-        if (!passwordVal) {
-          showToast('Verification Required', 'Password is required to authenticate system reset.', 'warning');
-          return;
-        }
-        
-        const s = getStore();
-        const currentUser = s.users.find(u=>u.id===s.currentUserId);
-        if (currentUser.password !== passwordVal) {
-          showToast('Access Denied', 'Authentication failed: Incorrect password.', 'error');
-          return;
-        }
+    modal.el.querySelector('#reset-modal-cancel').addEventListener('click', () => modal.close());
+    modal.el.querySelector('#reset-modal-confirm').addEventListener('click', () => {
+      const passwordVal = modal.el.querySelector('#reset-confirm-password').value;
+      if (!passwordVal) {
+        showToast('Verification Required', 'Password is required to authenticate system reset.', 'warning');
+        return;
+      }
+      
+      const s = getStore();
+      const currentUser = s.users.find(u=>u.id===s.currentUserId);
+      if (currentUser.password !== passwordVal) {
+        showToast('Access Denied', 'Authentication failed: Incorrect password.', 'error');
+        return;
+      }
 
-        // Proceed with system reset!
-        s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
-        s.users = [currentUser];
-        saveStore();
-        showToast('System Reset Complete', 'Platform ledgers and databases have been wiped to fresh state.', 'success');
-        modal.close();
-        location.hash='#/dashboard';
-      });
+      // Proceed with system reset!
+      s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
+      s.users = [currentUser];
+      saveStore();
+      showToast('System Reset Complete', 'Platform ledgers and databases have been wiped to fresh state.', 'success');
+      modal.close();
+      location.hash='#/dashboard';
     });
   });
 }
@@ -14120,455 +14887,6 @@ function renderSubscription() {
   document.getElementById('upgrade-btn')?.addEventListener('click', () => {
     showToast('Enterprise Plan', 'Contact sales@wareops.io to upgrade your plan.', 'info');
   });
-}
-
-// ===== pages/registry.js =====
-/**
- * Enterprise Tracking Registry Page — Multi-tenant Unified Tracking Ledger
- */
-
-
-
-
-
-let regSearchQ = '';
-let regTypeFilter = '';
-let regWhFilter = '';
-let regPage = 1;
-const regLimit = 15;
-
-function renderRegistry() {
-  const user = getCurrentUser();
-  if (!user) { navigate('/login'); return; }
-
-  const whs = getWarehouses();
-
-  renderShell('Registry Ledger', 'Centralized enterprise unique ID and barcode logs ledger', `
-    <div class="animate-slideUp">
-      <div class="page-header">
-        <div class="page-header-left">
-          <h1 class="page-title">Enterprise Tracking Registry</h1>
-          <p class="page-subtitle">Multi-tenant unified identity ledger with scan-ready barcodes</p>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
-          <button class="btn btn-primary" id="btn-print-barcodes" style="display:inline-flex;align-items:center;gap:6px">${getSvgIcon('export', 14)} Print Barcodes</button>
-        </div>
-      </div>
-
-      <!-- Stats Summary Row -->
-      <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 24px;">
-        <div class="stat-card">
-          <div class="stat-card-icon" style="background: rgba(99, 102, 241, 0.15)">${getSvgIcon('palette', 20)}</div>
-          <div class="stat-card-value" id="stat-total-entries">—</div>
-          <div class="stat-card-label">Total ID Registries</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card-icon" style="background: rgba(16, 185, 129, 0.15)">${getSvgIcon('billing', 20)}</div>
-          <div class="stat-card-value" id="stat-invoice-entries">—</div>
-          <div class="stat-card-label">Invoices Tracker</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card-icon" style="background: rgba(245, 158, 11, 0.15)">${getSvgIcon('items', 20)}</div>
-          <div class="stat-card-value" id="stat-item-entries">—</div>
-          <div class="stat-card-label">Inventory Barcodes</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card-icon" style="background: rgba(6, 182, 212, 0.15)">${getSvgIcon('user', 20)}</div>
-          <div class="stat-card-value" id="stat-crm-entries">—</div>
-          <div class="stat-card-label">CRM Customers</div>
-        </div>
-      </div>
-
-      <!-- Toolbar Search & Filter -->
-      <div class="table-toolbar">
-        <div class="table-search">
-          <span style="display:flex;align-items:center;color:var(--text-muted)">${getSvgIcon('search', 16)}</span>
-          <input type="text" id="reg-search" placeholder="Search unique ID, barcode, creator..." value="${regSearchQ}" />
-        </div>
-        <div class="table-filter">
-          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="reg-type-filter">
-            <option value="">All Entity Types</option>
-            <option value="invoice" ${regTypeFilter === 'invoice' ? 'selected' : ''}>Invoices (INV)</option>
-            <option value="warehouse" ${regTypeFilter === 'warehouse' ? 'selected' : ''}>Warehouses (WH)</option>
-            <option value="employee" ${regTypeFilter === 'employee' ? 'selected' : ''}>Workforce (EMP)</option>
-            <option value="inventory" ${regTypeFilter === 'inventory' ? 'selected' : ''}>Inventory (ITEM)</option>
-            <option value="table_registry" ${regTypeFilter === 'table_registry' ? 'selected' : ''}>Operational Tables (TBL)</option>
-            <option value="customer" ${regTypeFilter === 'customer' ? 'selected' : ''}>CRM Customers (CUST)</option>
-          </select>
-          ${user.role === 'super_admin' ? `
-          <select class="form-control" style="width:auto;padding:8px 12px;font-size:13px" id="reg-wh-filter">
-            <option value="">All Warehouses</option>
-            <option value="Global" ${regWhFilter === 'Global' ? 'selected' : ''}>Global Scoped</option>
-            ${whs.map(w => `<option value="${w.id}" ${regWhFilter === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}
-          </select>
-          ` : ''}
-        </div>
-      </div>
-
-      <!-- Main Ledger Ledger Table -->
-      <div id="registry-table-container">
-        <div class="card" style="text-align:center;padding:48px">
-          <div class="spinner" style="margin: 0 auto 16px"></div>
-          <h3 style="color:var(--text-secondary)">Loading Tracking Ledger...</h3>
-        </div>
-      </div>
-      <div id="registry-pagination"></div>
-    </div>
-  `);
-
-  fetchAndRenderRegistry();
-
-  // Search & Filter Events
-  const searchInput = document.getElementById('reg-search');
-  searchInput?.addEventListener('input', debounce((e) => {
-    regSearchQ = e.target.value;
-    regPage = 1;
-    fetchAndRenderRegistry();
-  }, 300));
-
-  document.getElementById('reg-type-filter')?.addEventListener('change', (e) => {
-    regTypeFilter = e.target.value;
-    regPage = 1;
-    fetchAndRenderRegistry();
-  });
-
-  document.getElementById('reg-wh-filter')?.addEventListener('change', (e) => {
-    regWhFilter = e.target.value;
-    regPage = 1;
-    fetchAndRenderRegistry();
-  });
-
-  document.getElementById('btn-print-barcodes')?.addEventListener('click', showBarcodePrintSheet);
-
-  // Sync listener setup
-  window.removeEventListener('wareops_storage_sync', fetchAndRenderRegistry);
-  window.addEventListener('wareops_storage_sync', fetchAndRenderRegistry);
-}
-
-// Simple debounce helper
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-async function fetchAndRenderRegistry() {
-  const user = getCurrentUser();
-  if (!user) return;
-
-  const whs = getWarehouses();
-  const whMap = whs.reduce((acc, curr) => { acc[curr.id] = curr.name; return acc; }, {});
-
-  // Build query string
-  let query = `/registry/?page=${regPage}&limit=${regLimit}`;
-  if (regSearchQ) query += `&search=${encodeURIComponent(regSearchQ)}`;
-  if (regTypeFilter) query += `&entityType=${regTypeFilter}`;
-  if (regWhFilter) query += `&warehouseId=${regWhFilter}`;
-
-  const res = await apiFetch(query);
-  if (res.error) {
-    const container = document.getElementById('registry-table-container');
-    if (container) {
-      container.innerHTML = `
-        <div class="card" style="text-align:center;padding:48px;border-color:rgba(239,68,68,0.2)">
-          <div style="font-size:40px;margin-bottom:16px;color:rgba(239,68,68,0.7)">⚠️</div>
-          <h3 style="color:var(--text-secondary)">Sync Failed</h3>
-          <p style="color:var(--text-muted);margin-top:8px">${res.error}</p>
-        </div>
-      `;
-    }
-    return;
-  }
-
-  const { entries, total } = res.data;
-  const pages = Math.ceil(total / regLimit);
-  const start = (regPage - 1) * regLimit;
-
-  // Render Stats Numbers
-  updateStatsNumbers(entries, total);
-
-  const container = document.getElementById('registry-table-container');
-  if (!container) return;
-
-  if (entries.length === 0) {
-    container.innerHTML = `
-      <div class="card" style="text-align:center;padding:48px">
-        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">🏷️</div>
-        <h3 style="color:var(--text-secondary)">No unique ID registries found</h3>
-        <p style="color:var(--text-muted);margin-top:8px">No generated tracking entries match the filter parameters.</p>
-      </div>
-    `;
-    document.getElementById('registry-pagination').innerHTML = '';
-    return;
-  }
-
-  container.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Unique ID</th>
-            <th>Entity Type</th>
-            <th>Offline Barcode</th>
-            <th>Warehouse Scope</th>
-            <th>Creator Log</th>
-            <th>Registered At</th>
-            <th style="text-align:center">Data</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${entries.map(e => {
-            const whName = e.warehouse_id === 'Global' ? 'Global' : (whMap[e.warehouse_id] || `Warehouse (${e.warehouse_id})`);
-            const badgeClass = getEntityBadgeClass(e.entity_type);
-            const encodedBarcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${e.entity_id}`;
-
-            return `
-              <tr>
-                <td data-label="Unique ID">
-                  <span style="font-family:var(--font-mono);font-weight:700;color:var(--text-primary);letter-spacing:0.5px">${e.entity_id}</span>
-                </td>
-                <td data-label="Entity Type">
-                  <span class="badge ${badgeClass}">${capitalizeFirst(e.entity_type)}</span>
-                </td>
-                <td data-label="Offline Barcode" style="padding-top: 4px; padding-bottom: 4px;">
-                  <div style="display:flex;flex-direction:column;gap:2px;max-width:180px">
-                    <img src="${encodedBarcodeUrl}" alt="${e.entity_id} Barcode" style="height:36px;object-fit:contain;border:1px solid #f3f4f6;border-radius:4px;background:#ffffff;padding:2px" />
-                  </div>
-                </td>
-                <td data-label="Warehouse Scope">
-                  <span class="badge badge-secondary">${whName}</span>
-                </td>
-                <td data-label="Creator Log">
-                  <div class="primary-cell">${e.creator_name}</div>
-                  <div class="sub-cell">ID: ${e.created_by.slice(0, 8)}</div>
-                </td>
-                <td data-label="Registered At">
-                  <div class="primary-cell">${formatDateTime(e.created_at)}</div>
-                </td>
-                <td data-label="Data" style="text-align:center">
-                  <button class="action-btn edit view-snapshot-btn" data-id="${e.entity_id}" title="View Metadata Snapshot" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px">${getSvgIcon('view', 12)} Details</button>
-                </td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
-      
-      <!-- Pagination controls -->
-      <div class="table-pagination">
-        <div class="pagination-info">Showing ${start + 1}–${Math.min(start + regLimit, total)} of ${total} entries</div>
-        <div class="pagination-controls">
-          <button class="wf_page-btn" id="reg-prev" ${regPage <= 1 ? 'disabled' : ''}>‹</button>
-          ${Array.from({ length: Math.min(5, pages) }, (_, i) => {
-            const pageNum = i + 1;
-            return `<button class="wf_page-btn ${regPage === pageNum ? 'active' : ''}" data-pg="${pageNum}">${pageNum}</button>`;
-          }).join('')}
-          <button class="wf_page-btn" id="reg-next" ${regPage >= pages ? 'disabled' : ''}>›</button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  // Attach button triggers
-  container.querySelectorAll('.view-snapshot-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const entry = entries.find(x => x.entity_id === btn.dataset.id);
-      if (entry) showSnapshotModal(entry);
-    });
-  });
-
-  container.querySelectorAll('.wf_page-btn[data-pg]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      regPage = parseInt(btn.dataset.pg);
-      fetchAndRenderRegistry();
-    });
-  });
-
-  document.getElementById('reg-prev')?.addEventListener('click', () => {
-    if (regPage > 1) {
-      regPage--;
-      fetchAndRenderRegistry();
-    }
-  });
-
-  document.getElementById('reg-next')?.addEventListener('click', () => {
-    if (regPage < pages) {
-      regPage++;
-      fetchAndRenderRegistry();
-    }
-  });
-}
-
-function updateStatsNumbers(entries, total) {
-  document.getElementById('stat-total-entries').textContent = total;
-  
-  // Quick count filters
-  const invCount = entries.filter(e => e.entity_type === 'invoice').length;
-  const itemCount = entries.filter(e => e.entity_type === 'inventory').length;
-  const crmCount = entries.filter(e => e.entity_type === 'customer').length;
-  
-  // Set counts dynamically
-  const invEl = document.getElementById('stat-invoice-entries');
-  const itemEl = document.getElementById('stat-item-entries');
-  const crmEl = document.getElementById('stat-crm-entries');
-
-  if (invEl) invEl.textContent = entries.filter(e => e.entity_type === 'invoice').length > 0 ? entries.filter(e => e.entity_type === 'invoice').length : 'Active';
-  if (itemEl) itemEl.textContent = entries.filter(e => e.entity_type === 'inventory').length > 0 ? entries.filter(e => e.entity_type === 'inventory').length : 'Active';
-  if (crmEl) crmEl.textContent = entries.filter(e => e.entity_type === 'customer').length > 0 ? entries.filter(e => e.entity_type === 'customer').length : 'Active';
-}
-
-function getEntityBadgeClass(type) {
-  switch (type) {
-    case 'invoice': return 'badge-info';
-    case 'warehouse': return 'badge-secondary';
-    case 'employee': return 'badge-warning';
-    case 'inventory': return 'badge-success';
-    case 'table_registry': return 'badge-primary';
-    case 'customer': return 'badge-info';
-    default: return 'badge-secondary';
-  }
-}
-
-function capitalizeFirst(str) {
-  if (!str) return '';
-  return str.charAt(0).toUpperCase() + str.slice(1).replace('_', ' ');
-}
-
-function showSnapshotModal(entry) {
-  const jsonString = JSON.stringify(entry.metadata_snapshot, null, 2);
-  
-  const body = `
-    <div style="font-family:var(--font-mono);font-size:12px;background:#0f172a;color:#e2e8f0;padding:16px;border-radius:8px;max-height:400px;overflow-y:auto;white-space:pre-wrap;box-shadow:inset 0 2px 4px rgba(0,0,0,0.6)">${jsonString}</div>
-    <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:8px;padding:12px;font-size:12px;color:var(--text-muted)">
-      <span>Entity: <strong>${entry.entity_id}</strong> (${capitalizeFirst(entry.entity_type)})</span>
-      <span>Creator: <strong>${entry.creator_name}</strong></span>
-    </div>
-  `;
-
-  const footer = `
-    <button class="btn btn-primary" id="m-snap-close">Close</button>
-  `;
-
-  const modal = createModal({ title: `Registry Metadata Snapshot`, body, footer });
-  modal.el.querySelector('#m-snap-close')?.addEventListener('click', modal.close);
-}
-
-async function showBarcodePrintSheet() {
-  let query = `/registry/?page=1&limit=60`;
-  if (regTypeFilter) query += `&entityType=${regTypeFilter}`;
-  if (regWhFilter) query += `&warehouseId=${regWhFilter}`;
-
-  const res = await apiFetch(query);
-  if (res.error) {
-    showToast('Failed to load barcodes', res.error, 'error');
-    return;
-  }
-
-  const { entries } = res.data;
-  if (!entries || entries.length === 0) {
-    showToast('No Barcodes', 'No matching items found to print barcodes.', 'warning');
-    return;
-  }
-
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    showToast('Blocker active', 'Please allow popups to render the barcode print sheet.', 'warning');
-    return;
-  }
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>NexWare ERP — Printable Barcode Sheet</title>
-        <style>
-          body {
-            font-family: system-ui, -apple-system, sans-serif;
-            color: #111827;
-            background: #ffffff;
-            margin: 0;
-            padding: 20px;
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 10px;
-          }
-          .grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-          }
-          .card {
-            border: 1px dashed #9ca3af;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
-            background: #ffffff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            page-break-inside: avoid;
-          }
-          .title {
-            font-size: 13px;
-            font-weight: bold;
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            color: #374151;
-          }
-          .barcode {
-            max-width: 100%;
-            height: auto;
-            margin: 8px 0;
-          }
-          .footer-info {
-            font-size: 11px;
-            color: #6b7280;
-            margin-top: 6px;
-          }
-          @media print {
-            body { padding: 0; }
-            .header { display: none; }
-            .grid { gap: 15px; }
-            .card { border-style: solid; border-color: #d1d5db; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>NexWare ERP Scan Sheet</h1>
-          <p>Scan-ready laser barcode tags sheet. Print onto label paper or sheets.</p>
-          <button onclick="window.print()" style="padding: 10px 20px; font-size:14px; font-weight:bold; color:white; background:#6366f1; border:none; border-radius:6px; cursor:pointer">🖨️ Print Label Sheet</button>
-        </div>
-        <div class="grid">
-          ${entries.map(e => {
-            const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${e.entity_id}`;
-            const name = e.metadata_snapshot.name || e.metadata_snapshot.customer || e.entity_type.toUpperCase();
-            return `
-              <div class="card">
-                <div class="title">${name}</div>
-                <img class="barcode" src="${barcodeUrl}" />
-                <div class="footer-info">Type: ${e.entity_type} | Scope: ${e.warehouse_id}</div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </body>
-    </html>
-  `;
-
-  printWindow.document.write(html);
-  printWindow.document.close();
 }
 
 // ===== pages/customers.js =====
@@ -15710,6 +16028,836 @@ function renderNotificationsList() {
   });
 }
 
+// ===== pages/profile.js =====
+/**
+ * User Profile Page — Comprehensive personal identity, compliance, and corporate assignments
+ */
+
+
+
+
+
+
+function renderProfile() {
+  const user = getCurrentUser();
+  if (!user) {
+    navigate('/login');
+    return;
+  }
+
+  // Populate default profile structure if missing to satisfy foundation requirements
+  if (!user.profile) {
+    user.profile = {
+      jobTitle: user.role === 'super_admin' ? 'Chief Technology Officer' : 'Operations Logistics Manager',
+      department: 'Operations & Engineering',
+      joiningDate: '2025-06-15',
+      managerId: 'super_admin',
+      workType: 'Full-time',
+      phone: '+1 (555) 019-2834',
+      slackUsername: '@' + user.name.toLowerCase().replace(/\s+/g, '.'),
+      documents: [
+        { id: 'doc_1', name: 'Employment Offer Contract.pdf', status: 'Approved', uploadedAt: '2025-06-12' },
+        { id: 'doc_2', name: 'NDA_Confidentiality_Agreement.pdf', status: 'Approved', uploadedAt: '2025-06-13' },
+        { id: 'doc_3', name: 'W4_Tax_Declaration_2026.pdf', status: 'Pending Review', uploadedAt: '2026-01-05' }
+      ],
+      privacy: {
+        twoFactor: false,
+        sessionTimeout: 60,
+        telemetry: true,
+        sessionSharing: true
+      },
+      communicationIdentity: {
+        preferredChannel: 'Slack',
+        whatsappNotifications: true
+      }
+    };
+  }
+
+  let activeTab = 'personal';
+
+  const updateProfileUI = () => {
+    const container = document.getElementById('profile-page-content');
+    if (!container) return;
+
+    // Toggle active state classes on tab headers
+    document.querySelectorAll('.profile-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.tab === activeTab);
+    });
+
+    container.innerHTML = renderTabContent(activeTab, user);
+    bindTabContentEvents(activeTab);
+  };
+
+  const html = `
+    <div class="animate-slideUp">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1 class="page-title">User Profile</h1>
+          <p class="page-subtitle">Manage your personal credentials, documents, corporate assignments, and privacy settings</p>
+        </div>
+        <div class="page-header-actions" style="display:flex;gap:12px">
+          <button class="btn btn-primary btn-sm" id="p-generate-id-btn" style="display:flex;align-items:center;gap:6px">
+            🪪 Generate ID Card
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/dashboard'">← Dashboard</button>
+        </div>
+      </div>
+
+      <!-- Profile Header Banner -->
+      <div style="background:var(--gradient-card);border:1px solid var(--border-brand);border-radius:var(--radius-xl);padding:24px;margin-bottom:24px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+        <div id="profile-avatar-wrapper" style="width:80px;height:80px;border-radius:50%;background:var(--gradient-brand);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:800;color:white;flex-shrink:0;box-shadow:var(--shadow-brand);overflow:hidden;border:3px solid var(--bg-card)">
+          ${renderAvatar(user.avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}
+        </div>
+        <div style="flex-grow:1">
+          <h2 style="font-size:22px;font-weight:800;margin-bottom:4px;display:flex;align-items:center;gap:8px">
+            ${user.name}
+            <span class="badge badge-brand" style="font-size:11px;padding:2px 8px;text-transform:capitalize">${user.role.replace('_', ' ')}</span>
+          </h2>
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px">${user.email}</p>
+          <div style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:12px">
+            <span>${getSvgIcon('warehouses', 12)} ${getWarehouses().find(w => w.id === user.warehouseId)?.name || 'Global Operations'}</span>
+            <span>·</span>
+            <span>ID: ${user.employeeId || user.enterprise_id || 'N/A'}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab navigation -->
+      <div class="table-toolbar" style="margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:0;gap:4px">
+        <button class="profile-tab btn btn-ghost btn-sm active" data-tab="personal" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Personal Details</button>
+        <button class="profile-tab btn btn-ghost btn-sm" data-tab="corporate" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Corporate Identity</button>
+        <button class="profile-tab btn btn-ghost btn-sm" data-tab="documents" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Documents</button>
+        <button class="profile-tab btn btn-ghost btn-sm" data-tab="activity" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Activity Logs</button>
+        <button class="profile-tab btn btn-ghost btn-sm" data-tab="privacy" style="padding:10px 16px;border-radius:var(--radius-md) var(--radius-md) 0 0">Privacy & Security</button>
+      </div>
+
+      <!-- Tab content box -->
+      <div id="profile-page-content"></div>
+    </div>
+  `;
+
+  renderShell('User Profile', 'Your platform identity', html);
+
+  // Bind tab navigation clicks
+  document.querySelectorAll('.profile-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      activeTab = tab.dataset.tab;
+      updateProfileUI();
+    });
+  });
+
+  document.getElementById('p-generate-id-btn')?.addEventListener('click', () => {
+    showIDCardModal(user);
+  });
+
+  // Initial draw
+  updateProfileUI();
+}
+
+function renderTabContent(tab, user) {
+  const profile = user.profile;
+  if (tab === 'personal') {
+    return `
+      <div class="card animate-slideUp" style="max-width:640px">
+        <div class="card-header"><div class="card-title">Personal Information</div></div>
+        <form id="p-personal-form">
+          <div class="form-group">
+            <label class="form-label">Full Name <span class="req">*</span></label>
+            <input type="text" id="p-name" class="form-control" value="${user.name}" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email Address (Read-only)</label>
+            <input type="email" class="form-control" value="${user.email}" readonly style="opacity:0.7" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Phone Number</label>
+              <input type="text" id="p-phone" class="form-control" value="${profile.phone || ''}" placeholder="+1 (555) 000-0000" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Slack Handle</label>
+              <input type="text" id="p-slack" class="form-control" value="${profile.slackUsername || ''}" placeholder="@username" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Residential Address</label>
+            <textarea id="p-address" class="form-control" rows="2" placeholder="123 Logistics Way, Suite A">${profile.address || ''}</textarea>
+          </div>
+          <div style="border-top:1px solid var(--border-subtle);margin:20px 0;padding-top:16px">
+            <h4 style="margin-bottom:12px;font-size:14px;font-weight:700;color:var(--text-primary)">Emergency Contact Info</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Contact Name</label>
+                <input type="text" id="p-emergency-name" class="form-control" value="${profile.emergencyContactName || ''}" placeholder="Contact Name" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Relationship</label>
+                <input type="text" id="p-emergency-relation" class="form-control" value="${profile.emergencyContactRelation || ''}" placeholder="Relation (e.g. Spouse)" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Emergency Phone Number</label>
+              <input type="text" id="p-emergency-phone" class="form-control" value="${profile.emergencyContactPhone || ''}" placeholder="+1 (555) 000-0000" />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+        </form>
+      </div>
+    `;
+  } else if (tab === 'corporate') {
+    const hasWorkforceEdit = canDo('workforce', 'edit', user);
+    return `
+      <div class="card animate-slideUp" style="max-width:640px">
+        <div class="card-header"><div class="card-title">Corporate Assignment</div></div>
+        <div style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:8px;padding:12px;margin-bottom:20px;font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:8px">
+          <span style="color:var(--brand-500);flex-shrink:0">${getSvgIcon('info', 16)}</span>
+          <span>Corporate assignments are managed by administration. ${hasWorkforceEdit ? 'You have permissions to edit these fields.' : 'These fields are read-only.'}</span>
+        </div>
+        <form id="p-corporate-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Job Title</label>
+              <input type="text" id="p-title" class="form-control" value="${profile.jobTitle || ''}" ${!hasWorkforceEdit ? 'readonly style="opacity:0.7"' : ''} />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Department</label>
+              <input type="text" id="p-dept" class="form-control" value="${profile.department || ''}" ${!hasWorkforceEdit ? 'readonly style="opacity:0.7"' : ''} />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Date of Joining</label>
+              <input type="date" id="p-joining" class="form-control" value="${profile.joiningDate || ''}" ${!hasWorkforceEdit ? 'readonly style="opacity:0.7"' : ''} />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Work Type</label>
+              <select id="p-worktype" class="form-control" ${!hasWorkforceEdit ? 'disabled style="opacity:0.7"' : ''}>
+                <option value="Full-time" ${profile.workType === 'Full-time' ? 'selected' : ''}>Full-time Employee</option>
+                <option value="Part-time" ${profile.workType === 'Part-time' ? 'selected' : ''}>Part-time Employee</option>
+                <option value="Contract" ${profile.workType === 'Contract' ? 'selected' : ''}>Contractual</option>
+                <option value="Remote" ${profile.workType === 'Remote' ? 'selected' : ''}>Remote / Distributed</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Work Shift</label>
+              <select id="p-shift" class="form-control" ${!hasWorkforceEdit ? 'disabled style="opacity:0.7"' : ''}>
+                <option value="Day Shift" ${profile.shift === 'Day Shift' ? 'selected' : ''}>Day Shift (08:00 - 16:00)</option>
+                <option value="Swing Shift" ${profile.shift === 'Swing Shift' ? 'selected' : ''}>Swing Shift (16:00 - 00:00)</option>
+                <option value="Night Shift" ${profile.shift === 'Night Shift' ? 'selected' : ''}>Night Shift (00:00 - 08:00)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Duty Location</label>
+              <input type="text" id="p-location" class="form-control" value="${profile.location || ''}" placeholder="Zone B Docks" ${!hasWorkforceEdit ? 'readonly style="opacity:0.7"' : ''} />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Assigned Duty Warehouse</label>
+            <select id="p-warehouse-assigned" class="form-control" ${!hasWorkforceEdit ? 'disabled style="opacity:0.7"' : ''}>
+              <option value="">Global / Unassigned</option>
+              ${getWarehouses().map(w => `<option value="${w.id}" ${profile.assignedWarehouseId === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}
+            </select>
+          </div>
+          ${hasWorkforceEdit ? `<button type="submit" class="btn btn-primary btn-sm">Update Corporate Assignment</button>` : ''}
+        </form>
+      </div>
+    `;
+  } else if (tab === 'documents') {
+    return `
+      <div class="card animate-slideUp">
+        <div class="card-header" style="justify-content:space-between;align-items:center">
+          <div>
+            <div class="card-title">Employee Document Repository</div>
+            <div class="card-subtitle">Secure employment and compliance documents</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="p-upload-doc-btn" style="display:flex;align-items:center;gap:6px">
+            ${getSvgIcon('plus', 14)} Secure Upload
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Document Name</th>
+                <th>Type</th>
+                <th>Uploaded Date</th>
+                <th>Expiry Date</th>
+                <th>Status</th>
+                <th>Remarks / Reviewer</th>
+                <th style="text-align:right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(profile.documents || []).map(d => `
+                <tr>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span style="color:var(--text-muted)">${getSvgIcon('audit', 16)}</span>
+                      <span style="font-weight:600">${d.name}</span>
+                    </div>
+                  </td>
+                  <td><span class="badge badge-secondary" style="font-size:11px;padding:2px 8px">${d.type || 'ID Proof'}</span></td>
+                  <td>${d.uploadedAt}</td>
+                  <td>${d.expiryDate || '—'}</td>
+                  <td>
+                    <span class="badge ${d.status === 'Approved' ? 'badge-success' : d.status === 'Rejected' ? 'badge-danger' : 'badge-warning'}">
+                      ${d.status}
+                    </span>
+                  </td>
+                  <td style="font-size:12px;color:var(--text-secondary)">
+                    ${d.status === 'Pending Review' ? '<em>Pending Review</em>' : `
+                      <div><strong>Reviewed by:</strong> ${d.reviewerName || 'Supervisor'}</div>
+                      ${d.remarks ? `<div style="font-style:italic;margin-top:2px;color:var(--text-muted)">"${d.remarks}"</div>` : ''}
+                    `}
+                  </td>
+                  <td style="text-align:right">
+                    <button class="btn btn-ghost btn-xs" onclick="showToast('Secure Download', 'Document download requested securely', 'info')">Download</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } else if (tab === 'activity') {
+    const allLogs = getStore().auditLogs || [];
+    const userLogs = allLogs.filter(l => l.userId === user.id).slice(0, 10);
+    return `
+      <div class="card animate-slideUp">
+        <div class="card-header">
+          <div class="card-title">Recent Activity Logs</div>
+          <div class="card-subtitle">Recent security and administrative actions logged under your credentials</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
+          ${userLogs.length === 0 ? `
+            <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">No recent logs recorded under your profile</div>
+          ` : userLogs.map(log => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--glass-bg);border:1px solid var(--border-subtle);border-radius:8px">
+              <div>
+                <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${log.description}</div>
+                <div style="font-size:11px;color:var(--text-muted)">IP: 127.0.0.1 · Action: ${log.action}</div>
+              </div>
+              <span style="font-size:11px;color:var(--text-muted)">${formatDate(log.timestamp)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } else if (tab === 'privacy') {
+    const p = profile.privacy || { twoFactor: false, sessionTimeout: 60, telemetry: true, sessionSharing: true };
+    return `
+      <div class="card animate-slideUp" style="max-width:640px">
+        <div class="card-header">
+          <div class="card-title">Privacy & Security Controls</div>
+          <div class="card-subtitle">Manage multi-factor authentication, sessions, and telemetry consents</div>
+        </div>
+        <form id="p-privacy-form" style="display:flex;flex-direction:column;gap:20px;margin-top:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary)">Two-Factor Authentication (2FA)</div>
+              <div style="font-size:12px;color:var(--text-muted)">Enforce secure one-time passcode confirmation on logins</div>
+            </div>
+            <label style="display:flex;align-items:center;cursor:pointer">
+              <input type="checkbox" id="p-2fa" class="privacy-toggle" ${p.twoFactor ? 'checked' : ''} style="display:none" />
+              <div class="toggle-switch ${p.twoFactor ? 'on' : ''}" style="width:40px;height:22px;border-radius:11px;background:${p.twoFactor ? 'var(--brand-500)' : 'var(--bg-input)'};border:1px solid var(--border-default);position:relative;transition:all 0.2s;cursor:pointer">
+                <div style="position:absolute;top:2px;left:${p.twoFactor ? '18px' : '2px'};width:16px;height:16px;border-radius:50%;background:white;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>
+              </div>
+            </label>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary)">Performance Telemetry</div>
+              <div style="font-size:12px;color:var(--text-muted)">Allow sharing loading metric details to improve load speed</div>
+            </div>
+            <label style="display:flex;align-items:center;cursor:pointer">
+              <input type="checkbox" id="p-telemetry" class="privacy-toggle" ${p.telemetry ? 'checked' : ''} style="display:none" />
+              <div class="toggle-switch ${p.telemetry ? 'on' : ''}" style="width:40px;height:22px;border-radius:11px;background:${p.telemetry ? 'var(--brand-500)' : 'var(--bg-input)'};border:1px solid var(--border-default);position:relative;transition:all 0.2s;cursor:pointer">
+                <div style="position:absolute;top:2px;left:${p.telemetry ? '18px' : '2px'};width:16px;height:16px;border-radius:50%;background:white;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>
+              </div>
+            </label>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary)">Active Session Logs sharing</div>
+              <div style="font-size:12px;color:var(--text-muted)">Display active logged-in device details in security dashboard</div>
+            </div>
+            <label style="display:flex;align-items:center;cursor:pointer">
+              <input type="checkbox" id="p-sessionsharing" class="privacy-toggle" ${p.sessionSharing ? 'checked' : ''} style="display:none" />
+              <div class="toggle-switch ${p.sessionSharing ? 'on' : ''}" style="width:40px;height:22px;border-radius:11px;background:${p.sessionSharing ? 'var(--brand-500)' : 'var(--bg-input)'};border:1px solid var(--border-default);position:relative;transition:all 0.2s;cursor:pointer">
+                <div style="position:absolute;top:2px;left:${p.sessionSharing ? '18px' : '2px'};width:16px;height:16px;border-radius:50%;background:white;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>
+              </div>
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-top:10px">
+            <label class="form-label">Automatic Logout Timeout (Minutes)</label>
+            <input type="range" id="p-timeout" min="10" max="240" step="10" value="${p.sessionTimeout || 60}" style="width:100%;accent-color:var(--brand-500)" />
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:4px">
+              <span>10 mins</span>
+              <span id="p-timeout-lbl" style="font-weight:700;color:var(--text-primary)">${p.sessionTimeout || 60} minutes</span>
+              <span>240 mins</span>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Save Security Preferences</button>
+        </form>
+      </div>
+    `;
+  }
+}
+
+function bindTabContentEvents(tab) {
+  const s = getStore();
+  const currentUserDoc = s.users.find(u => u.id === s.currentUserId);
+  if (!currentUserDoc) return;
+
+  // Ensure default profile structure is initialized under doc context
+  if (!currentUserDoc.profile) {
+    currentUserDoc.profile = {
+      jobTitle: currentUserDoc.role === 'super_admin' ? 'Chief Technology Officer' : 'Operations Logistics Manager',
+      department: 'Operations & Engineering',
+      joiningDate: '2025-06-15',
+      managerId: 'super_admin',
+      workType: 'Full-time',
+      phone: '+1 (555) 019-2834',
+      slackUsername: '@' + currentUserDoc.name.toLowerCase().replace(/\s+/g, '.'),
+      documents: [
+        { id: 'doc_1', name: 'Employment Offer Contract.pdf', status: 'Approved', uploadedAt: '2025-06-12' },
+        { id: 'doc_2', name: 'NDA_Confidentiality_Agreement.pdf', status: 'Approved', uploadedAt: '2025-06-13' },
+        { id: 'doc_3', name: 'W4_Tax_Declaration_2026.pdf', status: 'Pending Review', uploadedAt: '2026-01-05' }
+      ],
+      privacy: {
+        twoFactor: false,
+        sessionTimeout: 60,
+        telemetry: true,
+        sessionSharing: true
+      },
+      communicationIdentity: {
+        preferredChannel: 'Slack',
+        whatsappNotifications: true
+      }
+    };
+  }
+
+  if (tab === 'personal') {
+    document.getElementById('p-personal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const nameVal = document.getElementById('p-name').value.trim();
+      const phoneVal = document.getElementById('p-phone').value.trim();
+      const slackVal = document.getElementById('p-slack').value.trim();
+      const addressVal = document.getElementById('p-address').value.trim();
+      const emName = document.getElementById('p-emergency-name').value.trim();
+      const emRelation = document.getElementById('p-emergency-relation').value.trim();
+      const emPhone = document.getElementById('p-emergency-phone').value.trim();
+
+      if (!nameVal) return;
+
+      currentUserDoc.name = nameVal;
+      currentUserDoc.profile.phone = phoneVal;
+      currentUserDoc.profile.slackUsername = slackVal;
+      currentUserDoc.profile.address = addressVal;
+      currentUserDoc.profile.emergencyContactName = emName;
+      currentUserDoc.profile.emergencyContactRelation = emRelation;
+      currentUserDoc.profile.emergencyContactPhone = emPhone;
+
+      saveStore();
+      updateDOMAvatars(currentUserDoc.avatar, nameVal);
+      await updateUser(currentUserDoc.id, {
+        name: nameVal,
+        profile: currentUserDoc.profile
+      });
+      showToast('Personal info saved', 'Your profile details have been updated', 'success');
+      renderProfile();
+    });
+  } else if (tab === 'corporate') {
+    document.getElementById('p-corporate-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const jobTitleVal = document.getElementById('p-title').value.trim();
+      const deptVal = document.getElementById('p-dept').value.trim();
+      const joiningVal = document.getElementById('p-joining').value;
+      const workTypeVal = document.getElementById('p-worktype').value;
+      const shiftVal = document.getElementById('p-shift').value;
+      const locVal = document.getElementById('p-location').value.trim();
+      const assignedWhVal = document.getElementById('p-warehouse-assigned').value;
+
+      currentUserDoc.profile.jobTitle = jobTitleVal;
+      currentUserDoc.profile.department = deptVal;
+      currentUserDoc.profile.joiningDate = joiningVal;
+      currentUserDoc.profile.workType = workTypeVal;
+      currentUserDoc.profile.shift = shiftVal;
+      currentUserDoc.profile.location = locVal;
+      currentUserDoc.profile.assignedWarehouseId = assignedWhVal;
+      if (assignedWhVal) {
+        currentUserDoc.warehouseId = assignedWhVal;
+      }
+
+      saveStore();
+      await updateUser(currentUserDoc.id, {
+        warehouseId: assignedWhVal || null,
+        profile: currentUserDoc.profile
+      });
+      showToast('Corporate assignment saved', 'Corporate settings updated', 'success');
+      renderProfile();
+    });
+  } else if (tab === 'documents') {
+    document.getElementById('p-upload-doc-btn')?.addEventListener('click', () => {
+      const modalBody = document.createElement('div');
+      modalBody.innerHTML = `
+        <form id="p-upload-form" style="display:flex;flex-direction:column;gap:16px">
+          <div class="form-group">
+            <label class="form-label">Document Type <span class="req">*</span></label>
+            <select id="p-upload-type" class="form-control" style="background:var(--bg-input)" required>
+              <option value="ID Proof">ID Proof</option>
+              <option value="Passport">Passport</option>
+              <option value="Contract">Contract / Agreement</option>
+              <option value="Certificate">Professional Certificate</option>
+              <option value="License">Driving / Equipment License</option>
+              <option value="Tax Document">Tax Document</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expiry Date</label>
+            <input type="date" id="p-upload-expiry" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Select File <span class="req">*</span></label>
+            <input type="file" id="p-upload-file" class="form-control" required accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+          </div>
+        </form>
+      `;
+
+      const modalFooter = document.createElement('div');
+      modalFooter.style.display = 'flex';
+      modalFooter.style.gap = '12px';
+      modalFooter.style.justifyContent = 'flex-end';
+      modalFooter.innerHTML = `
+        <button class="btn btn-secondary" id="p-upload-cancel">Cancel</button>
+        <button class="btn btn-primary" id="p-upload-submit">Upload Document</button>
+      `;
+
+      const modal = createModal({
+        title: 'Upload Compliance Document',
+        body: modalBody,
+        footer: modalFooter
+      });
+
+      modal.el.querySelector('#p-upload-cancel').addEventListener('click', () => modal.close());
+
+      modal.el.querySelector('#p-upload-submit').addEventListener('click', async (evt) => {
+        evt.preventDefault();
+        const typeVal = modal.el.querySelector('#p-upload-type').value;
+        const expiryVal = modal.el.querySelector('#p-upload-expiry').value;
+        const fileInput = modal.el.querySelector('#p-upload-file');
+        const file = fileInput.files[0];
+
+        if (!file) {
+          showToast('Validation Error', 'Please select a file to upload.', 'warning');
+          return;
+        }
+
+        const newDoc = {
+          id: 'doc_' + Date.now(),
+          name: file.name,
+          type: typeVal,
+          expiryDate: expiryVal || null,
+          status: 'Pending Review',
+          uploadedAt: new Date().toISOString().split('T')[0]
+        };
+
+        currentUserDoc.profile.documents = currentUserDoc.profile.documents || [];
+        currentUserDoc.profile.documents.push(newDoc);
+        saveStore();
+        
+        await updateUser(currentUserDoc.id, {
+          profile: currentUserDoc.profile
+        });
+
+        showToast('Document Uploaded', `${file.name} is now pending compliance review.`, 'success');
+        modal.close();
+        renderProfile();
+      });
+    });
+  } else if (tab === 'privacy') {
+    const slider = document.getElementById('p-timeout');
+    const label = document.getElementById('p-timeout-lbl');
+    if (slider && label) {
+      slider.addEventListener('input', (e) => {
+        label.textContent = e.target.value + ' minutes';
+      });
+    }
+
+    document.querySelectorAll('.privacy-toggle').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const switchDiv = chk.nextElementSibling;
+        if (switchDiv) {
+          switchDiv.classList.toggle('on', chk.checked);
+          switchDiv.style.background = chk.checked ? 'var(--brand-500)' : 'var(--bg-input)';
+          switchDiv.firstElementChild.style.left = chk.checked ? '18px' : '2px';
+        }
+      });
+    });
+
+    document.getElementById('p-privacy-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const twoFactor = document.getElementById('p-2fa').checked;
+      const telemetry = document.getElementById('p-telemetry').checked;
+      const sessionSharing = document.getElementById('p-sessionsharing').checked;
+      const sessionTimeout = parseInt(document.getElementById('p-timeout').value);
+
+      currentUserDoc.profile.privacy = {
+        twoFactor,
+        telemetry,
+        sessionSharing,
+        sessionTimeout
+      };
+
+      saveStore();
+      await updateUser(currentUserDoc.id, {
+        profile: currentUserDoc.profile
+      });
+      showToast('Security preferences saved', 'Privacy settings successfully updated', 'success');
+      renderProfile();
+    });
+  }
+}
+
+function showIDCardModal(u) {
+  const barcodeHTML = generateBarcodeSVG(u.employeeId || u.enterprise_id || u.id, { barWidth: 1.2, height: 35 });
+  const whName = getWarehouses().find(w => w.id === u.warehouseId)?.name || 'Global Operations';
+  
+  const body = document.createElement('div');
+  body.style.display = 'flex';
+  body.style.gap = '32px';
+  body.style.justifyContent = 'center';
+  body.style.alignItems = 'center';
+  body.style.padding = '24px';
+  body.style.flexWrap = 'wrap';
+  body.style.background = '#0d0e1f';
+  
+  body.innerHTML = `
+    <style>
+      .id-card {
+        width: 230px;
+        height: 360px;
+        border-radius: 16px;
+        background: linear-gradient(145deg, #1e2040, #131428);
+        border: 1px solid rgba(99, 102, 241, 0.25);
+        box-shadow: 0 12px 24px rgba(0,0,0,0.5);
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 20px;
+        color: white;
+        font-family: 'Inter', sans-serif;
+      }
+      .id-card::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 60%);
+        pointer-events: none;
+      }
+      .id-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        padding-bottom: 10px;
+      }
+      .id-logo {
+        font-weight: 800;
+        font-size: 13px;
+        color: var(--brand-400, #818cf8);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .id-badge {
+        font-size: 8px;
+        letter-spacing: 1px;
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #ef4444;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: 700;
+      }
+      .id-profile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-top: 15px;
+      }
+      .id-avatar {
+        width: 85px;
+        height: 85px;
+        border-radius: 50%;
+        border: 3px solid rgba(99, 102, 241, 0.4);
+        background: var(--gradient-brand);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        font-weight: 800;
+        overflow: hidden;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+      }
+      .id-name {
+        font-size: 17px;
+        font-weight: 800;
+        margin-top: 12px;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+      }
+      .id-role {
+        font-size: 11px;
+        color: #a5b4fc;
+        margin-top: 4px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .id-footer {
+        border-top: 1px solid rgba(255,255,255,0.08);
+        padding-top: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+      }
+      .id-meta-title {
+        font-size: 8px;
+        text-transform: uppercase;
+        color: #64748b;
+        font-weight: 700;
+      }
+      .id-meta-value {
+        font-size: 11px;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+      .id-card-back {
+        background: linear-gradient(145deg, #131428, #0b0c16);
+      }
+      .id-back-title {
+        font-size: 10px;
+        font-weight: 800;
+        color: #64748b;
+        text-transform: uppercase;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        padding-bottom: 4px;
+        margin-bottom: 8px;
+      }
+      .id-detail-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .id-barcode-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: white;
+        padding: 8px;
+        border-radius: 8px;
+        margin-top: auto;
+      }
+      .id-barcode-wrap svg {
+        max-width: 100%;
+      }
+    </style>
+
+    <!-- FRONT SIDE -->
+    <div class="id-card">
+      <div class="id-card-header">
+        <div class="id-logo">⚡ WAREOPS</div>
+        <div class="id-badge">ACCESS ID</div>
+      </div>
+      <div class="id-profile">
+        <div class="id-avatar">
+          ${renderAvatar(u.avatar, "width:100%;height:100%;object-fit:cover;border-radius:50%")}
+        </div>
+        <div class="id-name">${u.name}</div>
+        <div class="id-role">${(u.profile?.jobTitle || u.role).replace('_', ' ')}</div>
+      </div>
+      <div class="id-footer">
+        <div>
+          <div class="id-meta-title">Duty Warehouse</div>
+          <div class="id-meta-value">${whName}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="id-meta-title">Enterprise ID</div>
+          <div class="id-meta-value" style="color:#818cf8">${u.employeeId || u.enterprise_id || 'N/A'}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BACK SIDE -->
+    <div class="id-card id-card-back">
+      <div>
+        <div class="id-back-title">Corporate Info</div>
+        <div class="id-detail-grid">
+          <div>
+            <div class="id-meta-title">Department</div>
+            <div class="id-meta-value" style="font-size:10px">${u.profile?.department || 'Operations'}</div>
+          </div>
+          <div>
+            <div class="id-meta-title">Join Date</div>
+            <div class="id-meta-value" style="font-size:10px">${u.profile?.joiningDate || '2025-06-15'}</div>
+          </div>
+          <div>
+            <div class="id-meta-title">Work Shift</div>
+            <div class="id-meta-value" style="font-size:10px">${u.profile?.shift || 'Day Shift'}</div>
+          </div>
+          <div>
+            <div class="id-meta-title">Duty Location</div>
+            <div class="id-meta-value" style="font-size:10px">${u.profile?.location || 'Zone A Hub'}</div>
+          </div>
+        </div>
+
+        <div class="id-back-title" style="margin-top:14px">In Case of Emergency</div>
+        <div>
+          <div class="id-meta-value" style="font-size:12px">${u.profile?.emergencyContactName || 'Contact Admin'}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px">
+            Relation: ${u.profile?.emergencyContactRelation || 'Supervisor'}<br/>
+            Phone: ${u.profile?.emergencyContactPhone || 'N/A'}
+          </div>
+        </div>
+      </div>
+
+      <div class="id-barcode-wrap">
+        ${barcodeHTML}
+        <div style="font-size:8px;color:#0f172a;font-family:monospace;margin-top:4px;font-weight:700">${u.employeeId || u.enterprise_id || u.id}</div>
+      </div>
+    </div>
+  `;
+
+  const footer = document.createElement('div');
+  footer.style.display = 'flex';
+  footer.style.justifyContent = 'flex-end';
+  footer.innerHTML = `
+    <button class="btn btn-secondary" id="id-card-close">Close Preview</button>
+  `;
+
+  const modal = createModal({
+    title: `Access Badge — ${u.name}`,
+    body,
+    footer,
+    size: 'lg'
+  });
+
+  modal.el.querySelector('#id-card-close').addEventListener('click', modal.close);
+}
+
 // ===== app.js =====
 // Handle unhandled promise rejections and global errors for visible debugging
 window.addEventListener('error', (event) => {
@@ -15750,12 +16898,15 @@ window.addEventListener('unhandledrejection', (event) => {
 
 
 
+
 // Route handler map
 const routes = {
   '/': renderLanding,
   '/login': renderLogin,
   '/signup': renderSignup,
   '/register-warehouse': renderWarehouseRegistration,
+  '/forgot-password': renderForgotPassword,
+  '/reset-password': renderResetPassword,
   '/dashboard': renderDashboard,
   '/warehouses': renderWarehouses,
   '/workforce': renderWorkforce,
@@ -15771,6 +16922,7 @@ const routes = {
   '/customers': renderCustomers,
   '/roles': renderRoles,
   '/notifications': renderNotifications,
+  '/profile': renderProfile,
 };
 
 // Expose printBill globally for inline onclick handlers
@@ -15811,8 +16963,8 @@ function resolveRoute() {
   try {
     const path = getActivePath();
     const user = getCurrentUser();
-    const publicRoutes = ['/', '/login', '/signup', '/privacy', '/terms'];
-    const redirectIfLoggedIn = ['/', '/login', '/signup'];
+    const publicRoutes = ['/', '/login', '/signup', '/privacy', '/terms', '/forgot-password', '/reset-password'];
+    const redirectIfLoggedIn = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
 
     // Not logged in
     if (!user) {
@@ -15845,9 +16997,15 @@ function resolveRoute() {
         '/audit': 'audit',
         '/settings': 'settings',
         '/customers': 'crm',
+        '/notifications': 'notifications',
       };
 
-      if (['/roles', '/subscription'].includes(path) && user.role !== 'super_admin') {
+      if (path === '/subscription' && !canDo('settings', 'manage', user)) {
+        safeNavigate('/dashboard');
+        return;
+      }
+
+      if (path === '/roles' && !canDo('settings', 'manage', user)) {
         safeNavigate('/dashboard');
         return;
       }
@@ -15905,9 +17063,49 @@ window.addEventListener('wareops_storage_sync', () => {
   resolveRoute();
 });
 
+let _inactivityTimer = null;
+let _lastActivityTime = Date.now();
+
+function updateActivity() {
+  _lastActivityTime = Date.now();
+}
+
+function startInactivityMonitor() {
+  if (typeof window === 'undefined') return;
+  if (_inactivityTimer) clearInterval(_inactivityTimer);
+
+  const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
+  events.forEach(evt => window.addEventListener(evt, updateActivity, { passive: true }));
+
+  _inactivityTimer = setInterval(async () => {
+    const user = getCurrentUser();
+    if (!user || !sessionStorage.getItem('access_token')) return;
+
+    // Get timeout limit in minutes (default 15)
+    const timeoutMin = (user.profile && user.profile.privacy && user.profile.privacy.sessionTimeout) || 15;
+    const timeoutMs = timeoutMin * 60 * 1000;
+
+    if (Date.now() - _lastActivityTime > timeoutMs) {
+      console.log(`[WareOps] Inactivity timeout reached (${timeoutMin}m). Logging out.`);
+      events.forEach(evt => window.removeEventListener(evt, updateActivity));
+      clearInterval(_inactivityTimer);
+      _inactivityTimer = null;
+      
+      const { logout } = await import('./modules/store.js');
+      await logout();
+      const { showToast } = await import('./modules/ui.js');
+      showToast('Session Expired', 'You have been logged out due to inactivity.', 'warning');
+      window.location.hash = '#/login';
+    }
+  }, 10000); // Check every 10 seconds
+}
+
 // Initialize app when DOM is ready
 async function init() {
   try {
+    // Start tracking user inactivity
+    startInactivityMonitor();
+
     // Bind active currency dynamically for formatting sync
     window.wareops_currency = getActiveCurrency();
 
@@ -15922,7 +17120,7 @@ async function init() {
     const user = getCurrentUser();
 
     // Prioritize full synchronization before routing to prevent race conditions on page load/refresh
-    if (user && localStorage.getItem('access_token')) {
+    if (user && sessionStorage.getItem('access_token')) {
       try {
         await syncWithBackend();
       } catch (syncErr) {

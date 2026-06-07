@@ -4,6 +4,7 @@
  * Role-gated: only exports data the current user can see
  */
 import { getCurrentUser, getWarehouses, getAllUsers, getItems, getBills, getTables, getTableData, getAuditLogs, getTaxConfig } from './store.js';
+import { canDo } from './permissions.js';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -41,20 +42,15 @@ function getExportableData() {
   const user = getCurrentUser();
   if (!user) return null;
 
-  const role = user.role;
-  const isSuperAdmin = role === 'super_admin';
-  const isAdmin = role === 'admin' || isSuperAdmin;
-  const isManager = role === 'manager' || isAdmin;
-
-  const warehouses = isSuperAdmin ? getWarehouses() : [];
-  const users = isAdmin ? getAllUsers() : [];
+  const warehouses = canDo('warehouses', 'view', user) ? getWarehouses() : [];
+  const users = canDo('workforce', 'view', user) ? getAllUsers() : [];
   const items = getItems();         // already role-filtered in store
   const bills = getBills();         // already role-filtered in store
   const tables = getTables();       // already role-filtered in store
-  const audit = isSuperAdmin ? getAuditLogs().slice(0, 500) : [];
-  const taxCfg = isAdmin ? getTaxConfig() : null;
+  const audit = canDo('audit', 'view', user) ? getAuditLogs().slice(0, 500) : [];
+  const taxCfg = canDo('settings', 'view', user) ? getTaxConfig() : null;
 
-  return { user, role, isSuperAdmin, isAdmin, isManager, warehouses, users, items, bills, tables, audit, taxCfg };
+  return { user, warehouses, users, items, bills, tables, audit, taxCfg };
 }
 
 // ─── CSV exports ─────────────────────────────────────────────────────────────
@@ -67,7 +63,7 @@ export function exportCSV(entity) {
 
   switch (entity) {
     case 'bills': {
-      if (!d.isManager) return { error: 'Permission denied' };
+      if (!canDo('billing', 'view', d.user)) return { error: 'Permission denied' };
       const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
       const rows = d.bills.map(b => ({
         'Invoice #': b.billNo,
@@ -87,7 +83,7 @@ export function exportCSV(entity) {
     }
 
     case 'workforce': {
-      if (!d.isAdmin) return { error: 'Permission denied: Admin+ required' };
+      if (!canDo('workforce', 'view', d.user)) return { error: 'Permission denied: workforce:view required' };
       const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
       const rows = d.users.map(u => ({
         'Name': u.name,
@@ -106,7 +102,7 @@ export function exportCSV(entity) {
     }
 
     case 'inventory': {
-      if (!d.isManager) return { error: 'Permission denied' };
+      if (!canDo('inventory', 'view', d.user)) return { error: 'Permission denied' };
       const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
       const rows = d.items.map(i => ({
         'Name': i.name,
@@ -126,7 +122,7 @@ export function exportCSV(entity) {
     }
 
     case 'warehouses': {
-      if (!d.isSuperAdmin) return { error: 'Permission denied: Super Admin only' };
+      if (!canDo('warehouses', 'view', d.user)) return { error: 'Permission denied: warehouses:view required' };
       const rows = d.warehouses.map(w => ({
         'Name': w.name,
         'Business': w.businessName,
@@ -147,7 +143,7 @@ export function exportCSV(entity) {
     }
 
     case 'audit': {
-      if (!d.isSuperAdmin) return { error: 'Permission denied: Super Admin only' };
+      if (!canDo('audit', 'view', d.user)) return { error: 'Permission denied: audit:view required' };
       const rows = d.audit.map(l => ({
         'Action': l.action,
         'Description': l.description,
@@ -163,18 +159,18 @@ export function exportCSV(entity) {
     }
 
     case 'all': {
-      if (!d.isAdmin) return { error: 'Permission denied: Admin+ required' };
+      if (!canDo('settings', 'manage', d.user)) return { error: 'Permission denied: settings:manage required' };
       // Multi-sheet CSV separated by section markers
       const sections = [];
 
-      if (d.isSuperAdmin && d.warehouses.length) {
+      if (canDo('warehouses', 'view', d.user) && d.warehouses.length) {
         sections.push('## WAREHOUSES');
         const cols = ['name','businessName','address','contact','email','taxPreference','status','revenue'];
         const headers = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue'];
         sections.push(toCSV(d.warehouses, cols, headers));
       }
 
-      if (d.users.length) {
+      if (canDo('workforce', 'view', d.user) && d.users.length) {
         sections.push('\n## WORKFORCE');
         const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
         const rows = d.users.map(u => ({ ...u, warehouseName: whs[u.warehouseId]||'' }));
@@ -182,7 +178,7 @@ export function exportCSV(entity) {
           ['Name','Email','Role','Warehouse','Status','Joined']));
       }
 
-      if (d.items.length) {
+      if (canDo('inventory', 'view', d.user) && d.items.length) {
         sections.push('\n## INVENTORY');
         const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
         const rows = d.items.map(i => ({ ...i, warehouseName: whs[i.warehouseId]||'' }));
@@ -190,7 +186,7 @@ export function exportCSV(entity) {
           ['Name','SKU','Category','Tax Cat','Price','Stock','Warehouse']));
       }
 
-      if (d.bills.length) {
+      if (canDo('billing', 'view', d.user) && d.bills.length) {
         sections.push('\n## BILLING');
         const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
         const rows = d.bills.map(b => ({ ...b, warehouseName: whs[b.warehouseId]||'' }));
@@ -198,7 +194,7 @@ export function exportCSV(entity) {
           ['Invoice #','Customer','Warehouse','Subtotal','Tax','Total','Date']));
       }
 
-      const full = `WareOps ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.role})\n\n` + sections.join('\n');
+      const full = `WareOps ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.user.role})\n\n` + sections.join('\n');
       download(full, `wareops-full-export-${ts}.csv`, 'text/csv');
       return { count: d.bills.length + d.users.length + d.items.length, entity: 'Full Export' };
     }
@@ -226,7 +222,7 @@ export function exportXLSX(entity) {
   }
 
   if (entity === 'bills' || entity === 'all') {
-    if (!d.isManager) return { error: 'Permission denied' };
+    if (!canDo('billing', 'view', d.user)) return { error: 'Permission denied' };
     const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
     const headers = ['Invoice #','Customer','Warehouse','Subtotal','Tax','Total','Date'];
     const rows = d.bills.map(b => ({
@@ -239,7 +235,7 @@ export function exportXLSX(entity) {
   }
 
   if (entity === 'workforce' || entity === 'all') {
-    if (!d.isAdmin) return { error: 'Permission denied' };
+    if (!canDo('workforce', 'view', d.user)) return { error: 'Permission denied' };
     const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
     const headers = ['Name','Email','Role','Warehouse','Status','Employee ID','Joined'];
     const rows = d.users.map(u => ({
@@ -251,7 +247,7 @@ export function exportXLSX(entity) {
   }
 
   if (entity === 'inventory' || entity === 'all') {
-    if (!d.isManager) return { error: 'Permission denied' };
+    if (!canDo('inventory', 'view', d.user)) return { error: 'Permission denied' };
     const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
     const headers = ['Name','SKU','Category','Tax Cat','Price','Stock','Warehouse'];
     const rows = d.items.map(i => ({
@@ -263,16 +259,14 @@ export function exportXLSX(entity) {
   }
 
   if (entity === 'warehouses' || entity === 'all') {
-    if (!d.isSuperAdmin) return entity === 'warehouses' ? { error: 'Super Admin only' } : null;
-    if (d.isSuperAdmin) {
-      const headers = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue'];
-      const rows = d.warehouses.map(w => ({
-        a: w.name, b: w.businessName, c: w.address, d: w.contact,
-        e: w.email, f: w.taxPreference, g: w.status, h: (w.revenue||0).toFixed(2)
-      }));
-      sheetHTML += `<h2 style="color:#1e1b4b">Warehouses (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-      if (entity === 'warehouses') filename = `wareops-warehouses-${ts}.xls`;
-    }
+    if (!canDo('warehouses', 'view', d.user)) return entity === 'warehouses' ? { error: 'Permission denied' } : null;
+    const headers = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue'];
+    const rows = d.warehouses.map(w => ({
+      a: w.name, b: w.businessName, c: w.address, d: w.contact,
+      e: w.email, f: w.taxPreference, g: w.status, h: (w.revenue||0).toFixed(2)
+    }));
+    sheetHTML += `<h2 style="color:#1e1b4b">Warehouses (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
+    if (entity === 'warehouses') filename = `wareops-warehouses-${ts}.xls`;
   }
 
   if (entity === 'all') filename = `wareops-full-export-${ts}.xls`;
@@ -286,7 +280,7 @@ export function exportXLSX(entity) {
     <style>body{font-family:Arial,sans-serif}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px}</style>
     </head><body>
     <h1 style="color:#1e1b4b">WareOps ERP Export</h1>
-    <p>Generated: ${new Date().toLocaleString()} | User: ${d.user.name} (${d.role})</p>
+    <p>Generated: ${new Date().toLocaleString()} | User: ${d.user.name} (${d.user.role})</p>
     ${sheetHTML}
     </body></html>`;
 
@@ -299,46 +293,60 @@ export function exportXLSX(entity) {
 export function exportPDF(entity) {
   const d = getExportableData();
   if (!d) return { error: 'Not logged in' };
-  if (!d.isManager) return { error: 'Permission denied' };
 
+  const user = d.user;
   const ts = new Date().toLocaleString();
   const whs = d.warehouses.reduce((m,w)=>(m[w.id]=w.name,m), {});
 
   let sections = '';
 
   if (entity === 'bills' || entity === 'all') {
-    const rows = d.bills.map(b => `
-      <tr>
-        <td>${b.billNo}</td><td>${b.customer}</td>
-        <td>${whs[b.warehouseId]||''}</td>
-        <td>$${b.subtotal?.toFixed(2)}</td>
-        <td>$${b.tax?.toFixed(2)}</td>
-        <td><strong>$${b.total?.toFixed(2)}</strong></td>
-        <td>${new Date(b.createdAt).toLocaleDateString()}</td>
-      </tr>`).join('');
-    sections += `<h2>💰 Billing (${d.bills.length} invoices)</h2>
-      <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Warehouse</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Date</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    if (!canDo('billing', 'view', user)) {
+      if (entity === 'bills') return { error: 'Permission denied' };
+    } else {
+      const rows = d.bills.map(b => `
+        <tr>
+          <td>${b.billNo}</td><td>${b.customer}</td>
+          <td>${whs[b.warehouseId]||''}</td>
+          <td>$${b.subtotal?.toFixed(2)}</td>
+          <td>$${b.tax?.toFixed(2)}</td>
+          <td><strong>$${b.total?.toFixed(2)}</strong></td>
+          <td>${new Date(b.createdAt).toLocaleDateString()}</td>
+        </tr>`).join('');
+      sections += `<h2>💰 Billing (${d.bills.length} invoices)</h2>
+        <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Warehouse</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Date</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
   }
 
-  if ((entity === 'workforce' || entity === 'all') && d.isAdmin) {
-    const rows = d.users.map(u => `
-      <tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td>
-      <td>${whs[u.warehouseId]||'Global'}</td><td>${u.status}</td></tr>`).join('');
-    sections += `<h2>👥 Workforce (${d.users.length} members)</h2>
-      <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Warehouse</th><th>Status</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+  if (entity === 'workforce' || entity === 'all') {
+    if (!canDo('workforce', 'view', user)) {
+      if (entity === 'workforce') return { error: 'Permission denied' };
+    } else {
+      const rows = d.users.map(u => `
+        <tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td>
+        <td>${whs[u.warehouseId]||'Global'}</td><td>${u.status}</td></tr>`).join('');
+      sections += `<h2>👥 Workforce (${d.users.length} members)</h2>
+        <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Warehouse</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
   }
 
   if (entity === 'inventory' || entity === 'all') {
-    const rows = d.items.map(i => `
-      <tr><td>${i.name}</td><td>${i.sku}</td><td>${i.category}</td>
-      <td>${i.taxCategory}</td><td>$${i.price?.toFixed(2)}</td><td>${i.stock}</td>
-      <td>${whs[i.warehouseId]||''}</td></tr>`).join('');
-    sections += `<h2>📦 Inventory (${d.items.length} items)</h2>
-      <table><thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Tax Cat</th><th>Price</th><th>Stock</th><th>Warehouse</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    if (!canDo('inventory', 'view', user)) {
+      if (entity === 'inventory') return { error: 'Permission denied' };
+    } else {
+      const rows = d.items.map(i => `
+        <tr><td>${i.name}</td><td>${i.sku}</td><td>${i.category}</td>
+        <td>${i.taxCategory}</td><td>$${i.price?.toFixed(2)}</td><td>${i.stock}</td>
+        <td>${whs[i.warehouseId]||''}</td></tr>`).join('');
+      sections += `<h2>📦 Inventory (${d.items.length} items)</h2>
+        <table><thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Tax Cat</th><th>Price</th><th>Stock</th><th>Warehouse</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    }
   }
+
+  if (!sections) return { error: 'Permission denied: No sections visible' };
 
   const win = window.open('', '_blank', 'width=1000,height=700');
   if (!win) {
@@ -362,7 +370,7 @@ export function exportPDF(entity) {
   <div class="no-print" onclick="window.print()">🖨️ Click to Print / Save as PDF</div>
   <h1>WareOps ERP — Data Export</h1>
   <p>Generated: ${ts}</p>
-  <p>User: ${d.user.name} · Role: ${d.role}</p>
+  <p>User: ${user.name} · Role: ${user.role}</p>
   ${sections}
   <script>setTimeout(()=>window.print(),500);<\/script>
   </body></html>`);

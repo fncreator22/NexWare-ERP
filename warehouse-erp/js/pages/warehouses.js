@@ -5,6 +5,7 @@ import { getCurrentUser, getWarehouses, createWarehouse, updateWarehouse, delete
 import { renderShell } from '../components/shell.js';
 import { showToast, confirm, createModal, formatDate, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo, renderAvatarContainer, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
+import { canDo } from '../modules/permissions.js';
 
 let wh_currentView = 'grid';
 let wh_searchQuery = '';
@@ -14,6 +15,18 @@ export function renderWarehouses() {
   if (!user || user.role !== 'super_admin') { navigate('/dashboard'); return; }
 
   refreshShell();
+
+  const _handleWarehousesStorageSync = () => {
+    const u = getCurrentUser();
+    if (!u || u.role !== 'super_admin') {
+      window.removeEventListener('wareops_storage_sync', _handleWarehousesStorageSync);
+      return;
+    }
+    refreshShell();
+  };
+
+  window.removeEventListener('wareops_storage_sync', _handleWarehousesStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleWarehousesStorageSync);
 }
 
 function refreshShell() {
@@ -517,7 +530,7 @@ function showWarehouseModal(wh) {
 export function renderWarehouseDetail(whId) {
   const user    = getCurrentUser();
   const isSA    = user.role === 'super_admin';
-  const isAdmin = isSA || user.role === 'admin';
+  const canManageWorkforce = canDo('workforce', 'view', user);
 
   const whs = getWarehouses();
   const wh  = whs.find(w => w.id === whId);
@@ -636,7 +649,7 @@ export function renderWarehouseDetail(whId) {
         <div class="card col-6">
           <div class="card-header">
             <div class="card-title" style="display:flex;align-items:center;gap:8px">${getSvgIcon('workforce', 16)} Team (${staff.length})</div>
-            ${isAdmin?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
+            ${canManageWorkforce?`<button class="btn btn-secondary btn-sm" onclick="location.hash='#/workforce'" style="font-size:11px">Manage →</button>`:''}
           </div>
           ${staff.length===0
             ?`<div style="text-align:center;padding:24px;color:var(--text-muted)">No staff assigned</div>`
@@ -773,9 +786,11 @@ export function renderWarehouseDetail(whId) {
         const h = maxRevenue > 0 ? Math.max(Math.round(val / maxRevenue * 100), 2) : 2;
         const isLast = i === trends.length - 1;
         return `
-          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-            <div style="font-size:10px;color:var(--text-muted)">${val > 0 ? '$' + (val / 1000).toFixed(1) + 'k' : ''}</div>
-            <div style="width:100%;height:${h}%;background:${isLast ? 'var(--brand-500)' : 'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px" title="$${val.toLocaleString()}"></div>
+          <div style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px">
+            <div style="font-size:10px;color:var(--text-muted);white-space:nowrap">${val > 0 ? '$' + (val / 1000).toFixed(1) + 'k' : '&nbsp;'}</div>
+            <div style="width:100%;height:60px;display:flex;align-items:flex-end;justify-content:center">
+              <div style="width:100%;height:${h}%;background:${isLast ? 'var(--brand-500)' : 'rgba(99,102,241,0.4)'};border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px" title="$${val.toLocaleString()}"></div>
+            </div>
             <div style="font-size:10px;color:var(--text-muted)">${t.monthName.split(' ')[0]}</div>
           </div>
         `;
@@ -790,4 +805,16 @@ export function renderWarehouseDetail(whId) {
       barsContainer.innerHTML = '<div style="width:100%;text-align:center;color:var(--accent-rose);font-size:12px">Error loading trend data</div>';
     }
   });
+
+  const _handleWarehouseDetailStorageSync = () => {
+    const u = getCurrentUser();
+    if (!u) {
+      window.removeEventListener('wareops_storage_sync', _handleWarehouseDetailStorageSync);
+      return;
+    }
+    renderWarehouseDetail(whId);
+  };
+
+  window.removeEventListener('wareops_storage_sync', _handleWarehouseDetailStorageSync);
+  window.addEventListener('wareops_storage_sync', _handleWarehouseDetailStorageSync);
 }

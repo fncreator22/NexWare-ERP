@@ -1,7 +1,8 @@
 import { getCurrentUser, getStore, saveStore, getTaxConfig, saveTaxConfig, getBills, getAllUsers, getWarehouses, getItems, getCurrency, saveCurrency, addAuditLog, updateUser } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, confirm, getSvgIcon, applyTheme, renderAvatar, updateDOMAvatars } from '../modules/ui.js';
+import { showToast, confirm, getSvgIcon, applyTheme, renderAvatar, updateDOMAvatars, createModal } from '../modules/ui.js';
 import { exportCSV, exportXLSX, exportPDF } from '../modules/exporter.js';
+import { canDo } from '../modules/permissions.js';
 
 export function renderSettings() {
   const user = getCurrentUser();
@@ -10,7 +11,6 @@ export function renderSettings() {
     return;
   }
   const isSuperAdmin = user.role === 'super_admin';
-  const isAdmin = ['super_admin','admin'].includes(user.role);
   const taxCfg = getTaxConfig();
   const currency = getCurrency();
 
@@ -86,7 +86,7 @@ export function renderSettings() {
           </form>
         </div>
 
-        ${isAdmin ? `
+        ${canDo('settings', 'view', user) ? `
         <!-- Tax Configuration -->
         <div class="card col-12">
           <div class="card-header">
@@ -100,7 +100,7 @@ export function renderSettings() {
             <div>
               The enterprise tax engine supports stacked percentage taxes (e.g. CGST + SGST) and flat fixed transaction fees. 
               Past invoices remain structurally unchanged.
-              ${!isSuperAdmin ? '<br><span style="color:var(--accent-amber)">Note: Editing requires Super Admin role.</span>' : ''}
+              ${!canDo('settings', 'edit', user) ? '<br><span style="color:var(--accent-amber)">Note: Editing requires edit permissions.</span>' : ''}
             </div>
           </div>
           
@@ -121,14 +121,15 @@ export function renderSettings() {
           </div>
 
           <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 12px; gap: 16px; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-sm" id="add-tax-row-btn" ${!isSuperAdmin ? 'disabled' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('plus', 14)} Add Tax Component</button>
+            <button class="btn btn-secondary btn-sm" id="add-tax-row-btn" ${!canDo('settings', 'edit', user) ? 'disabled' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('plus', 14)} Add Tax Component</button>
             <div style="display:flex;align-items:center;gap:12px">
-              <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Tax Rules</button>
+              <button class="btn btn-primary btn-sm" id="save-tax-btn" ${!canDo('settings', 'manage', user) ? 'disabled title="Requires manage permissions"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Tax Rules</button>
               <span id="tax-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
             </div>
           </div>
         </div>` : ''}
 
+        ${canDo('settings', 'view', user) ? `
         <!-- Currency Configuration -->
         <div class="card col-6">
           <div class="card-header">
@@ -139,7 +140,7 @@ export function renderSettings() {
           </div>
           <div class="form-group">
             <label class="form-label">Global Base Currency</label>
-            <select id="s-global-currency" class="form-control" ${!isSuperAdmin ? 'disabled style="opacity:0.7"' : ''}>
+            <select id="s-global-currency" class="form-control" ${!canDo('settings', 'manage', user) ? 'disabled style="opacity:0.7"' : ''}>
               <option value="USD" ${currency==='USD'?'selected':''}>USD ($) - US Dollar</option>
               <option value="INR" ${currency==='INR'?'selected':''}>INR (₹) - Indian Rupee</option>
               <option value="EUR" ${currency==='EUR'?'selected':''}>EUR (€) - Euro</option>
@@ -150,10 +151,10 @@ export function renderSettings() {
             <div class="form-hint">Sets the base currency for global financial metrics, invoices, and analytics.</div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!isSuperAdmin ? 'disabled title="Super Admin only"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Currency</button>
+            <button class="btn btn-primary btn-sm" id="save-currency-btn" ${!canDo('settings', 'manage', user) ? 'disabled title="Requires manage permissions"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Currency</button>
             <span id="currency-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
           </div>
-        </div>
+        </div>` : ''}
 
         <!-- Theme Configuration -->
         <div class="card col-6">
@@ -165,7 +166,7 @@ export function renderSettings() {
           </div>
           <div class="form-group">
             <label class="form-label">Active Theme</label>
-            <select id="s-theme" class="form-control">
+            <select id="s-theme" class="form-control" ${!canDo('settings', 'edit', user) ? 'disabled style="opacity:0.7"' : ''}>
               <option value="enterprise" ${getStore().theme==='enterprise'||!getStore().theme?'selected':''}>Grayscale B&W (Default)</option>
               <option value="dark"       ${getStore().theme==='dark'?'selected':''}>Slate-Blue Premium Dark</option>
               <option value="light"      ${getStore().theme==='light'?'selected':''}>Enterprise Light</option>
@@ -174,26 +175,26 @@ export function renderSettings() {
             <div class="form-hint">Theme is applied immediately across all pages. Changes persist after saving.</div>
           </div>
           <!-- Live theme preview swatches -->
-          <div style="display:flex;gap:8px;margin-bottom:16px;" id="theme-swatches">
+          <div style="display:flex;gap:8px;margin-bottom:16px;${!canDo('settings', 'edit', user) ? 'pointer-events:none' : ''}" id="theme-swatches">
             <div data-theme="enterprise" class="theme-swatch ${!getStore().theme||getStore().theme==='enterprise'?'swatch-active':''}" title="Grayscale B&W"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#09090b,#18181b);border:2px solid ${!getStore().theme||getStore().theme==='enterprise'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#09090b,#18181b);border:2px solid ${!getStore().theme||getStore().theme==='enterprise'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#a1a1aa;font-weight:700">B&W</div>
             </div>
             <div data-theme="dark" class="theme-swatch ${getStore().theme==='dark'?'swatch-active':''}" title="Slate-Blue Dark"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#0b0f19,#1e293b);border:2px solid ${getStore().theme==='dark'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#0b0f19,#1e293b);border:2px solid ${getStore().theme==='dark'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#60a5fa;font-weight:700">DARK</div>
             </div>
             <div data-theme="light" class="theme-swatch ${getStore().theme==='light'?'swatch-active':''}" title="Enterprise Light"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);border:2px solid ${getStore().theme==='light'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#f8fafc,#e2e8f0);border:2px solid ${getStore().theme==='light'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#475569;font-weight:700">LIGHT</div>
             </div>
             <div data-theme="classic" class="theme-swatch ${getStore().theme==='classic'?'swatch-active':''}" title="Classic Neon"
-              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);border:2px solid ${getStore().theme==='classic'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;">
+              style="flex:1;height:40px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);border:2px solid ${getStore().theme==='classic'?'var(--accent-emerald)':'var(--border-default)'};cursor:pointer;position:relative;overflow:hidden;${!canDo('settings', 'edit', user) ? 'opacity:0.5' : ''}">
               <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:white;font-weight:700">NEON</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" id="save-theme-btn" style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Theme</button>
+            <button class="btn btn-primary btn-sm" id="save-theme-btn" ${!canDo('settings', 'edit', user) ? 'disabled title="Requires settings:edit permission"' : ''} style="display:flex;align-items:center;gap:6px">${getSvgIcon('save', 14)} Save Theme</button>
             <span id="theme-saved-msg" style="font-size:12px;color:var(--accent-emerald);display:none;align-items:center;gap:4px">${getSvgIcon('check', 14)} Saved!</span>
           </div>
         </div>
@@ -228,7 +229,10 @@ export function renderSettings() {
                 </label>
               </div>`;
             }).join('')}
-                  <!-- Export Panel -->
+          </div>
+        </div>
+        ${(canDo('settings', 'export', user) || canDo('settings', 'view', user)) ? `
+        <!-- Export Panel -->
         <div class="card col-6">
           <div class="card-header">
             <div>
@@ -239,11 +243,12 @@ export function renderSettings() {
           <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.5">
             Access secure, tenant-scoped data exports. Select custom modular ranges, formats, and export categories in our secure center.
           </p>
-          <button class="btn btn-secondary btn-sm" id="open-export-center-btn" style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-secondary btn-sm" id="open-export-center-btn" ${!canDo('settings', 'export', user) ? 'disabled title="Requires export permissions"' : ''} style="display:flex;align-items:center;gap:6px">
             ${getSvgIcon('export', 16)} Open Export Center
           </button>
-        </div>
+        </div>` : ''}
 
+        ${(user.role === 'super_admin' && canDo('settings', 'delete', user)) ? `
         <!-- Danger Zone -->
         <div class="card col-6" style="border-color:rgba(244,63,94,0.2);background:rgba(244,63,94,0.03)">
           <div class="card-header">
@@ -258,9 +263,9 @@ export function renderSettings() {
           <button class="btn btn-danger btn-sm" id="reset-btn" style="display:flex;align-items:center;gap:6px">
             ${getSvgIcon('trash', 16)} Reset System Data
           </button>
-        </div>
+        </div>` : ''}
 
-        ${isSuperAdmin ? `
+        ${canDo('settings', 'manage', user) ? `
         <!-- Role Manager Card -->
         <div class="card col-6" style="border-color:rgba(99,102,241,0.25);background:rgba(99,102,241,0.04)">
           <div class="card-header">
@@ -268,7 +273,7 @@ export function renderSettings() {
               <div class="card-title" style="display:flex;align-items:center;gap:8px">
                 ${getSvgIcon('workforce', 16)}
                 Role Manager
-                <span class="badge badge-success" style="font-size:10px">Super Admin</span>
+                <span class="badge badge-success" style="font-size:10px">Manage Mode</span>
               </div>
               <div class="card-subtitle">Create custom roles with granular permission matrices</div>
             </div>
@@ -302,19 +307,19 @@ export function renderSettings() {
     tbody.innerHTML = localTaxes.map((tax, idx) => `
       <tr data-index="${idx}" style="border-bottom: 1px solid var(--border-default);">
         <td style="padding: 8px;">
-          <input type="text" class="form-control tax-row-name" value="${tax.name}" placeholder="e.g. CGST" ${!isSuperAdmin ? 'readonly' : ''} style="width: 100%;" />
+          <input type="text" class="form-control tax-row-name" value="${tax.name}" placeholder="e.g. CGST" ${!canDo('settings', 'edit', user) ? 'readonly' : ''} style="width: 100%;" />
         </td>
         <td style="padding: 8px;">
-          <select class="form-control tax-row-type" ${!isSuperAdmin ? 'disabled' : ''} style="width: 100%; border: 1px solid var(--border-default); border-radius: 6px; padding: 4px 8px; background: var(--bg-card); color: var(--text-primary);">
+          <select class="form-control tax-row-type" ${!canDo('settings', 'edit', user) ? 'disabled' : ''} style="width: 100%; border: 1px solid var(--border-default); border-radius: 6px; padding: 4px 8px; background: var(--bg-card); color: var(--text-primary);">
             <option value="percentage" ${tax.taxType === 'percentage' ? 'selected' : ''}>Percentage (%)</option>
             <option value="fixed" ${tax.taxType === 'fixed' ? 'selected' : ''}>Fixed Fee ($)</option>
           </select>
         </td>
         <td style="padding: 8px;">
-          <input type="number" class="form-control tax-row-rate" value="${tax.rate}" step="0.01" min="0" ${!isSuperAdmin ? 'readonly' : ''} style="width: 100%;" />
+          <input type="number" class="form-control tax-row-rate" value="${tax.rate}" step="0.01" min="0" ${!canDo('settings', 'edit', user) ? 'readonly' : ''} style="width: 100%;" />
         </td>
         <td style="padding: 8px; text-align: center;">
-          <button class="btn btn-danger btn-sm remove-tax-row-btn" data-index="${idx}" ${!isSuperAdmin ? 'disabled' : ''} style="padding: 4px 8px;">${getSvgIcon('trash', 14)}</button>
+          <button class="btn btn-danger btn-sm remove-tax-row-btn" data-index="${idx}" ${!canDo('settings', 'edit', user) ? 'disabled' : ''} style="padding: 4px 8px;">${getSvgIcon('trash', 14)}</button>
         </td>
       </tr>
     `).join('');
@@ -350,9 +355,10 @@ export function renderSettings() {
     });
   }
 
-  if (isAdmin) {
+  if (canDo('settings', 'view', user)) {
     setTimeout(renderTaxRows, 50);
     document.getElementById('add-tax-row-btn')?.addEventListener('click', () => {
+      if (!canDo('settings', 'edit', user)) return;
       localTaxes.push({ name: '', taxType: 'percentage', rate: 0 });
       renderTaxRows();
     });
@@ -443,7 +449,7 @@ export function renderSettings() {
 
   // TAX SAVE — actually persist to store
   document.getElementById('save-tax-btn')?.addEventListener('click', () => {
-    if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change tax rates','error'); return; }
+    if (!canDo('settings', 'manage', user)) { showToast('Permission denied','Only managers or administrators can change tax rates','error'); return; }
     
     // Validate inputs
     for (const tax of localTaxes) {
@@ -481,7 +487,7 @@ export function renderSettings() {
 
   // CURRENCY SAVE — actually persist to store
   document.getElementById('save-currency-btn')?.addEventListener('click', () => {
-    if (!isSuperAdmin) { showToast('Permission denied','Only Super Admin can change base currency','error'); return; }
+    if (!canDo('settings', 'manage', user)) { showToast('Permission denied','Only managers or administrators can change base currency','error'); return; }
     const currency = document.getElementById('s-global-currency').value;
     saveCurrency(currency);
     showToast('Currency updated', `Platform currency set to: ${currency}`, 'success');
@@ -491,6 +497,10 @@ export function renderSettings() {
 
   // THEME SAVE — persist to store, apply globally
   document.getElementById('save-theme-btn')?.addEventListener('click', () => {
+    if (!canDo('settings', 'edit', user)) {
+      showToast('Permission Denied', 'You do not have permission to change themes.', 'error');
+      return;
+    }
     const selectedTheme = document.getElementById('s-theme').value;
     const s = getStore();
     s.theme = selectedTheme;
@@ -506,6 +516,7 @@ export function renderSettings() {
   // THEME SWATCHES — live preview on click
   document.querySelectorAll('.theme-swatch').forEach(sw => {
     sw.addEventListener('click', () => {
+      if (!canDo('settings', 'edit', user)) return;
       const t = sw.dataset.theme;
       document.getElementById('s-theme').value = t;
       applyTheme(t);
@@ -516,6 +527,7 @@ export function renderSettings() {
 
   // Theme select dropdown change — live preview
   document.getElementById('s-theme')?.addEventListener('change', (e) => {
+    if (!canDo('settings', 'edit', user)) return;
     applyTheme(e.target.value);
     document.querySelectorAll('.theme-swatch').forEach(s => {
       s.style.borderColor = s.dataset.theme === e.target.value ? 'var(--accent-emerald)' : 'var(--border-default)';
@@ -538,23 +550,14 @@ export function renderSettings() {
 
   // EXPORT POPUP CENTER
   document.getElementById('open-export-center-btn')?.addEventListener('click', () => {
-    const isSuperAdmin = user.role === 'super_admin';
-    const isAdmin = ['super_admin','admin'].includes(user.role);
-    const isManager = ['super_admin','admin','manager'].includes(user.role);
-
     const categories = [
-      { key:'bills',      label:'Billing & Invoices (Manager+)',   role:'manager' },
-      { key:'inventory',  label:'Inventory Records (Manager+)',    role:'manager' },
-      { key:'workforce',  label:'Workforce Members (Admin+)',      role:'admin'   },
-      { key:'warehouses', label:'Warehouse Hubs (Super Admin)',    role:'super_admin' },
-      { key:'audit',      label:'Security Audit Logs (Super Admin)', role:'super_admin' },
-      { key:'all',        label:'Full Platform Ledger (Admin+)',   role:'admin'   },
-    ].filter(e => {
-      if (e.role === 'super_admin') return isSuperAdmin;
-      if (e.role === 'admin') return isAdmin;
-      if (e.role === 'manager') return isManager;
-      return true;
-    });
+      { key:'bills',      label:'Billing & Invoices (Manager+)',   check: () => canDo('billing', 'view', user) },
+      { key:'inventory',  label:'Inventory Records (Manager+)',    check: () => canDo('inventory', 'view', user) },
+      { key:'workforce',  label:'Workforce Members (Admin+)',      check: () => canDo('workforce', 'view', user) },
+      { key:'warehouses', label:'Warehouse Hubs (Super Admin)',    check: () => canDo('warehouses', 'view', user) },
+      { key:'audit',      label:'Security Audit Logs (Super Admin)', check: () => canDo('audit', 'view', user) },
+      { key:'all',        label:'Full Platform Ledger (Admin+)',   check: () => user.role === 'super_admin' || canDo('settings', 'manage', user) },
+    ].filter(e => e.check());
 
     // Create Modal Body Element
     const modalBody = document.createElement('div');
@@ -596,50 +599,52 @@ export function renderSettings() {
     `;
 
     // Create custom modal wrapper
-    import('../modules/ui.js').then(({ createModal }) => {
-      const modal = createModal({
-        title: 'Secure Export Center',
-        body: modalBody,
-        footer: modalFooter
-      });
+    const modal = createModal({
+      title: 'Secure Export Center',
+      body: modalBody,
+      footer: modalFooter
+    });
 
-      modal.el.querySelector('#export-modal-cancel').addEventListener('click', () => modal.close());
-      modal.el.querySelector('#export-modal-run').addEventListener('click', () => {
-        const category = modal.el.querySelector('#export-category').value;
-        const fmt = modal.el.querySelector('input[name="export-fmt"]:checked').value;
-        const runBtn = modal.el.querySelector('#export-modal-run');
+    modal.el.querySelector('#export-modal-cancel').addEventListener('click', () => modal.close());
+    modal.el.querySelector('#export-modal-run').addEventListener('click', () => {
+      if (!canDo('settings', 'export', user)) {
+        showToast('Permission denied', 'You do not have permission to run exports', 'error');
+        return;
+      }
+      const category = modal.el.querySelector('#export-category').value;
+      const fmt = modal.el.querySelector('input[name="export-fmt"]:checked').value;
+      const runBtn = modal.el.querySelector('#export-modal-run');
 
-        runBtn.textContent = '⏳ Exporting...';
-        runBtn.disabled = true;
+      runBtn.textContent = '⏳ Exporting...';
+      runBtn.disabled = true;
 
-        setTimeout(() => {
-          try {
-            let result;
-            if (fmt === 'csv')  result = exportCSV(category);
-            else if (fmt === 'xlsx') result = exportXLSX(category);
-            else if (fmt === 'pdf')  result = exportPDF(category);
-            
-            if (result?.error) {
-              showToast('Export failed', result.error, 'error');
-            } else {
-              showToast('Export complete', `${result?.entity}: ${result?.count} records exported`, 'success');
-              addAuditLog('export', `Exported ${category} data as ${fmt.toUpperCase()} (${result?.count || 0} records)`, user.id);
-              modal.close();
-            }
-          } catch(e) {
-            showToast('Export error', e.message, 'error');
+      setTimeout(() => {
+        try {
+          let result;
+          if (fmt === 'csv')  result = exportCSV(category);
+          else if (fmt === 'xlsx') result = exportXLSX(category);
+          else if (fmt === 'pdf')  result = exportPDF(category);
+          
+          if (result?.error) {
+            showToast('Export failed', result.error, 'error');
+          } else {
+            showToast('Export complete', `${result?.entity}: ${result?.count} records exported`, 'success');
+            addAuditLog('export', `Exported ${category} data as ${fmt.toUpperCase()} (${result?.count || 0} records)`, user.id);
+            modal.close();
           }
-          runBtn.textContent = 'Run Export';
-          runBtn.disabled = false;
-        }, 400);
-      });
+        } catch(e) {
+          showToast('Export error', e.message, 'error');
+        }
+        runBtn.textContent = 'Run Export';
+        runBtn.disabled = false;
+      }, 400);
     });
   });
 
   // SECURE PASSWORD-CONFIRMED RESET
   document.getElementById('reset-btn')?.addEventListener('click', () => {
-    if (!isSuperAdmin) {
-      showToast('Unauthorized Action', 'Only the Super Administrator role is permitted to perform platform resets.', 'error');
+    if (user.role !== 'super_admin' || !canDo('settings', 'delete', user)) {
+      showToast('Unauthorized Action', 'Only the Super Administrator with delete permissions is permitted to perform platform resets.', 'error');
       return;
     }
 
@@ -667,36 +672,34 @@ export function renderSettings() {
       <button class="btn btn-danger btn-sm" id="reset-modal-confirm">Confirm System Reset</button>
     `;
 
-    import('../modules/ui.js').then(({ createModal }) => {
-      const modal = createModal({
-        title: 'Secure System Reset Confirmation',
-        body: modalBody,
-        footer: modalFooter
-      });
+    const modal = createModal({
+      title: 'Secure System Reset Confirmation',
+      body: modalBody,
+      footer: modalFooter
+    });
 
-      modal.el.querySelector('#reset-modal-cancel').addEventListener('click', () => modal.close());
-      modal.el.querySelector('#reset-modal-confirm').addEventListener('click', () => {
-        const passwordVal = modal.el.querySelector('#reset-confirm-password').value;
-        if (!passwordVal) {
-          showToast('Verification Required', 'Password is required to authenticate system reset.', 'warning');
-          return;
-        }
-        
-        const s = getStore();
-        const currentUser = s.users.find(u=>u.id===s.currentUserId);
-        if (currentUser.password !== passwordVal) {
-          showToast('Access Denied', 'Authentication failed: Incorrect password.', 'error');
-          return;
-        }
+    modal.el.querySelector('#reset-modal-cancel').addEventListener('click', () => modal.close());
+    modal.el.querySelector('#reset-modal-confirm').addEventListener('click', () => {
+      const passwordVal = modal.el.querySelector('#reset-confirm-password').value;
+      if (!passwordVal) {
+        showToast('Verification Required', 'Password is required to authenticate system reset.', 'warning');
+        return;
+      }
+      
+      const s = getStore();
+      const currentUser = s.users.find(u=>u.id===s.currentUserId);
+      if (currentUser.password !== passwordVal) {
+        showToast('Access Denied', 'Authentication failed: Incorrect password.', 'error');
+        return;
+      }
 
-        // Proceed with system reset!
-        s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
-        s.users = [currentUser];
-        saveStore();
-        showToast('System Reset Complete', 'Platform ledgers and databases have been wiped to fresh state.', 'success');
-        modal.close();
-        location.hash='#/dashboard';
-      });
+      // Proceed with system reset!
+      s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
+      s.users = [currentUser];
+      saveStore();
+      showToast('System Reset Complete', 'Platform ledgers and databases have been wiped to fresh state.', 'success');
+      modal.close();
+      location.hash='#/dashboard';
     });
   });
 }
