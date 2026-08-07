@@ -5,18 +5,11 @@
 
 export function getStorageKey() {
   if (typeof window === 'undefined') return 'wareops_data_guest';
-  const token = sessionStorage.getItem('access_token');
-  if (token) {
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]));
-        if (payload && payload.user_id) {
-          return `wareops_data_${payload.user_id}`;
-        }
-      }
-    } catch (e) {}
-  }
+  // Use a dedicated session key rather than decoding the JWT payload client-side.
+  // JWT payloads are unsigned on the client and decoding them for scoping is unsafe.
+  // The actual user ID is written to sessionStorage after login via the /auth/me response.
+  const userId = sessionStorage.getItem('wareops_user_id');
+  if (userId) return `wareops_data_${userId}`;
   return 'wareops_data_guest';
 }
 
@@ -316,6 +309,8 @@ export async function login(email, password) {
   
   const { access_token, user } = res.data;
   sessionStorage.setItem('access_token', access_token);
+  // Store user_id separately so getStorageKey() can scope localStorage without JWT decoding
+  if (user && user.id) sessionStorage.setItem('wareops_user_id', user.id);
   
   // Scoping Reset: Reset store pointer to reload the store scoped by this user ID
   _store = null;
@@ -344,6 +339,7 @@ export async function logout() {
     await apiFetch('/auth/logout', { method: 'POST' });
   }
   sessionStorage.removeItem('access_token');
+  sessionStorage.removeItem('wareops_user_id');
   _store = null;
   const s = getStore();
   s.currentUserId = null;
@@ -456,16 +452,26 @@ export async function updateWarehouse(id, data) {
   return s.warehouses[idx];
 }
 
-export function deleteWarehouse(id) {
+export async function deleteWarehouse(id) {
   const s = getStore();
   const u = getCurrentUser();
   if (u.role !== 'super_admin') return;
 
-  // Cascade Deletion to associated records to maintain data integrity
+  // Call backend first — fail silently if not available but log
+  try {
+    const res = await apiFetch(`/warehouses/${id}`, { method: 'DELETE' });
+    if (res.error) {
+      console.error('[Store] Backend warehouse delete failed:', res.error);
+    }
+  } catch (err) {
+    console.error('[Store] Backend warehouse delete error:', err);
+  }
+
+  // Cascade local deletion to associated records to maintain data integrity
   s.users = s.users.filter(usr => usr.warehouseId !== id);
   s.items = s.items.filter(item => item.warehouseId !== id);
   s.bills = s.bills.filter(bill => bill.warehouseId !== id);
-  
+
   // Also cascade to operational tables and their rows
   const affectedTables = s.tables.filter(t => t.warehouseId === id).map(t => t.id);
   affectedTables.forEach(tId => { delete s.tableData[tId]; });
@@ -682,23 +688,33 @@ export function getTables(warehouseId) {
   return tables;
 }
 
-export function createTable(data) {
+export async function createTable(data) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u || !['super_admin','admin'].includes(u.role)) return null;
   if (u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
 
-  const id = 'tbl' + Date.now();
-  const table = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId, status: 'active' };
+  const res = await apiFetch('/tables/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    console.error('[Store] Backend table create failed:', res.error);
+    return { error: res.error };
+  }
+
+  const table = res.data || { id: 'tbl' + Date.now(), ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId, status: 'active' };
+  if (table._id && !table.id) table.id = table._id;
   s.tables.push(table);
-  s.tableData[id] = [];
+  s.tableData[table.id] = [];
   saveStore();
   addAuditLog('table_create', `Table created: ${data.name}`, s.currentUserId);
   addNotification('table_create', 'New Operational Table', `${data.name} has been created`, '/tables', data.warehouseId);
   return table;
 }
 
-export function updateTable(id, data) {
+export async function updateTable(id, data) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u || !['super_admin','admin'].includes(u.role)) return null;
@@ -710,18 +726,32 @@ export function updateTable(id, data) {
   if (u.role === 'admin' && target.warehouseId !== u.warehouseId) return null;
   if (data.warehouseId && u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
 
-  s.tables[idx] = { ...s.tables[idx], ...data, updatedAt: new Date().toISOString() };
+  const res = await apiFetch(`/tables/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    console.error('[Store] Backend table update failed:', res.error);
+  }
+
+  s.tables[idx] = { ...s.tables[idx], ...data, ...(res.data || {}), updatedAt: new Date().toISOString() };
   saveStore();
   return s.tables[idx];
 }
 
-export function deleteTable(id) {
+export async function deleteTable(id) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u || !['super_admin','admin'].includes(u.role)) return;
 
   const target = s.tables.find(t => t.id === id);
   if (!target || (u.role === 'admin' && target.warehouseId !== u.warehouseId)) return;
+
+  const res = await apiFetch(`/tables/${id}`, { method: 'DELETE' });
+  if (res.error) {
+    console.error('[Store] Backend table delete failed:', res.error);
+  }
 
   s.tables = s.tables.filter(t => t.id !== id);
   delete s.tableData[id];
@@ -1037,9 +1067,17 @@ export function connectWebSocket() {
     return;
   }
 
-  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws?token=${token}`;
-  console.log('[WebSocket] Connecting to:', wsUrl);
+  // Connect using a secure handshake: do NOT put the token in the WebSocket URL
+  // as it appears in server logs and browser history.
+  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws`;
+  console.log('[WebSocket] Connecting...');
   ws = new WebSocket(wsUrl);
+
+  // Send the auth token as the very first message after the connection opens
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'auth', token }));
+    console.log('[WebSocket] Connected. Authenticated via handshake message.');
+  };
 
   ws.onmessage = (event) => {
     try {
@@ -1104,16 +1142,26 @@ export function getActiveCurrency() {
   return s.currency;
 }
 
-export function saveCurrency(currency) {
+export async function saveCurrency(currency) {
   const s = getStore();
   s.currency = currency;
   saveStore();
-  
+
+  // Persist to backend so currency setting survives server restarts
+  try {
+    await apiFetch('/settings/currency', {
+      method: 'PUT',
+      body: JSON.stringify({ currency })
+    });
+  } catch (err) {
+    console.warn('[Store] Failed to sync currency to backend:', err);
+  }
+
   // Sync to global window variable for synchronous ui formatters
   if (typeof window !== 'undefined') {
     window.wareops_currency = getActiveCurrency();
   }
-  
+
   addAuditLog('settings_update', `Platform currency updated to: ${currency}`, s.currentUserId);
 }
 
