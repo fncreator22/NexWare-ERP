@@ -430,19 +430,25 @@ export function renderSettings() {
     }
   });
 
-  // Password change
-  document.getElementById('pw-form')?.addEventListener('submit', e => {
+  // Password change — validated by backend, never compared client-side
+  document.getElementById('pw-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const current = document.getElementById('s-current-pw').value;
     const newPw = document.getElementById('s-new-pw').value;
     const conf = document.getElementById('s-confirm-pw').value;
     if (newPw !== conf) { showToast('Mismatch','Passwords do not match','error'); return; }
     if (newPw.length < 8) { showToast('Validation','Password must be 8+ characters','warning'); return; }
-    const s = getStore();
-    const u = s.users.find(u=>u.id===s.currentUserId);
-    if (!u || u.password !== current) { showToast('Wrong password','Current password is incorrect','error'); return; }
-    u.password = newPw;
-    saveStore();
+
+    const { apiFetch } = await import('../modules/store.js');
+    const res = await apiFetch('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: current, new_password: newPw })
+    });
+
+    if (res.error) {
+      showToast('Error', res.error || 'Failed to change password', 'error');
+      return;
+    }
     showToast('Password changed','Your password has been updated','success');
     e.target.reset();
   });
@@ -679,21 +685,28 @@ export function renderSettings() {
     });
 
     modal.el.querySelector('#reset-modal-cancel').addEventListener('click', () => modal.close());
-    modal.el.querySelector('#reset-modal-confirm').addEventListener('click', () => {
+    modal.el.querySelector('#reset-modal-confirm').addEventListener('click', async () => {
       const passwordVal = modal.el.querySelector('#reset-confirm-password').value;
       if (!passwordVal) {
         showToast('Verification Required', 'Password is required to authenticate system reset.', 'warning');
         return;
       }
-      
-      const s = getStore();
-      const currentUser = s.users.find(u=>u.id===s.currentUserId);
-      if (currentUser.password !== passwordVal) {
-        showToast('Access Denied', 'Authentication failed: Incorrect password.', 'error');
+
+      // Verify password with backend — never compare plaintext locally
+      const { apiFetch } = await import('../modules/store.js');
+      const verifyRes = await apiFetch('/auth/verify-password', {
+        method: 'POST',
+        body: JSON.stringify({ password: passwordVal })
+      });
+
+      if (verifyRes.error) {
+        showToast('Access Denied', 'Authentication failed: ' + (verifyRes.error || 'Incorrect password.'), 'error');
         return;
       }
 
-      // Proceed with system reset!
+      // Password verified by backend — proceed with system reset
+      const s = getStore();
+      const currentUser = s.users.find(u=>u.id===s.currentUserId);
       s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
       s.users = [currentUser];
       saveStore();

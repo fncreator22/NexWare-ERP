@@ -51,7 +51,6 @@ export function renderLogin() {
     const btn = document.getElementById('login-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Signing in...';
-    await new Promise(r => setTimeout(r, 600));
     const result = await login(email, password);
     if (result.error) {
       showToast('Login failed', result.error, 'error');
@@ -121,7 +120,6 @@ export function renderSignup() {
     const btn = document.getElementById('signup-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Creating account...';
-    await new Promise(r => setTimeout(r, 700));
     const result = await signup(name, email, password);
     if (result.error) {
       showToast('Signup failed', result.error, 'error');
@@ -236,7 +234,6 @@ export function renderWarehouseRegistration() {
     const btn = document.getElementById('wh-submit-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Setting up...';
-    await new Promise(r => setTimeout(r, 800));
     const name = document.getElementById('wh-name').value.trim();
     const businessName = document.getElementById('wh-biz').value.trim();
     const address = document.getElementById('wh-address').value.trim();
@@ -280,10 +277,6 @@ export function renderForgotPassword() {
             Send Reset Token
           </button>
         </form>
-        <div id="dev-reset-link-container" style="margin-top:16px;display:none;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:12px;font-size:13px;color:var(--text-secondary);text-align:left">
-          <strong>Development Mode reset link:</strong><br/>
-          <a id="dev-reset-link" href="#" style="color:var(--brand-500);word-break:break-all"></a>
-        </div>
         <div class="auth-footer">
           Remember password? <a href="#/login">Sign in</a>
         </div>
@@ -311,21 +304,10 @@ export function renderForgotPassword() {
       return;
     }
 
-    showToast('Success', 'Password reset token generated.', 'success');
+    showToast('Success', 'If this email is registered, a password reset link has been sent to your inbox.', 'success');
     btn.disabled = false;
     btn.innerHTML = 'Send Reset Token';
-    
-    const token = res.data && res.data.token;
-    if (token) {
-      const resetLink = `${window.location.origin}${window.location.pathname}#/reset-password?token=${token}`;
-      const devContainer = document.getElementById('dev-reset-link-container');
-      const devLink = document.getElementById('dev-reset-link');
-      if (devContainer && devLink) {
-        devLink.href = `#/reset-password?token=${token}`;
-        devLink.textContent = resetLink;
-        devContainer.style.display = 'block';
-      }
-    }
+    // Reset tokens are delivered via email only — never exposed in the UI
   });
 }
 
