@@ -1,18 +1,26 @@
 /**
  * Notifications Management Page
  */
-import { getCurrentUser, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications } from '../modules/store.js';
+import { getCurrentUser, getNotifications, markNotificationRead, markAllNotificationsRead, clearNotifications, syncWithBackend } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
 import { getSvgIcon, timeSince, showToast } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
+import { sanitizeHTML } from '../modules/sanitize.js';
 
 let notif_filter = 'all'; // 'all' or 'unread'
 
-export function renderNotifications() {
+export async function renderNotifications() {
   const user = getCurrentUser();
   if (!user) {
     navigate('/login');
     return;
+  }
+
+  // Always sync from backend before rendering — prevents stale/forged localStorage state
+  try {
+    await syncWithBackend();
+  } catch (e) {
+    console.warn('[Notifications] Backend sync failed, rendering from local cache:', e);
   }
 
   const notifications = getNotifications();
@@ -118,10 +126,10 @@ function renderNotificationsList() {
           </div>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-              <span style="font-size:14px;font-weight:${n.read ? '600' : '700'};color:var(--text-primary)">${n.title}</span>
+              <span style="font-size:14px;font-weight:${n.read ? '600' : '700'};color:var(--text-primary)">${sanitizeHTML(n.title)}</span>
               <span style="font-size:11px;color:var(--text-disabled);font-family:var(--font-mono)">${timeSince(n.timestamp)}</span>
             </div>
-            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin:0 0 8px 0">${n.message}</p>
+            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin:0 0 8px 0">${sanitizeHTML(n.message)}</p>
             <div style="display:flex;gap:12px;align-items:center">
               ${!n.read ? `
                 <button class="btn-mark-read-action" data-nid="${n.id}" style="font-size:11px;font-weight:600;color:var(--text-brand);background:none;border:none;padding:0;cursor:pointer;font-family:var(--font-sans);display:inline-flex;align-items:center;gap:4px">

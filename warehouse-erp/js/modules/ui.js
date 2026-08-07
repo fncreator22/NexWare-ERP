@@ -1,6 +1,7 @@
 /**
  * UI Helpers — Toast, Modal, DOM utilities
  */
+import { sanitizeHTML } from './sanitize.js';
 
 // ---- TOAST ----
 let toastContainer = null;
@@ -18,11 +19,14 @@ export function showToast(title, message = '', type = 'info', duration = 4000) {
   const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
+  // sanitizeHTML prevents XSS from user-supplied toast titles/messages
+  const safeTitle = sanitizeHTML(title);
+  const safeMsg = sanitizeHTML(message);
   el.innerHTML = `
     <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
     <div class="toast-body">
-      <div class="toast-title">${title}</div>
-      ${message ? `<div class="toast-msg">${message}</div>` : ''}
+      <div class="toast-title">${safeTitle}</div>
+      ${safeMsg ? `<div class="toast-msg">${safeMsg}</div>` : ''}
     </div>
     <button class="toast-close" onclick="this.parentElement.remove()">×</button>
   `;
@@ -34,10 +38,12 @@ export function showToast(title, message = '', type = 'info', duration = 4000) {
 export function createModal({ title, body, footer, size = '', onClose }) {
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
+  // sanitizeHTML on title prevents XSS if a modal is created with user-supplied title
+  const safeTitle = sanitizeHTML(title);
   backdrop.innerHTML = `
     <div class="modal ${size ? 'modal-' + size : ''}">
       <div class="modal-header">
-        <h3 class="modal-title">${title}</h3>
+        <h3 class="modal-title">${safeTitle}</h3>
         <button class="btn btn-ghost btn-icon modal-close-btn" style="font-size:20px">×</button>
       </div>
       <div class="modal-body">${typeof body === 'string' ? body : ''}</div>
