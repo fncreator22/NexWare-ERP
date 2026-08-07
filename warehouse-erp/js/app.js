@@ -64,8 +64,7 @@ const routes = {
   '/profile': renderProfile,
 };
 
-// Expose printBill globally for inline onclick handlers
-window.printBill = printBill;
+// printBill is used via data-print event delegation — no global exposure needed
 
 function getActivePath() {
   const hash = window.location.hash.slice(1);
@@ -100,7 +99,7 @@ function resolveRoute() {
   _lastResolvedHash = fullHash;
 
   try {
-    const path = getActivePath();
+    // path is already resolved above — do not re-declare to avoid variable shadowing
     const user = getCurrentUser();
     const publicRoutes = ['/', '/login', '/signup', '/privacy', '/terms', '/forgot-password', '/reset-password'];
     const redirectIfLoggedIn = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
@@ -175,15 +174,14 @@ function renderErrorPage(err) {
   const appEl = document.getElementById('app');
   if (!appEl) return;
   
+  // Log full error detail to console for developers; never expose stack traces to the UI
+  console.error('[WareOps] Application error:', err);
   appEl.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0f1029;color:#f8fafc;font-family:sans-serif">
       <div style="text-align:center;max-width:480px;background:rgba(255,255,255,0.03);padding:40px;border-radius:24px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.3)">
         <div style="margin-bottom:24px;color:#f43f5e;display:flex;justify-content:center">${getSvgIcon('warning', 64)}</div>
-        <h1 style="font-size:24px;font-weight:800;margin-bottom:12px">Application Startup Error</h1>
-        <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;line-height:1.6">${err?.message || 'An unexpected error occurred during initialization.'}</p>
-        <div style="background:rgba(0,0,0,0.2);padding:16px;border-radius:12px;margin-bottom:24px;text-align:left;overflow-x:auto">
-          <code style="color:#f43f5e;font-size:11px;font-family:monospace;white-space:pre">${err?.stack || 'No stack trace available'}</code>
-        </div>
+        <h1 style="font-size:24px;font-weight:800;margin-bottom:12px">Something went wrong</h1>
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;line-height:1.6">The application encountered an unexpected error. Please reload the page. If the problem persists, contact your system administrator.</p>
         <div style="display:flex;gap:12px;justify-content:center">
           <button class="btn btn-primary" onclick="window.location.reload()" style="background:#6366f1;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Retry Loading</button>
           <button class="btn btn-ghost" onclick="window.location.hash='#/'" style="background:transparent;color:#f8fafc;border:1px solid rgba(255,255,255,0.1);padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Back to Home</button>
