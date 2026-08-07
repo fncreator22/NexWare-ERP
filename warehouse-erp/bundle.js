@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-06-07T08:40:43.006Z
+// WareOps ERP — Bundled v2.0  Generated: 2026-08-07T18:19:22.933Z
 
 
 // ===== modules/store.js =====
@@ -9,18 +9,11 @@
 
 function getStorageKey() {
   if (typeof window === 'undefined') return 'wareops_data_guest';
-  const token = sessionStorage.getItem('access_token');
-  if (token) {
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]));
-        if (payload && payload.user_id) {
-          return `wareops_data_${payload.user_id}`;
-        }
-      }
-    } catch (e) {}
-  }
+  // Use a dedicated session key rather than decoding the JWT payload client-side.
+  // JWT payloads are unsigned on the client and decoding them for scoping is unsafe.
+  // The actual user ID is written to sessionStorage after login via the /auth/me response.
+  const userId = sessionStorage.getItem('wareops_user_id');
+  if (userId) return `wareops_data_${userId}`;
   return 'wareops_data_guest';
 }
 
@@ -320,6 +313,8 @@ async function login(email, password) {
   
   const { access_token, user } = res.data;
   sessionStorage.setItem('access_token', access_token);
+  // Store user_id separately so getStorageKey() can scope localStorage without JWT decoding
+  if (user && user.id) sessionStorage.setItem('wareops_user_id', user.id);
   
   // Scoping Reset: Reset store pointer to reload the store scoped by this user ID
   _store = null;
@@ -348,6 +343,7 @@ async function logout() {
     await apiFetch('/auth/logout', { method: 'POST' });
   }
   sessionStorage.removeItem('access_token');
+  sessionStorage.removeItem('wareops_user_id');
   _store = null;
   const s = getStore();
   s.currentUserId = null;
@@ -460,16 +456,26 @@ async function updateWarehouse(id, data) {
   return s.warehouses[idx];
 }
 
-function deleteWarehouse(id) {
+async function deleteWarehouse(id) {
   const s = getStore();
   const u = getCurrentUser();
   if (u.role !== 'super_admin') return;
 
-  // Cascade Deletion to associated records to maintain data integrity
+  // Call backend first — fail silently if not available but log
+  try {
+    const res = await apiFetch(`/warehouses/${id}`, { method: 'DELETE' });
+    if (res.error) {
+      console.error('[Store] Backend warehouse delete failed:', res.error);
+    }
+  } catch (err) {
+    console.error('[Store] Backend warehouse delete error:', err);
+  }
+
+  // Cascade local deletion to associated records to maintain data integrity
   s.users = s.users.filter(usr => usr.warehouseId !== id);
   s.items = s.items.filter(item => item.warehouseId !== id);
   s.bills = s.bills.filter(bill => bill.warehouseId !== id);
-  
+
   // Also cascade to operational tables and their rows
   const affectedTables = s.tables.filter(t => t.warehouseId === id).map(t => t.id);
   affectedTables.forEach(tId => { delete s.tableData[tId]; });
@@ -686,23 +692,33 @@ function getTables(warehouseId) {
   return tables;
 }
 
-function createTable(data) {
+async function createTable(data) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u || !['super_admin','admin'].includes(u.role)) return null;
   if (u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
 
-  const id = 'tbl' + Date.now();
-  const table = { id, ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId, status: 'active' };
+  const res = await apiFetch('/tables/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    console.error('[Store] Backend table create failed:', res.error);
+    return { error: res.error };
+  }
+
+  const table = res.data || { id: 'tbl' + Date.now(), ...data, createdAt: new Date().toISOString(), createdBy: s.currentUserId, status: 'active' };
+  if (table._id && !table.id) table.id = table._id;
   s.tables.push(table);
-  s.tableData[id] = [];
+  s.tableData[table.id] = [];
   saveStore();
   addAuditLog('table_create', `Table created: ${data.name}`, s.currentUserId);
   addNotification('table_create', 'New Operational Table', `${data.name} has been created`, '/tables', data.warehouseId);
   return table;
 }
 
-function updateTable(id, data) {
+async function updateTable(id, data) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u || !['super_admin','admin'].includes(u.role)) return null;
@@ -714,18 +730,32 @@ function updateTable(id, data) {
   if (u.role === 'admin' && target.warehouseId !== u.warehouseId) return null;
   if (data.warehouseId && u.role === 'admin' && data.warehouseId !== u.warehouseId) return null;
 
-  s.tables[idx] = { ...s.tables[idx], ...data, updatedAt: new Date().toISOString() };
+  const res = await apiFetch(`/tables/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+
+  if (res.error) {
+    console.error('[Store] Backend table update failed:', res.error);
+  }
+
+  s.tables[idx] = { ...s.tables[idx], ...data, ...(res.data || {}), updatedAt: new Date().toISOString() };
   saveStore();
   return s.tables[idx];
 }
 
-function deleteTable(id) {
+async function deleteTable(id) {
   const s = getStore();
   const u = getCurrentUser();
   if (!u || !['super_admin','admin'].includes(u.role)) return;
 
   const target = s.tables.find(t => t.id === id);
   if (!target || (u.role === 'admin' && target.warehouseId !== u.warehouseId)) return;
+
+  const res = await apiFetch(`/tables/${id}`, { method: 'DELETE' });
+  if (res.error) {
+    console.error('[Store] Backend table delete failed:', res.error);
+  }
 
   s.tables = s.tables.filter(t => t.id !== id);
   delete s.tableData[id];
@@ -1041,9 +1071,17 @@ function connectWebSocket() {
     return;
   }
 
-  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws?token=${token}`;
-  console.log('[WebSocket] Connecting to:', wsUrl);
+  // Connect using a secure handshake: do NOT put the token in the WebSocket URL
+  // as it appears in server logs and browser history.
+  const wsUrl = `ws://localhost:8000/api/v1/realtime/ws`;
+  console.log('[WebSocket] Connecting...');
   ws = new WebSocket(wsUrl);
+
+  // Send the auth token as the very first message after the connection opens
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'auth', token }));
+    console.log('[WebSocket] Connected. Authenticated via handshake message.');
+  };
 
   ws.onmessage = (event) => {
     try {
@@ -1108,16 +1146,26 @@ function getActiveCurrency() {
   return s.currency;
 }
 
-function saveCurrency(currency) {
+async function saveCurrency(currency) {
   const s = getStore();
   s.currency = currency;
   saveStore();
-  
+
+  // Persist to backend so currency setting survives server restarts
+  try {
+    await apiFetch('/settings/currency', {
+      method: 'PUT',
+      body: JSON.stringify({ currency })
+    });
+  } catch (err) {
+    console.warn('[Store] Failed to sync currency to backend:', err);
+  }
+
   // Sync to global window variable for synchronous ui formatters
   if (typeof window !== 'undefined') {
     window.wareops_currency = getActiveCurrency();
   }
-  
+
   addAuditLog('settings_update', `Platform currency updated to: ${currency}`, s.currentUserId);
 }
 
@@ -1152,6 +1200,7 @@ function isActive(path) {
  * UI Helpers — Toast, Modal, DOM utilities
  */
 
+
 // ---- TOAST ----
 let toastContainer = null;
 
@@ -1168,11 +1217,14 @@ function showToast(title, message = '', type = 'info', duration = 4000) {
   const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
+  // sanitizeHTML prevents XSS from user-supplied toast titles/messages
+  const safeTitle = sanitizeHTML(title);
+  const safeMsg = sanitizeHTML(message);
   el.innerHTML = `
     <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
     <div class="toast-body">
-      <div class="toast-title">${title}</div>
-      ${message ? `<div class="toast-msg">${message}</div>` : ''}
+      <div class="toast-title">${safeTitle}</div>
+      ${safeMsg ? `<div class="toast-msg">${safeMsg}</div>` : ''}
     </div>
     <button class="toast-close" onclick="this.parentElement.remove()">×</button>
   `;
@@ -1184,10 +1236,12 @@ function showToast(title, message = '', type = 'info', duration = 4000) {
 function createModal({ title, body, footer, size = '', onClose }) {
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
+  // sanitizeHTML on title prevents XSS if a modal is created with user-supplied title
+  const safeTitle = sanitizeHTML(title);
   backdrop.innerHTML = `
     <div class="modal ${size ? 'modal-' + size : ''}">
       <div class="modal-header">
-        <h3 class="modal-title">${title}</h3>
+        <h3 class="modal-title">${safeTitle}</h3>
         <button class="btn btn-ghost btn-icon modal-close-btn" style="font-size:20px">×</button>
       </div>
       <div class="modal-body">${typeof body === 'string' ? body : ''}</div>
@@ -3715,7 +3769,6 @@ function renderLogin() {
     const btn = document.getElementById('login-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Signing in...';
-    await new Promise(r => setTimeout(r, 600));
     const result = await login(email, password);
     if (result.error) {
       showToast('Login failed', result.error, 'error');
@@ -3785,7 +3838,6 @@ function renderSignup() {
     const btn = document.getElementById('signup-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Creating account...';
-    await new Promise(r => setTimeout(r, 700));
     const result = await signup(name, email, password);
     if (result.error) {
       showToast('Signup failed', result.error, 'error');
@@ -3900,7 +3952,6 @@ function renderWarehouseRegistration() {
     const btn = document.getElementById('wh-submit-btn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Setting up...';
-    await new Promise(r => setTimeout(r, 800));
     const name = document.getElementById('wh-name').value.trim();
     const businessName = document.getElementById('wh-biz').value.trim();
     const address = document.getElementById('wh-address').value.trim();
@@ -3944,10 +3995,6 @@ function renderForgotPassword() {
             Send Reset Token
           </button>
         </form>
-        <div id="dev-reset-link-container" style="margin-top:16px;display:none;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:12px;font-size:13px;color:var(--text-secondary);text-align:left">
-          <strong>Development Mode reset link:</strong><br/>
-          <a id="dev-reset-link" href="#" style="color:var(--brand-500);word-break:break-all"></a>
-        </div>
         <div class="auth-footer">
           Remember password? <a href="#/login">Sign in</a>
         </div>
@@ -3975,21 +4022,10 @@ function renderForgotPassword() {
       return;
     }
 
-    showToast('Success', 'Password reset token generated.', 'success');
+    showToast('Success', 'If this email is registered, a password reset link has been sent to your inbox.', 'success');
     btn.disabled = false;
     btn.innerHTML = 'Send Reset Token';
-    
-    const token = res.data && res.data.token;
-    if (token) {
-      const resetLink = `${window.location.origin}${window.location.pathname}#/reset-password?token=${token}`;
-      const devContainer = document.getElementById('dev-reset-link-container');
-      const devLink = document.getElementById('dev-reset-link');
-      if (devContainer && devLink) {
-        devLink.href = `#/reset-password?token=${token}`;
-        devLink.textContent = resetLink;
-        devContainer.style.display = 'block';
-      }
-    }
+    // Reset tokens are delivered via email only — never exposed in the UI
   });
 }
 
@@ -12111,6 +12147,7 @@ async function _ensureSystemTables() {
 
 
 
+
 const EXCHANGE_RATES = {
   USD: 1.0,
   INR: 83.0,
@@ -12201,9 +12238,7 @@ function renderBilling() {
   document.getElementById('bill-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('bill-wh-filter')?.addEventListener('change', () => { bl_page=1; renderBillsTable(); });
 
-  // Expose printBill and showBillModal globally
-  window.printBill = printBill;
-  window._showBillModal = showBillModal;
+  // Billing action handlers are attached via event delegation below — no global window exposure needed
 }
 
 function renderBillsTable() {
@@ -12244,7 +12279,7 @@ function renderBillsTable() {
             const wh = allWhs.find(w=>w.id===b.warehouseId);
             return `<tr>
               <td data-label="Bill No"><span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text-brand)">${b.billNo}</span></td>
-              <td data-label="Customer"><div class="primary-cell">${b.customer}</div></td>
+              <td data-label="Customer"><div class="primary-cell">${sanitizeHTML(b.customer)}</div></td>
               <td data-label="Items"><span class="badge badge-muted">${(b.items||[]).length} item${(b.items||[]).length!==1?'s':''}</span></td>
               <td data-label="Subtotal">${formatCurrency(b.subtotal)}</td>
               <td data-label="Tax"><span style="color:var(--accent-amber)">${formatCurrency(b.tax)}</span></td>
@@ -12303,12 +12338,10 @@ function showBillModal() {
     
     const whEmail = wh?.email || '';
     const whContact = wh?.contact || '';
-    const gstinFallback = whEmail ? `27${whEmail.toUpperCase().slice(0,3)}C${whContact.slice(-4) || '1234'}F1Z5` : '27AAPCW1234F1Z5';
-
-    // Retrieve input values to preserve them across redrawing
+    // Retrieve input values to preserve them across re-renders
     const savedSellerAddress = body.querySelector('#bill-seller-address')?.value || wh?.address || 'Primary Logistics Hub';
     const savedSellerContact = body.querySelector('#bill-seller-contact')?.value || wh?.contact || 'Contact Office';
-    const savedSellerTax = body.querySelector('#bill-seller-tax')?.value || wh?.taxNumber || wh?.gstin || gstinFallback;
+    const savedSellerTax = body.querySelector('#bill-seller-tax')?.value || wh?.taxNumber || wh?.gstin || '';
     const savedBuyerBilling = body.querySelector('#bill-buyer-billing')?.value || '';
     const savedBuyerShipping = body.querySelector('#bill-buyer-shipping')?.value || '';
     const savedPhone = body.querySelector('#bill-customer-phone')?.value || '';
@@ -12465,7 +12498,7 @@ function showBillModal() {
                           <td style="padding:10px 8px; text-align:right; font-size:11px; color:var(--accent-amber); font-weight:500;">${taxRateText}</td>
                           <td style="padding:10px 8px; text-align:right; font-size:13px; font-weight:700;">${formatCurrency(bi.total)}</td>
                           <td style="padding:4px; text-align:center;">
-                            <button class="action-btn delete" onclick="window._removeBillItem(${i})" style="padding:4px 8px;">${getSvgIcon('trash', 14)}</button>
+                            <button class="action-btn delete" data-remove-index="${i}" style="padding:4px 8px;">${getSvgIcon('trash', 14)}</button>
                           </td>
                         </tr>
                       `;
@@ -12792,6 +12825,18 @@ function showBillModal() {
         e.preventDefault();
         hideSKUDropdown();
       }
+    });
+
+    // Remove bill item via event delegation on data-remove-index buttons
+    // This replaces the previous window._removeBillItem global approach
+    body.querySelectorAll('[data-remove-index]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.removeIndex);
+        if (!isNaN(idx) && idx >= 0 && idx < billItems.length) {
+          billItems.splice(idx, 1);
+          renderBillBody();
+        }
+      });
     });
 
     // Added items inline quantity edit listener
@@ -14483,19 +14528,25 @@ function renderSettings() {
     }
   });
 
-  // Password change
-  document.getElementById('pw-form')?.addEventListener('submit', e => {
+  // Password change — validated by backend, never compared client-side
+  document.getElementById('pw-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const current = document.getElementById('s-current-pw').value;
     const newPw = document.getElementById('s-new-pw').value;
     const conf = document.getElementById('s-confirm-pw').value;
     if (newPw !== conf) { showToast('Mismatch','Passwords do not match','error'); return; }
     if (newPw.length < 8) { showToast('Validation','Password must be 8+ characters','warning'); return; }
-    const s = getStore();
-    const u = s.users.find(u=>u.id===s.currentUserId);
-    if (!u || u.password !== current) { showToast('Wrong password','Current password is incorrect','error'); return; }
-    u.password = newPw;
-    saveStore();
+
+    const { apiFetch } = await import('../modules/store.js');
+    const res = await apiFetch('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: current, new_password: newPw })
+    });
+
+    if (res.error) {
+      showToast('Error', res.error || 'Failed to change password', 'error');
+      return;
+    }
     showToast('Password changed','Your password has been updated','success');
     e.target.reset();
   });
@@ -14732,21 +14783,28 @@ function renderSettings() {
     });
 
     modal.el.querySelector('#reset-modal-cancel').addEventListener('click', () => modal.close());
-    modal.el.querySelector('#reset-modal-confirm').addEventListener('click', () => {
+    modal.el.querySelector('#reset-modal-confirm').addEventListener('click', async () => {
       const passwordVal = modal.el.querySelector('#reset-confirm-password').value;
       if (!passwordVal) {
         showToast('Verification Required', 'Password is required to authenticate system reset.', 'warning');
         return;
       }
-      
-      const s = getStore();
-      const currentUser = s.users.find(u=>u.id===s.currentUserId);
-      if (currentUser.password !== passwordVal) {
-        showToast('Access Denied', 'Authentication failed: Incorrect password.', 'error');
+
+      // Verify password with backend — never compare plaintext locally
+      const { apiFetch } = await import('../modules/store.js');
+      const verifyRes = await apiFetch('/auth/verify-password', {
+        method: 'POST',
+        body: JSON.stringify({ password: passwordVal })
+      });
+
+      if (verifyRes.error) {
+        showToast('Access Denied', 'Authentication failed: ' + (verifyRes.error || 'Incorrect password.'), 'error');
         return;
       }
 
-      // Proceed with system reset!
+      // Password verified by backend — proceed with system reset
+      const s = getStore();
+      const currentUser = s.users.find(u=>u.id===s.currentUserId);
       s.warehouses=[];s.bills=[];s.items=[];s.tables=[];s.tableData={};s.auditLogs=[];s.notifications=[];
       s.users = [currentUser];
       saveStore();
@@ -15857,13 +15915,21 @@ function showNewRoleModal() {
 
 
 
+
 let notif_filter = 'all'; // 'all' or 'unread'
 
-function renderNotifications() {
+async function renderNotifications() {
   const user = getCurrentUser();
   if (!user) {
     navigate('/login');
     return;
+  }
+
+  // Always sync from backend before rendering — prevents stale/forged localStorage state
+  try {
+    await syncWithBackend();
+  } catch (e) {
+    console.warn('[Notifications] Backend sync failed, rendering from local cache:', e);
   }
 
   const notifications = getNotifications();
@@ -15969,10 +16035,10 @@ function renderNotificationsList() {
           </div>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-              <span style="font-size:14px;font-weight:${n.read ? '600' : '700'};color:var(--text-primary)">${n.title}</span>
+              <span style="font-size:14px;font-weight:${n.read ? '600' : '700'};color:var(--text-primary)">${sanitizeHTML(n.title)}</span>
               <span style="font-size:11px;color:var(--text-disabled);font-family:var(--font-mono)">${timeSince(n.timestamp)}</span>
             </div>
-            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin:0 0 8px 0">${n.message}</p>
+            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin:0 0 8px 0">${sanitizeHTML(n.message)}</p>
             <div style="display:flex;gap:12px;align-items:center">
               ${!n.read ? `
                 <button class="btn-mark-read-action" data-nid="${n.id}" style="font-size:11px;font-weight:600;color:var(--text-brand);background:none;border:none;padding:0;cursor:pointer;font-family:var(--font-sans);display:inline-flex;align-items:center;gap:4px">
@@ -16925,8 +16991,7 @@ const routes = {
   '/profile': renderProfile,
 };
 
-// Expose printBill globally for inline onclick handlers
-window.printBill = printBill;
+// printBill is used via data-print event delegation — no global exposure needed
 
 function getActivePath() {
   const hash = window.location.hash.slice(1);
@@ -16961,7 +17026,7 @@ function resolveRoute() {
   _lastResolvedHash = fullHash;
 
   try {
-    const path = getActivePath();
+    // path is already resolved above — do not re-declare to avoid variable shadowing
     const user = getCurrentUser();
     const publicRoutes = ['/', '/login', '/signup', '/privacy', '/terms', '/forgot-password', '/reset-password'];
     const redirectIfLoggedIn = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
@@ -17036,15 +17101,14 @@ function renderErrorPage(err) {
   const appEl = document.getElementById('app');
   if (!appEl) return;
   
+  // Log full error detail to console for developers; never expose stack traces to the UI
+  console.error('[WareOps] Application error:', err);
   appEl.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0f1029;color:#f8fafc;font-family:sans-serif">
       <div style="text-align:center;max-width:480px;background:rgba(255,255,255,0.03);padding:40px;border-radius:24px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.3)">
         <div style="margin-bottom:24px;color:#f43f5e;display:flex;justify-content:center">${getSvgIcon('warning', 64)}</div>
-        <h1 style="font-size:24px;font-weight:800;margin-bottom:12px">Application Startup Error</h1>
-        <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;line-height:1.6">${err?.message || 'An unexpected error occurred during initialization.'}</p>
-        <div style="background:rgba(0,0,0,0.2);padding:16px;border-radius:12px;margin-bottom:24px;text-align:left;overflow-x:auto">
-          <code style="color:#f43f5e;font-size:11px;font-family:monospace;white-space:pre">${err?.stack || 'No stack trace available'}</code>
-        </div>
+        <h1 style="font-size:24px;font-weight:800;margin-bottom:12px">Something went wrong</h1>
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;line-height:1.6">The application encountered an unexpected error. Please reload the page. If the problem persists, contact your system administrator.</p>
         <div style="display:flex;gap:12px;justify-content:center">
           <button class="btn btn-primary" onclick="window.location.reload()" style="background:#6366f1;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Retry Loading</button>
           <button class="btn btn-ghost" onclick="window.location.hash='#/'" style="background:transparent;color:#f8fafc;border:1px solid rgba(255,255,255,0.1);padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Back to Home</button>
