@@ -7,6 +7,7 @@ import { renderShell } from '../components/shell.js';
 import { showToast, createModal, formatDate, formatDateTime, formatCurrency, filterData, debounce, getSvgIcon, renderWarehouseLogo, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 import { canDo } from '../modules/permissions.js';
+import { sanitizeHTML } from '../modules/sanitize.js';
 
 const EXCHANGE_RATES = {
   USD: 1.0,
@@ -98,9 +99,7 @@ export function renderBilling() {
   document.getElementById('bill-search')?.addEventListener('input', e => debouncedSearch(e.target.value));
   document.getElementById('bill-wh-filter')?.addEventListener('change', () => { bl_page=1; renderBillsTable(); });
 
-  // Expose printBill and showBillModal globally
-  window.printBill = printBill;
-  window._showBillModal = showBillModal;
+  // Billing action handlers are attached via event delegation below — no global window exposure needed
 }
 
 function renderBillsTable() {
@@ -141,7 +140,7 @@ function renderBillsTable() {
             const wh = allWhs.find(w=>w.id===b.warehouseId);
             return `<tr>
               <td data-label="Bill No"><span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--text-brand)">${b.billNo}</span></td>
-              <td data-label="Customer"><div class="primary-cell">${b.customer}</div></td>
+              <td data-label="Customer"><div class="primary-cell">${sanitizeHTML(b.customer)}</div></td>
               <td data-label="Items"><span class="badge badge-muted">${(b.items||[]).length} item${(b.items||[]).length!==1?'s':''}</span></td>
               <td data-label="Subtotal">${formatCurrency(b.subtotal)}</td>
               <td data-label="Tax"><span style="color:var(--accent-amber)">${formatCurrency(b.tax)}</span></td>
@@ -200,12 +199,10 @@ function showBillModal() {
     
     const whEmail = wh?.email || '';
     const whContact = wh?.contact || '';
-    const gstinFallback = whEmail ? `27${whEmail.toUpperCase().slice(0,3)}C${whContact.slice(-4) || '1234'}F1Z5` : '27AAPCW1234F1Z5';
-
-    // Retrieve input values to preserve them across redrawing
+    // Retrieve input values to preserve them across re-renders
     const savedSellerAddress = body.querySelector('#bill-seller-address')?.value || wh?.address || 'Primary Logistics Hub';
     const savedSellerContact = body.querySelector('#bill-seller-contact')?.value || wh?.contact || 'Contact Office';
-    const savedSellerTax = body.querySelector('#bill-seller-tax')?.value || wh?.taxNumber || wh?.gstin || gstinFallback;
+    const savedSellerTax = body.querySelector('#bill-seller-tax')?.value || wh?.taxNumber || wh?.gstin || '';
     const savedBuyerBilling = body.querySelector('#bill-buyer-billing')?.value || '';
     const savedBuyerShipping = body.querySelector('#bill-buyer-shipping')?.value || '';
     const savedPhone = body.querySelector('#bill-customer-phone')?.value || '';
@@ -362,7 +359,7 @@ function showBillModal() {
                           <td style="padding:10px 8px; text-align:right; font-size:11px; color:var(--accent-amber); font-weight:500;">${taxRateText}</td>
                           <td style="padding:10px 8px; text-align:right; font-size:13px; font-weight:700;">${formatCurrency(bi.total)}</td>
                           <td style="padding:4px; text-align:center;">
-                            <button class="action-btn delete" onclick="window._removeBillItem(${i})" style="padding:4px 8px;">${getSvgIcon('trash', 14)}</button>
+                            <button class="action-btn delete" data-remove-index="${i}" style="padding:4px 8px;">${getSvgIcon('trash', 14)}</button>
                           </td>
                         </tr>
                       `;
@@ -689,6 +686,18 @@ function showBillModal() {
         e.preventDefault();
         hideSKUDropdown();
       }
+    });
+
+    // Remove bill item via event delegation on data-remove-index buttons
+    // This replaces the previous window._removeBillItem global approach
+    body.querySelectorAll('[data-remove-index]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.removeIndex);
+        if (!isNaN(idx) && idx >= 0 && idx < billItems.length) {
+          billItems.splice(idx, 1);
+          renderBillBody();
+        }
+      });
     });
 
     // Added items inline quantity edit listener
