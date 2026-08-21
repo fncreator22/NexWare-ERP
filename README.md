@@ -377,11 +377,6 @@ Controls what each user can perform.
 Ensures users access only permitted business data.
 
 
-## Permission Validation
-
-Every sensitive operation is validated before execution.
-
-
 ---
 
 # Future Roadmap
