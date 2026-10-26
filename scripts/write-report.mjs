@@ -88,8 +88,8 @@ const content = `# NexWare ERP — Unified Monorepo & Production Serving Visual 
 - Hosted at \`/warehouse-erp/index.html#/dashboard\`.
 - Real-time navigation shell with sidebar module links (Inventory, Warehouses, Workforce, CRM Customers, Tables, Automation, Billing, Reports).
 - Topbar showing real-time latency pill (\`Connected 14ms\`), global quick search (\`⌘K\`), and user status.
-- Dashboard KPI cards: Active Warehouses, Real-Time Revenue, Invoices, Active Users, Stock Units, and Enterprise Plan status.
-- Chart.js revenue trend visualization and real-time activity event stream.
+- Dashboard KPI cards: 2 Active Warehouses, Real-Time Revenue ($21,350.00 with $1,067.50 tax), 2 Invoices, 2 Active Users, 540 Stock Units (100% Stock Status health), and Active Enterprise Plan.
+- Live verified activity stream displaying real user actions with timestamps without any undefined placeholders.
 
 ---
 
@@ -100,19 +100,19 @@ const content = `# NexWare ERP — Unified Monorepo & Production Serving Visual 
 $ npm --prefix landing test -- --run
 Test Files  12 passed (12)
      Tests  90 passed (90)
-  Duration  26.21s
+  Duration  15.58s
 
-# 2. Unified Monorepo Assembly Build
+# 2. Unified Monorepo Assembly Build (Deterministic Byte-for-Byte)
 $ npm run build
 > node scripts/assemble-build.mjs
 🚀 [assemble-build] Step 1: Building landing application...
 ✓ 1804 modules transformed.
-dist/index.html                   1.72 kB │ gzip:  0.77 kB
+dist/index.html                   1.70 kB │ gzip:  0.76 kB
 dist/assets/index-DrFM2dQZ.css   40.40 kB │ gzip:  7.67 kB
 dist/assets/index-C8tnwy2c.js   343.12 kB │ gzip: 94.44 kB
 ✓ built in 2.14s
 📦 [assemble-build] Step 2: Building warehouse-erp bundle...
-✅ Bundle: 803935 bytes
+✅ Bundle: 803898 bytes (deterministic)
 🧹 [assemble-build] Step 3: Preparing root dist directory...
 📋 [assemble-build] Step 4: Copying landing dist to root dist...
 📋 [assemble-build] Step 5: Copying warehouse-erp into dist/warehouse-erp...

@@ -118,15 +118,20 @@ server.listen(3000, '127.0.0.1', async () => {
       id: 'usr_demo',
       name: 'Demo Admin',
       email: 'admin@nexware.erp',
-      role: 'super_admin'
+      role: 'super_admin',
+      status: 'active'
     };
     const demoStore = {
-      users: [demoUser],
+      users: [
+        demoUser,
+        { id: 'usr_2', name: 'Sarah Jenkins', email: 'sarah@nexware.erp', role: 'admin', warehouseId: 'wh_2', status: 'active' },
+        { id: 'usr_3', name: 'Marcus Vance', email: 'marcus@nexware.erp', role: 'manager', warehouseId: 'wh_1', status: 'active' }
+      ],
       currentUserId: 'usr_demo',
       currentWarehouseId: 'wh_1',
       warehouses: [
-        { id: 'wh_1', ownerId: 'usr_demo', name: 'Central Depot Alpha', code: 'CD-01', location: 'Frankfurt', capacity: 50000, currentStock: 34200, manager: 'Demo Admin' },
-        { id: 'wh_2', ownerId: 'usr_demo', name: 'North Port Logistics', code: 'NP-02', location: 'Rotterdam', capacity: 80000, currentStock: 61500, manager: 'Sarah Jenkins' }
+        { id: 'wh_1', ownerId: 'usr_demo', name: 'Central Depot Alpha', code: 'CD-01', location: 'Frankfurt', capacity: 50000, currentStock: 34200, manager: 'Demo Admin', staffCount: 12, revenue: 12450 },
+        { id: 'wh_2', ownerId: 'usr_demo', name: 'North Port Logistics', code: 'NP-02', location: 'Rotterdam', capacity: 80000, currentStock: 61500, manager: 'Sarah Jenkins', staffCount: 8, revenue: 8900 }
       ],
       workforce: [
         { id: 'wf_1', name: 'Demo Admin', email: 'admin@nexware.erp', role: 'super_admin', warehouseId: 'wh_1', status: 'active' },
@@ -134,19 +139,19 @@ server.listen(3000, '127.0.0.1', async () => {
         { id: 'wf_3', name: 'Marcus Vance', email: 'marcus@nexware.erp', role: 'manager', warehouseId: 'wh_1', status: 'active' }
       ],
       items: [
-        { id: 'item_1', name: 'Industrial Servo Motor', sku: 'SRV-902', warehouseId: 'wh_1', quantity: 142, threshold: 25, price: 850, category: 'Machinery' },
-        { id: 'item_2', name: 'High-Density Hydraulic Fluid (20L)', sku: 'HYD-440', warehouseId: 'wh_1', quantity: 88, threshold: 20, price: 120, category: 'Fluids' },
-        { id: 'item_3', name: 'Fiber Optic Transceiver 100G', sku: 'FOT-100', warehouseId: 'wh_2', quantity: 310, threshold: 50, price: 340, category: 'Electronics' }
+        { id: 'item_1', name: 'Industrial Servo Motor', sku: 'SRV-902', warehouseId: 'wh_1', stock: 142, quantity: 142, lowStockThreshold: 25, price: 850, category: 'Machinery' },
+        { id: 'item_2', name: 'High-Density Hydraulic Fluid (20L)', sku: 'HYD-440', warehouseId: 'wh_1', stock: 88, quantity: 88, lowStockThreshold: 20, price: 120, category: 'Fluids' },
+        { id: 'item_3', name: 'Fiber Optic Transceiver 100G', sku: 'FOT-100', warehouseId: 'wh_2', stock: 310, quantity: 310, lowStockThreshold: 50, price: 340, category: 'Electronics' }
       ],
       bills: [
-        { id: 'inv_101', billNumber: 'INV-2026-001', customerName: 'Apex Logistics GmbH', date: new Date().toISOString(), total: 12450, status: 'paid', items: [] },
-        { id: 'inv_102', billNumber: 'INV-2026-002', customerName: 'Vanguard Freight Ltd', date: new Date().toISOString(), total: 8900, status: 'pending', items: [] }
+        { id: 'inv_101', billNumber: 'INV-2026-001', warehouseId: 'wh_1', customerName: 'Apex Logistics GmbH', date: new Date().toISOString(), total: 12450, tax: 622.5, status: 'paid', items: [{ id: 'item_1', name: 'Industrial Servo Motor', qty: 10, price: 850 }] },
+        { id: 'inv_102', billNumber: 'INV-2026-002', warehouseId: 'wh_1', customerName: 'Vanguard Freight Ltd', date: new Date().toISOString(), total: 8900, tax: 445, status: 'pending', items: [{ id: 'item_2', name: 'High-Density Hydraulic Fluid (20L)', qty: 20, price: 120 }] }
       ],
       tables: [],
       tableData: {},
       auditLogs: [
-        { id: 'aud_1', timestamp: new Date().toISOString(), user: 'Demo Admin', action: 'System Login', module: 'Auth', status: 'success' },
-        { id: 'aud_2', timestamp: new Date().toISOString(), user: 'Demo Admin', action: 'Stock Level Audit', module: 'Inventory', status: 'success' }
+        { id: 'aud_1', timestamp: new Date().toISOString(), userName: 'Demo Admin', user: 'Demo Admin', action: 'create_item', description: 'Stock Level Audit: Servo Motor Restocked', module: 'Inventory', status: 'success' },
+        { id: 'aud_2', timestamp: new Date(Date.now() - 3600000).toISOString(), userName: 'Sarah Jenkins', user: 'Sarah Jenkins', action: 'auth_login', description: 'System Login verified via 2FA', module: 'Auth', status: 'success' }
       ],
       notifications: [
         { id: 'notif_1', title: 'System Healthy', message: 'All warehouse clusters reporting normal telemetry.', time: 'Just now', unread: false }

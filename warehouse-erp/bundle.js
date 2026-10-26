@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0  Generated: 2026-10-26T10:13:21.428Z
+// WareOps ERP — Bundled v2.0
 
 
 // ===== modules/store.js =====
