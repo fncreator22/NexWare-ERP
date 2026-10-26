@@ -1,4 +1,4 @@
-// WareOps ERP — Bundled v2.0
+// NexWare ERP — Bundled v2.0
 
 
 // ===== modules/store.js =====
@@ -2063,7 +2063,7 @@ window.showImagePreviewModal = function(src) {
 
 // ===== modules/exporter.js =====
 /**
- * WareOps ERP — Export Engine
+ * NexWare ERP — Export Engine
  * Supports CSV, XLSX-compatible TSV, and print-to-PDF
  * Role-gated: only exports data the current user can see
  */
@@ -2142,7 +2142,7 @@ function exportCSV(entity) {
       }));
       const cols = ['Invoice #','Customer','Warehouse','Items Count','Subtotal','Tax','Total','Date','Created By'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-billing-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-billing-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Billing' };
     }
 
@@ -2161,7 +2161,7 @@ function exportCSV(entity) {
       }));
       const cols = ['Name','Email','Role','Warehouse','Status','Employee ID','Joined','Assigned By'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-workforce-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-workforce-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Workforce' };
     }
 
@@ -2181,7 +2181,7 @@ function exportCSV(entity) {
       }));
       const cols = ['Name','SKU','Category','Tax Category','Price','Stock','Unit','Warehouse','Added'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-inventory-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-inventory-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Inventory' };
     }
 
@@ -2202,7 +2202,7 @@ function exportCSV(entity) {
       }));
       const cols = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue','Staff','Items','Created'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-warehouses-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-warehouses-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Warehouses' };
     }
 
@@ -2218,7 +2218,7 @@ function exportCSV(entity) {
       }));
       const cols = ['Action','Description','User','User ID','Warehouse','Timestamp'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-audit-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-audit-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Audit Logs' };
     }
 
@@ -2258,8 +2258,8 @@ function exportCSV(entity) {
           ['Invoice #','Customer','Warehouse','Subtotal','Tax','Total','Date']));
       }
 
-      const full = `WareOps ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.user.role})\n\n` + sections.join('\n');
-      download(full, `wareops-full-export-${ts}.csv`, 'text/csv');
+      const full = `NexWare ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.user.role})\n\n` + sections.join('\n');
+      download(full, `nexware-full-export-${ts}.csv`, 'text/csv');
       return { count: d.bills.length + d.users.length + d.items.length, entity: 'Full Export' };
     }
 
@@ -2295,7 +2295,7 @@ function exportXLSX(entity) {
       g: new Date(b.createdAt).toLocaleDateString()
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Billing (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    filename = `wareops-billing-${ts}.xls`;
+    filename = `nexware-billing-${ts}.xls`;
   }
 
   if (entity === 'workforce' || entity === 'all') {
@@ -2307,7 +2307,7 @@ function exportXLSX(entity) {
       e: u.status, f: u.id, g: new Date(u.createdAt).toLocaleDateString()
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Workforce (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    if (entity === 'workforce') filename = `wareops-workforce-${ts}.xls`;
+    if (entity === 'workforce') filename = `nexware-workforce-${ts}.xls`;
   }
 
   if (entity === 'inventory' || entity === 'all') {
@@ -2319,7 +2319,7 @@ function exportXLSX(entity) {
       e: i.price?.toFixed(2), f: i.stock, g: whs[i.warehouseId]||''
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Inventory (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    if (entity === 'inventory') filename = `wareops-inventory-${ts}.xls`;
+    if (entity === 'inventory') filename = `nexware-inventory-${ts}.xls`;
   }
 
   if (entity === 'warehouses' || entity === 'all') {
@@ -2330,25 +2330,25 @@ function exportXLSX(entity) {
       e: w.email, f: w.taxPreference, g: w.status, h: (w.revenue||0).toFixed(2)
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Warehouses (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    if (entity === 'warehouses') filename = `wareops-warehouses-${ts}.xls`;
+    if (entity === 'warehouses') filename = `nexware-warehouses-${ts}.xls`;
   }
 
-  if (entity === 'all') filename = `wareops-full-export-${ts}.xls`;
+  if (entity === 'all') filename = `nexware-full-export-${ts}.xls`;
 
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
     xmlns:x="urn:schemas-microsoft-com:office:excel"
     xmlns="http://www.w3.org/TR/REC-html40">
     <head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
-    <x:ExcelWorksheet><x:Name>WareOps Export</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+    <x:ExcelWorksheet><x:Name>NexWare Export</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
     </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
     <style>body{font-family:Arial,sans-serif}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px}</style>
     </head><body>
-    <h1 style="color:#1e1b4b">WareOps ERP Export</h1>
+    <h1 style="color:#1e1b4b">NexWare ERP Export</h1>
     <p>Generated: ${new Date().toLocaleString()} | User: ${d.user.name} (${d.user.role})</p>
     ${sheetHTML}
     </body></html>`;
 
-  download(html, filename || `wareops-export-${ts}.xls`, 'application/vnd.ms-excel');
+  download(html, filename || `nexware-export-${ts}.xls`, 'application/vnd.ms-excel');
   return { count: d.bills.length + d.users.length + d.items.length, entity: 'Excel Export' };
 }
 
@@ -2416,7 +2416,7 @@ function exportPDF(entity) {
   if (!win) {
     return { error: 'Popup blocked. Please allow popups in your browser settings to export as PDF.' };
   }
-  win.document.write(`<!DOCTYPE html><html><head><title>WareOps Export</title>
+  win.document.write(`<!DOCTYPE html><html><head><title>NexWare Export</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:Arial,sans-serif;padding:20mm;color:#111;background:#fff}
@@ -2432,7 +2432,7 @@ function exportPDF(entity) {
     @media print{.no-print{display:none}}
   </style></head><body>
   <div class="no-print" onclick="window.print()">Click to Print / Save as PDF</div>
-  <h1>WareOps ERP — Data Export</h1>
+  <h1>NexWare ERP — Data Export</h1>
   <p>Generated: ${ts}</p>
   <p>User: ${user.name} · Role: ${user.role}</p>
   ${sections}
@@ -3171,7 +3171,7 @@ function initTelemetryAndPresence() {
         <div style="display:flex;flex-direction:column;gap:12px;font-size:13px;color:var(--text-secondary)">
           <div style="display:flex;justify-content:space-between"><span>Connection Status:</span><strong style="color:var(--accent-emerald)">● WSS Connected</strong></div>
           <div style="display:flex;justify-content:space-between"><span>Roundtrip Latency:</span><strong>14 ms (p99: 18ms)</strong></div>
-          <div style="display:flex;justify-content:space-between"><span>Cluster Gateway:</span><strong>us-east-prod-04.wareops.io</strong></div>
+          <div style="display:flex;justify-content:space-between"><span>Cluster Gateway:</span><strong>us-east-prod-04.nexware.internal</strong></div>
           <div style="display:flex;justify-content:space-between"><span>Packet Loss:</span><strong style="color:var(--accent-emerald)">0.00%</strong></div>
           <div style="display:flex;justify-content:space-between"><span>Session Protocol:</span><strong>TLS 1.3 / WebSocket v2</strong></div>
         </div>
@@ -3939,7 +3939,7 @@ function renderLogin() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Welcome back</h1>
         <p class="auth-subtitle">Sign in to your enterprise workspace</p>
@@ -4002,7 +4002,7 @@ function renderSignup() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Create your account</h1>
         <p class="auth-subtitle">Start your free enterprise workspace</p>
@@ -4070,7 +4070,7 @@ function renderWarehouseRegistration() {
       <header class="warehouse-reg-header">
         <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${getSvgIcon("zap", 20)}</div>
-          <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
+          <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">NexWare</span>
         </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
           <div style="font-size:13px;color:var(--text-muted)">Signed in as <strong style="color:var(--text-primary)">${user.name}</strong></div>
@@ -4187,7 +4187,7 @@ function renderForgotPassword() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Reset password</h1>
         <p class="auth-subtitle">Enter your email to request a reset token</p>
@@ -4262,7 +4262,7 @@ function renderResetPassword() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Create new password</h1>
         <p class="auth-subtitle">Enter your new secure password (min 8 characters)</p>
@@ -4337,7 +4337,7 @@ function renderPrivacy() {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
           <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
             <div class="auth-logo-icon" style="width:36px;height:36px;">${getSvgIcon("zap", 18)}</div>
-            <span class="auth-logo-name" style="font-size:20px">WareOps</span>
+            <span class="auth-logo-name" style="font-size:20px">NexWare</span>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="window.location.hash='#/signup'" style="font-size:12px;padding:6px 12px;cursor:pointer">← Back to Signup</button>
         </div>
@@ -4346,7 +4346,7 @@ function renderPrivacy() {
         <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px">Last Updated: May 29, 2026</p>
         
         <div style="color:var(--text-secondary);font-size:14px;line-height:1.6;max-height:480px;overflow-y:auto;padding-right:12px;scrollbar-width:thin">
-          <p style="margin-bottom:16px">At <strong>WareOps ERP</strong>, we take your privacy and the security of your operational data extremely seriously. This Privacy Policy describes how we collect, use, and safeguard information when you use our multi-warehouse enterprise resource planning SaaS platform.</p>
+          <p style="margin-bottom:16px">At <strong>NexWare ERP</strong>, we take your privacy and the security of your operational data extremely seriously. This Privacy Policy describes how we collect, use, and safeguard information when you use our multi-warehouse enterprise resource planning SaaS platform.</p>
           
           <h3 style="color:var(--text-primary);font-size:16px;margin:20px 0 10px 0;font-weight:700">1. Information Collection</h3>
           <p style="margin-bottom:12px">We collect operational and personal information necessary to deliver enterprise services, including:</p>
@@ -4385,7 +4385,7 @@ function renderTerms() {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
           <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
             <div class="auth-logo-icon" style="width:36px;height:36px;">${getSvgIcon("zap", 18)}</div>
-            <span class="auth-logo-name" style="font-size:20px">WareOps</span>
+            <span class="auth-logo-name" style="font-size:20px">NexWare</span>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="window.location.hash='#/signup'" style="font-size:12px;padding:6px 12px;cursor:pointer">← Back to Signup</button>
         </div>
@@ -4394,10 +4394,10 @@ function renderTerms() {
         <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px">Effective Date: May 29, 2026</p>
         
         <div style="color:var(--text-secondary);font-size:14px;line-height:1.6;max-height:480px;overflow-y:auto;padding-right:12px;scrollbar-width:thin">
-          <p style="margin-bottom:16px">Welcome to <strong>WareOps ERP</strong>. By registering an account, establishing a corporate workspace, or utilising our multi-warehouse enterprise resource planning system, you agree to comply with and be bound by the following Terms and Conditions.</p>
+          <p style="margin-bottom:16px">Welcome to <strong>NexWare ERP</strong>. By registering an account, establishing a corporate workspace, or utilising our multi-warehouse enterprise resource planning system, you agree to comply with and be bound by the following Terms and Conditions.</p>
           
           <h3 style="color:var(--text-primary);font-size:16px;margin:20px 0 10px 0;font-weight:700">1. SaaS Subscription and License</h3>
-          <p style="margin-bottom:16px">We grant you a non-exclusive, non-transferable, revocable license to access and use the WareOps ERP platform in accordance with your subscribed plan (Starter or Enterprise). Standard multi-warehouse configurations, role assignments (RBAC), and table operations are governed by this plan limit.</p>
+          <p style="margin-bottom:16px">We grant you a non-exclusive, non-transferable, revocable license to access and use the NexWare ERP platform in accordance with your subscribed plan (Starter or Enterprise). Standard multi-warehouse configurations, role assignments (RBAC), and table operations are governed by this plan limit.</p>
           
           <h3 style="color:var(--text-primary);font-size:16px;margin:20px 0 10px 0;font-weight:700">2. Account Responsibility & Security</h3>
           <p style="margin-bottom:16px">You are fully responsible for maintaining the confidentiality of your credentials, authorization tokens, and all activities conducted under your workspace registry. You agree to notify us immediately of any unauthorized usage or breaches of tenant boundary security.</p>
@@ -4409,7 +4409,7 @@ function renderTerms() {
           <p style="margin-bottom:16px">We aim to maintain 99.9% uptime for active production databases and dynamic synchronization layers. Scheduled system maintenance and security patches will be conducted during off-peak hours with advance notification to warehouse administrators.</p>
           
           <h3 style="color:var(--text-primary);font-size:16px;margin:20px 0 10px 0;font-weight:700">5. Limitation of Liability</h3>
-          <p style="margin-bottom:16px">WareOps ERP is provided on an "as is" and "as available" basis. To the maximum extent permitted by applicable law, we shall not be liable for any indirect, incidental, or consequential damages resulting from operational downtime or database synchronization interruptions.</p>
+          <p style="margin-bottom:16px">NexWare ERP is provided on an "as is" and "as available" basis. To the maximum extent permitted by applicable law, we shall not be liable for any indirect, incidental, or consequential damages resulting from operational downtime or database synchronization interruptions.</p>
         </div>
       </div>
     </div>
@@ -14453,7 +14453,7 @@ function renderSubscription() {
   `);
 
   document.getElementById('upgrade-btn')?.addEventListener('click', () => {
-    showToast('Enterprise Plan', 'Contact sales@wareops.io to upgrade your plan.', 'info');
+    showToast('Enterprise Plan', 'Contact sales@nexware.internal to upgrade your plan.', 'info');
   });
 }
 
@@ -16462,7 +16462,7 @@ function showIDCardModal(u) {
     <!-- FRONT SIDE -->
     <div class="id-card">
       <div class="id-card-header">
-        <div class="id-logo" style="display:inline-flex;align-items:center;gap:6px;">${getSvgIcon("zap", 16)} WAREOPS</div>
+        <div class="id-logo" style="display:inline-flex;align-items:center;gap:6px;">${getSvgIcon("zap", 16)} NEXWARE</div>
         <div class="id-badge">ACCESS ID</div>
       </div>
       <div class="id-profile">
@@ -16936,14 +16936,14 @@ function showCreateRuleModal() {
 // ===== app.js =====
 // Handle unhandled promise rejections and global errors for visible debugging
 window.addEventListener('error', (event) => {
-  console.error('[WareOps] Global Error:', event.error);
+  console.error('[NexWare] Global Error:', event.error);
   if (!document.getElementById('app')?.innerHTML) {
     renderErrorPage(event.error || new Error(event.message));
   }
 });
 
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('[WareOps] Unhandled Rejection:', event.reason);
+  console.error('[NexWare] Unhandled Rejection:', event.reason);
   if (!document.getElementById('app')?.innerHTML) {
     renderErrorPage(new Error(event.reason || 'Unhandled Async Error'));
   }
@@ -17106,7 +17106,7 @@ function resolveRoute() {
       safeNavigate(user ? '/dashboard' : '/login');
     }
   } catch (err) {
-    console.error('[WareOps] Route resolution crash:', err);
+    console.error('[NexWare] Route resolution crash:', err);
     renderErrorPage(err);
   }
 }
@@ -17116,7 +17116,7 @@ function renderErrorPage(err) {
   if (!appEl) return;
   
   // Log full error detail to console for developers; never expose stack traces to the UI
-  console.error('[WareOps] Application error:', err);
+  console.error('[NexWare] Application error:', err);
   appEl.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0f1029;color:#f8fafc;font-family:sans-serif">
       <div style="text-align:center;max-width:480px;background:rgba(255,255,255,0.03);padding:40px;border-radius:24px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.3)">
@@ -17164,7 +17164,7 @@ function startInactivityMonitor() {
     const timeoutMs = timeoutMin * 60 * 1000;
 
     if (Date.now() - _lastActivityTime > timeoutMs) {
-      console.log(`[WareOps] Inactivity timeout reached (${timeoutMin}m). Logging out.`);
+      console.log(`[NexWare] Inactivity timeout reached (${timeoutMin}m). Logging out.`);
       events.forEach(evt => window.removeEventListener(evt, updateActivity));
       clearInterval(_inactivityTimer);
       _inactivityTimer = null;
@@ -17202,13 +17202,13 @@ async function init() {
       try {
         await syncWithBackend();
       } catch (syncErr) {
-        console.warn('[WareOps] Initial background sync failed:', syncErr);
+        console.warn('[NexWare] Initial background sync failed:', syncErr);
       }
     }
 
     resolveRoute();
   } catch (err) {
-    console.error('[WareOps] Critical initialization failure:', err);
+    console.error('[NexWare] Critical initialization failure:', err);
     renderErrorPage(err);
   }
 }

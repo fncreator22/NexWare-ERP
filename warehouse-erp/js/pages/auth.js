@@ -16,7 +16,7 @@ export function renderLogin() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Welcome back</h1>
         <p class="auth-subtitle">Sign in to your enterprise workspace</p>
@@ -79,7 +79,7 @@ export function renderSignup() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Create your account</h1>
         <p class="auth-subtitle">Start your free enterprise workspace</p>
@@ -147,7 +147,7 @@ export function renderWarehouseRegistration() {
       <header class="warehouse-reg-header">
         <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${getSvgIcon("zap", 20)}</div>
-          <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
+          <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">NexWare</span>
         </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
           <div style="font-size:13px;color:var(--text-muted)">Signed in as <strong style="color:var(--text-primary)">${user.name}</strong></div>
@@ -264,7 +264,7 @@ export function renderForgotPassword() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Reset password</h1>
         <p class="auth-subtitle">Enter your email to request a reset token</p>
@@ -339,7 +339,7 @@ export function renderResetPassword() {
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
           <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
-          <span class="auth-logo-name">WareOps</span>
+          <span class="auth-logo-name">NexWare</span>
         </div>
         <h1 class="auth-title">Create new password</h1>
         <p class="auth-subtitle">Enter your new secure password (min 8 characters)</p>

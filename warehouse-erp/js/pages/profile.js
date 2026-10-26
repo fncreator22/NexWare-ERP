@@ -855,7 +855,7 @@ export function showIDCardModal(u) {
     <!-- FRONT SIDE -->
     <div class="id-card">
       <div class="id-card-header">
-        <div class="id-logo" style="display:inline-flex;align-items:center;gap:6px;">${getSvgIcon("zap", 16)} WAREOPS</div>
+        <div class="id-logo" style="display:inline-flex;align-items:center;gap:6px;">${getSvgIcon("zap", 16)} NEXWARE</div>
         <div class="id-badge">ACCESS ID</div>
       </div>
       <div class="id-profile">

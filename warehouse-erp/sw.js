@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wareops-pwa-v1';
+const CACHE_NAME = 'nexware-pwa-v1';
 const STATIC_ASSETS = [
   './',
   './index.html',

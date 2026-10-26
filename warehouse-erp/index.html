@@ -68,8 +68,8 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-          .then(reg => console.log('[WareOps PWA] Service worker registered:', reg.scope))
-          .catch(err => console.warn('[WareOps PWA] Service worker registration failed:', err));
+          .then(reg => console.log('[NexWare PWA] Service worker registered:', reg.scope))
+          .catch(err => console.warn('[NexWare PWA] Service worker registration failed:', err));
       });
     }
   </script>

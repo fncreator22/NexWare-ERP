@@ -359,7 +359,7 @@ function initTelemetryAndPresence() {
         <div style="display:flex;flex-direction:column;gap:12px;font-size:13px;color:var(--text-secondary)">
           <div style="display:flex;justify-content:space-between"><span>Connection Status:</span><strong style="color:var(--accent-emerald)">● WSS Connected</strong></div>
           <div style="display:flex;justify-content:space-between"><span>Roundtrip Latency:</span><strong>14 ms (p99: 18ms)</strong></div>
-          <div style="display:flex;justify-content:space-between"><span>Cluster Gateway:</span><strong>us-east-prod-04.wareops.io</strong></div>
+          <div style="display:flex;justify-content:space-between"><span>Cluster Gateway:</span><strong>us-east-prod-04.nexware.internal</strong></div>
           <div style="display:flex;justify-content:space-between"><span>Packet Loss:</span><strong style="color:var(--accent-emerald)">0.00%</strong></div>
           <div style="display:flex;justify-content:space-between"><span>Session Protocol:</span><strong>TLS 1.3 / WebSocket v2</strong></div>
         </div>

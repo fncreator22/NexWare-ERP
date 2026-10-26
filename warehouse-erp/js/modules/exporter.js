@@ -1,5 +1,5 @@
 /**
- * WareOps ERP — Export Engine
+ * NexWare ERP — Export Engine
  * Supports CSV, XLSX-compatible TSV, and print-to-PDF
  * Role-gated: only exports data the current user can see
  */
@@ -78,7 +78,7 @@ export function exportCSV(entity) {
       }));
       const cols = ['Invoice #','Customer','Warehouse','Items Count','Subtotal','Tax','Total','Date','Created By'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-billing-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-billing-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Billing' };
     }
 
@@ -97,7 +97,7 @@ export function exportCSV(entity) {
       }));
       const cols = ['Name','Email','Role','Warehouse','Status','Employee ID','Joined','Assigned By'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-workforce-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-workforce-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Workforce' };
     }
 
@@ -117,7 +117,7 @@ export function exportCSV(entity) {
       }));
       const cols = ['Name','SKU','Category','Tax Category','Price','Stock','Unit','Warehouse','Added'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-inventory-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-inventory-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Inventory' };
     }
 
@@ -138,7 +138,7 @@ export function exportCSV(entity) {
       }));
       const cols = ['Name','Business','Address','Contact','Email','Tax Pref','Status','Revenue','Staff','Items','Created'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-warehouses-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-warehouses-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Warehouses' };
     }
 
@@ -154,7 +154,7 @@ export function exportCSV(entity) {
       }));
       const cols = ['Action','Description','User','User ID','Warehouse','Timestamp'];
       const csv = toCSV(rows, cols, cols);
-      download(csv, `wareops-audit-${ts}.csv`, 'text/csv');
+      download(csv, `nexware-audit-${ts}.csv`, 'text/csv');
       return { count: rows.length, entity: 'Audit Logs' };
     }
 
@@ -194,8 +194,8 @@ export function exportCSV(entity) {
           ['Invoice #','Customer','Warehouse','Subtotal','Tax','Total','Date']));
       }
 
-      const full = `WareOps ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.user.role})\n\n` + sections.join('\n');
-      download(full, `wareops-full-export-${ts}.csv`, 'text/csv');
+      const full = `NexWare ERP — Full Export\nGenerated: ${new Date().toLocaleString()}\nUser: ${d.user.name} (${d.user.role})\n\n` + sections.join('\n');
+      download(full, `nexware-full-export-${ts}.csv`, 'text/csv');
       return { count: d.bills.length + d.users.length + d.items.length, entity: 'Full Export' };
     }
 
@@ -231,7 +231,7 @@ export function exportXLSX(entity) {
       g: new Date(b.createdAt).toLocaleDateString()
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Billing (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    filename = `wareops-billing-${ts}.xls`;
+    filename = `nexware-billing-${ts}.xls`;
   }
 
   if (entity === 'workforce' || entity === 'all') {
@@ -243,7 +243,7 @@ export function exportXLSX(entity) {
       e: u.status, f: u.id, g: new Date(u.createdAt).toLocaleDateString()
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Workforce (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    if (entity === 'workforce') filename = `wareops-workforce-${ts}.xls`;
+    if (entity === 'workforce') filename = `nexware-workforce-${ts}.xls`;
   }
 
   if (entity === 'inventory' || entity === 'all') {
@@ -255,7 +255,7 @@ export function exportXLSX(entity) {
       e: i.price?.toFixed(2), f: i.stock, g: whs[i.warehouseId]||''
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Inventory (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    if (entity === 'inventory') filename = `wareops-inventory-${ts}.xls`;
+    if (entity === 'inventory') filename = `nexware-inventory-${ts}.xls`;
   }
 
   if (entity === 'warehouses' || entity === 'all') {
@@ -266,25 +266,25 @@ export function exportXLSX(entity) {
       e: w.email, f: w.taxPreference, g: w.status, h: (w.revenue||0).toFixed(2)
     }));
     sheetHTML += `<h2 style="color:#1e1b4b">Warehouses (${rows.length} records)</h2>${htmlTable(headers, rows)}<br>`;
-    if (entity === 'warehouses') filename = `wareops-warehouses-${ts}.xls`;
+    if (entity === 'warehouses') filename = `nexware-warehouses-${ts}.xls`;
   }
 
-  if (entity === 'all') filename = `wareops-full-export-${ts}.xls`;
+  if (entity === 'all') filename = `nexware-full-export-${ts}.xls`;
 
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
     xmlns:x="urn:schemas-microsoft-com:office:excel"
     xmlns="http://www.w3.org/TR/REC-html40">
     <head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
-    <x:ExcelWorksheet><x:Name>WareOps Export</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+    <x:ExcelWorksheet><x:Name>NexWare Export</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
     </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
     <style>body{font-family:Arial,sans-serif}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px}</style>
     </head><body>
-    <h1 style="color:#1e1b4b">WareOps ERP Export</h1>
+    <h1 style="color:#1e1b4b">NexWare ERP Export</h1>
     <p>Generated: ${new Date().toLocaleString()} | User: ${d.user.name} (${d.user.role})</p>
     ${sheetHTML}
     </body></html>`;
 
-  download(html, filename || `wareops-export-${ts}.xls`, 'application/vnd.ms-excel');
+  download(html, filename || `nexware-export-${ts}.xls`, 'application/vnd.ms-excel');
   return { count: d.bills.length + d.users.length + d.items.length, entity: 'Excel Export' };
 }
 
@@ -352,7 +352,7 @@ export function exportPDF(entity) {
   if (!win) {
     return { error: 'Popup blocked. Please allow popups in your browser settings to export as PDF.' };
   }
-  win.document.write(`<!DOCTYPE html><html><head><title>WareOps Export</title>
+  win.document.write(`<!DOCTYPE html><html><head><title>NexWare Export</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:Arial,sans-serif;padding:20mm;color:#111;background:#fff}
@@ -368,7 +368,7 @@ export function exportPDF(entity) {
     @media print{.no-print{display:none}}
   </style></head><body>
   <div class="no-print" onclick="window.print()">Click to Print / Save as PDF</div>
-  <h1>WareOps ERP — Data Export</h1>
+  <h1>NexWare ERP — Data Export</h1>
   <p>Generated: ${ts}</p>
   <p>User: ${user.name} · Role: ${user.role}</p>
   ${sections}

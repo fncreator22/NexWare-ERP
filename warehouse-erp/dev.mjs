@@ -10,7 +10,7 @@ const run = (cmd, args) => {
   return p;
 };
 
-console.log('🚀 Starting WareOps Dev Environment...');
+console.log('🚀 Starting NexWare Dev Environment...');
 
 const watchProc = run('node', ['watch.mjs']);
 const serveProc = run('npx', ['serve', './']);

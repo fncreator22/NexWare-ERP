@@ -38,9 +38,14 @@ async function runLiveVerification() {
     throw new Error(`Unexpected page title: ${title}`)
   }
 
-  // Verify Hero & Canvas elements
-  const heroBadge = await page.locator('text=NEXWARE // OS').count()
-  console.log(`   NexWare OS Badge found: ${heroBadge > 0}`)
+  // Verify Hero & Brand elements
+  const brandLogo = await page.locator('nav a:has-text("Nex")').count()
+  const heroTelemetry = await page.locator('text=Enterprise ERP Engine v2.0').count()
+  console.log(`   NexWare Brand Logo found: ${brandLogo > 0}`)
+  console.log(`   Hero Telemetry found: ${heroTelemetry > 0}`)
+  if (brandLogo === 0 || heroTelemetry === 0) {
+    throw new Error('Expected NexWare branding and hero telemetry on root page')
+  }
 
   // Test Theme Toggle
   const lightBtn = page.locator('button[aria-label="Switch to Light Mode"]').first()
@@ -89,8 +94,18 @@ async function runLiveVerification() {
   const appHtml = await page.$eval('#app', el => el.innerHTML.length)
   console.log(`   ERP #app container populated with ${appHtml} chars of UI`)
 
+  // Test 3.5: ERP Login View Branding Check
+  console.log(`3. Navigating to ERP Login: ${PROD_URL}/warehouse-erp/index.html#/login`)
+  await page.goto(`${PROD_URL}/warehouse-erp/index.html#/login`, { waitUntil: 'networkidle' })
+  await page.waitForSelector('.auth-logo-name', { timeout: 5000 })
+  const loginLogoText = await page.locator('.auth-logo-name').first().textContent()
+  console.log(`   ERP Login Brand: "${loginLogoText}"`)
+  if (!loginLogoText || !loginLogoText.includes('NexWare')) {
+    throw new Error(`Expected ERP login screen to display NexWare, got: ${loginLogoText}`)
+  }
+
   // Test 4: Authenticated Dashboard Simulation on Live
-  console.log(`3. Navigating to Authenticated ERP Dashboard: ${PROD_URL}/warehouse-erp/index.html#/dashboard`)
+  console.log(`4. Navigating to Authenticated ERP Dashboard: ${PROD_URL}/warehouse-erp/index.html#/dashboard`)
   await page.addInitScript(() => {
     const user = {
       id: 'usr_demo_admin',

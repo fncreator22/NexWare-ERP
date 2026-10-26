@@ -30,7 +30,7 @@ function strip(code) {
   return code;
 }
 
-let bundle = '// WareOps ERP — Bundled v2.0\n\n';
+let bundle = '// NexWare ERP — Bundled v2.0\n\n';
 
 for (const f of files) {
   const code = strip(readFileSync(join(jsBase, f), 'utf8'));

@@ -1,13 +1,13 @@
 // Handle unhandled promise rejections and global errors for visible debugging
 window.addEventListener('error', (event) => {
-  console.error('[WareOps] Global Error:', event.error);
+  console.error('[NexWare] Global Error:', event.error);
   if (!document.getElementById('app')?.innerHTML) {
     renderErrorPage(event.error || new Error(event.message));
   }
 });
 
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('[WareOps] Unhandled Rejection:', event.reason);
+  console.error('[NexWare] Unhandled Rejection:', event.reason);
   if (!document.getElementById('app')?.innerHTML) {
     renderErrorPage(new Error(event.reason || 'Unhandled Async Error'));
   }
@@ -170,7 +170,7 @@ function resolveRoute() {
       safeNavigate(user ? '/dashboard' : '/login');
     }
   } catch (err) {
-    console.error('[WareOps] Route resolution crash:', err);
+    console.error('[NexWare] Route resolution crash:', err);
     renderErrorPage(err);
   }
 }
@@ -180,7 +180,7 @@ function renderErrorPage(err) {
   if (!appEl) return;
   
   // Log full error detail to console for developers; never expose stack traces to the UI
-  console.error('[WareOps] Application error:', err);
+  console.error('[NexWare] Application error:', err);
   appEl.innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0f1029;color:#f8fafc;font-family:sans-serif">
       <div style="text-align:center;max-width:480px;background:rgba(255,255,255,0.03);padding:40px;border-radius:24px;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.3)">
@@ -228,7 +228,7 @@ function startInactivityMonitor() {
     const timeoutMs = timeoutMin * 60 * 1000;
 
     if (Date.now() - _lastActivityTime > timeoutMs) {
-      console.log(`[WareOps] Inactivity timeout reached (${timeoutMin}m). Logging out.`);
+      console.log(`[NexWare] Inactivity timeout reached (${timeoutMin}m). Logging out.`);
       events.forEach(evt => window.removeEventListener(evt, updateActivity));
       clearInterval(_inactivityTimer);
       _inactivityTimer = null;
@@ -266,13 +266,13 @@ async function init() {
       try {
         await syncWithBackend();
       } catch (syncErr) {
-        console.warn('[WareOps] Initial background sync failed:', syncErr);
+        console.warn('[NexWare] Initial background sync failed:', syncErr);
       }
     }
 
     resolveRoute();
   } catch (err) {
-    console.error('[WareOps] Critical initialization failure:', err);
+    console.error('[NexWare] Critical initialization failure:', err);
     renderErrorPage(err);
   }
 }

@@ -125,6 +125,6 @@ export function renderSubscription() {
   `);
 
   document.getElementById('upgrade-btn')?.addEventListener('click', () => {
-    showToast('Enterprise Plan', 'Contact sales@wareops.io to upgrade your plan.', 'info');
+    showToast('Enterprise Plan', 'Contact sales@nexware.internal to upgrade your plan.', 'info');
   });
 }
