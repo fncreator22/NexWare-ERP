@@ -85,12 +85,12 @@ export function renderSubscription() {
         <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:16px">Plan Features</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           ${[
-            { icon:getSvgIcon('warehouses', 20), feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
-            { icon:getSvgIcon('workforce', 20), feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
-            { icon:getSvgIcon('revenue', 20), feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
-            { icon:getSvgIcon('analytics', 20), feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
-            { icon:getSvgIcon('tables', 20), feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
-            { icon:getSvgIcon('search', 20), feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
+            { icon:getSvgIcon('warehouses', 20), feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : 'Included', enterprise: 'Unlimited' },
+            { icon:getSvgIcon('workforce', 20), feat:'Workforce Management', starter:'Included', enterprise:'Included (+ Cross-Warehouse)' },
+            { icon:getSvgIcon('revenue', 20), feat:'Billing & Invoicing', starter:'Included', enterprise:'Included' },
+            { icon:getSvgIcon('analytics', 20), feat:'Analytics & Reports', starter:'Basic', enterprise:'Global Telemetry' },
+            { icon:getSvgIcon('tables', 20), feat:'Dynamic Table Builder', starter:'Limited', enterprise:'Unlimited' },
+            { icon:getSvgIcon('search', 20), feat:'Audit Logs', starter:'30 days', enterprise:'Full History' },
           ].map(f=>`
             <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px">
               <span style="display:flex;align-items:center;color:var(--text-secondary)">${f.icon}</span>

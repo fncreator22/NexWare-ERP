@@ -15,20 +15,20 @@ export function renderLogin() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Welcome back</h1>
         <p class="auth-subtitle">Sign in to your enterprise workspace</p>
         <form id="login-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">📧</span>
+            <span class="auth-input-icon">${getSvgIcon("mail", 16)}</span>
             <input type="email" id="login-email" class="form-control" placeholder="Email address" required autocomplete="email" />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" />
-            <button type="button" class="auth-password-toggle" id="toggle-pw">👁️</button>
+            <button type="button" class="auth-password-toggle" id="toggle-pw">${getSvgIcon("eye", 16)}</button>
           </div>
           <div style="display:flex;justify-content:flex-end;margin-bottom:16px;margin-top:-8px">
             <a href="#/forgot-password" style="font-size:12.5px;color:var(--brand-500);text-decoration:none;font-weight:600">Forgot Password?</a>
@@ -78,24 +78,24 @@ export function renderSignup() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Create your account</h1>
         <p class="auth-subtitle">Start your free enterprise workspace</p>
         <form id="signup-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">👤</span>
+            <span class="auth-input-icon">${getSvgIcon("user", 16)}</span>
             <input type="text" id="signup-name" class="form-control" placeholder="Full name" required />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">📧</span>
+            <span class="auth-input-icon">${getSvgIcon("mail", 16)}</span>
             <input type="email" id="signup-email" class="form-control" placeholder="Work email" required autocomplete="email" />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="signup-password" class="form-control" placeholder="Create password (min 8 chars)" required minlength="8" />
-            <button type="button" class="auth-password-toggle" id="toggle-pw2">👁️</button>
+            <button type="button" class="auth-password-toggle" id="toggle-pw2">${getSvgIcon("eye", 16)}</button>
           </div>
           <div style="margin-bottom:16px">
             <label class="checkbox-group">
@@ -146,7 +146,7 @@ export function renderWarehouseRegistration() {
       ${authBgHTML()}
       <header class="warehouse-reg-header">
         <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚡</div>
+          <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${getSvgIcon("zap", 20)}</div>
           <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
         </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
@@ -157,14 +157,14 @@ export function renderWarehouseRegistration() {
       <div class="warehouse-reg-body">
         <div class="warehouse-reg-card animate-slideUp">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-            <span style="font-size:32px">🏭</span>
+            <span style="display:inline-flex;align-items:center;">${getSvgIcon("factory", 32)}</span>
             <div>
               <h1 class="warehouse-reg-title">Register Your First Warehouse</h1>
               <p class="warehouse-reg-subtitle">This warehouse will be your primary operational hub</p>
             </div>
           </div>
           <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:12px 16px;margin-bottom:28px;display:flex;align-items:center;gap:10px">
-            <span>👑</span>
+            <span style="display:inline-flex;align-items:center;">${getSvgIcon("crown", 16)}</span>
             <span style="font-size:13px;color:var(--text-secondary)">You're registering as <strong style="color:var(--text-primary)">Super Admin</strong>. You can add more warehouses later from your dashboard.</span>
           </div>
           <form id="warehouse-form">
@@ -204,18 +204,18 @@ export function renderWarehouseRegistration() {
               <div class="form-group">
                 <label class="form-label">Warehouse Logo <span style="color:var(--text-muted);font-size:11px">(Optional)</span></label>
                 <select id="wh-logo" class="form-control">
-                  <option value="🏭">🏭 Factory</option>
-                  <option value="🏗️">🏗️ Construction</option>
-                  <option value="🚛">🚛 Logistics</option>
-                  <option value="📦">📦 Storage</option>
-                  <option value="🏢">🏢 Office</option>
-                  <option value="⚙️">⚙️ Manufacturing</option>
+                  <option value="factory">Factory</option>
+                  <option value="construction">Construction</option>
+                  <option value="logistics">Logistics</option>
+                  <option value="storage">Storage</option>
+                  <option value="office">Office</option>
+                  <option value="manufacturing">Manufacturing</option>
                 </select>
               </div>
             </div>
             <div style="display:flex;gap:12px;margin-top:8px">
               <button type="submit" class="btn btn-primary" style="flex:1;height:48px;font-size:15px" id="wh-submit-btn">
-                🚀 Create Warehouse & Enter Dashboard
+                Create Warehouse & Enter Dashboard
               </button>
             </div>
           </form>
@@ -242,14 +242,14 @@ export function renderWarehouseRegistration() {
     if (!name || !businessName || !address || !contact || !email) {
       showToast('Validation', 'Please fill all required fields', 'warning');
       btn.disabled = false;
-      btn.innerHTML = '🚀 Create Warehouse & Enter Dashboard';
+      btn.innerHTML = 'Create Warehouse & Enter Dashboard';
       return;
     }
     const wh = await createWarehouse({ name, businessName, address, contact, email, taxPreference: document.getElementById('wh-tax').value, logo: document.getElementById('wh-logo').value });
     if (wh.error) {
       showToast('Error', wh.error, 'error');
       btn.disabled = false;
-      btn.innerHTML = '🚀 Create Warehouse & Enter Dashboard';
+      btn.innerHTML = 'Create Warehouse & Enter Dashboard';
       return;
     }
     showToast('Warehouse created!', `${wh.name} is ready`, 'success');
@@ -263,14 +263,14 @@ export function renderForgotPassword() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Reset password</h1>
         <p class="auth-subtitle">Enter your email to request a reset token</p>
         <form id="forgot-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">📧</span>
+            <span class="auth-input-icon">${getSvgIcon("mail", 16)}</span>
             <input type="email" id="forgot-email" class="form-control" placeholder="Email address" required autocomplete="email" />
           </div>
           <button type="submit" class="btn btn-primary" id="forgot-btn">
@@ -338,18 +338,18 @@ export function renderResetPassword() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Create new password</h1>
         <p class="auth-subtitle">Enter your new secure password (min 8 characters)</p>
         <form id="reset-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="reset-password" class="form-control" placeholder="New Password" required minlength="8" />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="reset-confirm" class="form-control" placeholder="Confirm New Password" required minlength="8" />
           </div>
           <button type="submit" class="btn btn-primary" id="reset-btn">

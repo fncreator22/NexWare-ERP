@@ -640,7 +640,7 @@ export function show2FASetupModal(userDoc) {
         <div style="color:#0f1029;font-family:var(--font-mono)">
           <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px">Secret Key</div>
           <div style="font-size:14px;font-weight:800;letter-spacing:1px;background:#f1f5f9;padding:6px 10px;border-radius:6px" id="2fa-secret-text">${secretKey}</div>
-          <button type="button" class="btn btn-ghost btn-xs" id="btn-copy-secret" style="margin-top:6px;font-size:10px;color:#6366f1">📋 Copy Key</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="btn-copy-secret" style="margin-top:6px;font-size:10px;color:#6366f1;display:inline-flex;align-items:center;gap:4px">${getSvgIcon('copy', 12)} Copy Key</button>
         </div>
       </div>
 
@@ -855,7 +855,7 @@ export function showIDCardModal(u) {
     <!-- FRONT SIDE -->
     <div class="id-card">
       <div class="id-card-header">
-        <div class="id-logo">⚡ WAREOPS</div>
+        <div class="id-logo" style="display:inline-flex;align-items:center;gap:6px;">${getSvgIcon("zap", 16)} WAREOPS</div>
         <div class="id-badge">ACCESS ID</div>
       </div>
       <div class="id-profile">

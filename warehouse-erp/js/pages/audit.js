@@ -56,7 +56,7 @@ export function renderAudit() {
       
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:inline-flex;align-items:center;">${getSvgIcon("search", 16)}</span>
           <input type="text" id="audit-search" placeholder="Search by description, user, or action..." value="${au_searchQ}" />
         </div>
         <div class="table-filter">
@@ -169,7 +169,7 @@ async function renderAuditTable() {
     if (!res || !res.success || !Array.isArray(res.data)) {
       container.innerHTML = `
         <div class="card" style="text-align:center;padding:48px">
-          <div style="font-size:40px;margin-bottom:16px;opacity:0.4">⚠️</div>
+          <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center;">${getSvgIcon("warning", 40)}</div>
           <h3 style="color:var(--text-secondary)">Failed to load audit logs</h3>
           <p style="color:var(--text-muted);font-size:13px;margin-top:8px">${res?.error || 'Unable to fetch audit logs from backend.'}</p>
         </div>
@@ -185,7 +185,7 @@ async function renderAuditTable() {
     if (logs.length === 0) {
       container.innerHTML = `
         <div class="card" style="text-align:center;padding:64px">
-          <div style="font-size:48px;margin-bottom:16px;opacity:0.3">📋</div>
+          <div style="margin-bottom:16px;opacity:0.3;display:flex;justify-content:center;">${getSvgIcon("audit", 48)}</div>
           <h3 style="color:var(--text-secondary);font-weight:600">No activity logs recorded</h3>
           <p style="color:var(--text-muted);font-size:13px;margin-top:8px">No system actions matched the selected filters.</p>
         </div>
@@ -286,7 +286,7 @@ async function renderAuditTable() {
     console.error('[AuditLog] Error rendering table:', err);
     container.innerHTML = `
       <div class="card" style="text-align:center;padding:48px">
-        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">⚠️</div>
+        <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center;">${getSvgIcon("warning", 40)}</div>
         <h3 style="color:var(--text-secondary)">An unexpected error occurred</h3>
         <p style="color:var(--text-muted);font-size:13px;margin-top:8px">Unable to connect to the ERP server.</p>
       </div>

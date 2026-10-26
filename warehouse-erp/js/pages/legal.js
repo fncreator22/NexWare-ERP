@@ -13,7 +13,7 @@ export function renderPrivacy() {
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
           <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
-            <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
+            <div class="auth-logo-icon" style="width:36px;height:36px;">${getSvgIcon("zap", 18)}</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="window.location.hash='#/signup'" style="font-size:12px;padding:6px 12px;cursor:pointer">← Back to Signup</button>
@@ -61,7 +61,7 @@ export function renderTerms() {
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
           <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
-            <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
+            <div class="auth-logo-icon" style="width:36px;height:36px;">${getSvgIcon("zap", 18)}</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="window.location.hash='#/signup'" style="font-size:12px;padding:6px 12px;cursor:pointer">← Back to Signup</button>

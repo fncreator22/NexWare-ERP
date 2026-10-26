@@ -28,21 +28,21 @@ export default function FeatureModal({ content, onClose }: FeatureModalProps) {
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl bg-[#0c0d1e] border border-white/15 rounded-xl p-6 sm:p-8 shadow-2xl space-y-6 text-white overflow-hidden"
+        className="relative w-full max-w-2xl bg-[#12151c] border border-white/10 rounded-lg p-6 sm:p-8 shadow-2xl space-y-6 text-white overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
         <div className="flex items-start justify-between border-b border-white/10 pb-4 relative z-10">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-[#6366f1]/20 text-[#818cf8] border border-[#6366f1]/30 px-2.5 py-0.5 rounded-md">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-[#f59e0b]/15 text-[#fbbf24] border border-[#f59e0b]/30 px-2.5 py-0.5 rounded-md">
                 {content.category}
               </span>
               <span className="text-[10px] font-mono text-[#10b981] bg-[#10b981]/10 px-2 py-0.5 rounded-md">
                 ● {content.badge}
               </span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white">{content.title}</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{content.title}</h2>
           </div>
 
           <button
@@ -66,7 +66,7 @@ export default function FeatureModal({ content, onClose }: FeatureModalProps) {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {content.highlights.map((h, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-white/90 p-2.5 rounded-lg bg-[#080918] border border-white/5">
+              <div key={i} className="flex items-center gap-2 text-xs text-white/90 p-2.5 rounded-lg bg-[#0d0f14] border border-white/5">
                 <CheckCircle2 className="w-4 h-4 text-[#10b981] shrink-0" />
                 <span>{h}</span>
               </div>
@@ -75,7 +75,7 @@ export default function FeatureModal({ content, onClose }: FeatureModalProps) {
         </div>
 
         {/* Technical Specs Table */}
-        <div className="p-4 rounded-lg bg-[#080918] border border-white/10 space-y-2 relative z-10">
+        <div className="p-4 rounded-lg bg-[#0d0f14] border border-white/10 space-y-2 relative z-10">
           <p className="text-[10px] font-bold uppercase tracking-wider text-white/40 font-mono">
             Technical Specification Matrix:
           </p>
@@ -83,7 +83,7 @@ export default function FeatureModal({ content, onClose }: FeatureModalProps) {
             {content.techSpecs.map((ts, i) => (
               <div key={i} className="flex justify-between p-2 rounded-md bg-white/5 text-[11px]">
                 <span className="text-white/60">{ts.label}:</span>
-                <span className="font-mono font-bold text-[#818cf8]">{ts.value}</span>
+                <span className="font-mono font-bold text-[#f59e0b]">{ts.value}</span>
               </div>
             ))}
           </div>
@@ -101,13 +101,13 @@ export default function FeatureModal({ content, onClose }: FeatureModalProps) {
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               onClick={handleLaunchApp}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-[#6366f1] text-white font-bold text-xs px-5 py-2.5 rounded-lg hover:bg-[#4f46e5] transition-all shadow-lg shadow-[#6366f1]/25"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-[#f59e0b] text-[#08090c] font-bold text-xs px-5 py-2.5 rounded-lg hover:bg-[#d97706] transition-all shadow-lg shadow-[#f59e0b]/20"
             >
               Open Module in ERP <ExternalLink className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => { window.location.href = '/warehouse-erp/index.html#/signup' }}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-white text-gray-900 font-bold text-xs px-5 py-2.5 rounded-lg hover:bg-white/90 transition-all shadow-lg"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-white text-[#08090c] font-bold text-xs px-5 py-2.5 rounded-lg hover:bg-white/90 transition-all shadow-lg"
             >
               Start Trial <ArrowRight className="w-3.5 h-3.5" />
             </button>

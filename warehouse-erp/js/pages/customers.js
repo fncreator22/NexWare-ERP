@@ -117,7 +117,7 @@ async function fetchAndRenderCustomers() {
     if (container) {
       container.innerHTML = `
         <div class="card" style="text-align:center;padding:48px;border-color:rgba(239,68,68,0.2)">
-          <div style="font-size:40px;margin-bottom:16px;color:rgba(239,68,68,0.7)">⚠️</div>
+          <div style="margin-bottom:16px;color:rgba(239,68,68,0.7);display:flex;justify-content:center;">${getSvgIcon("warning", 40)}</div>
           <h3 style="color:var(--text-secondary)">CRM Offline</h3>
           <p style="color:var(--text-muted);margin-top:8px">${res.error}</p>
         </div>
@@ -139,7 +139,7 @@ async function fetchAndRenderCustomers() {
   if (customers.length === 0) {
     container.innerHTML = `
       <div class="card" style="text-align:center;padding:48px">
-        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">👥</div>
+        <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center;">${getSvgIcon("workforce", 40)}</div>
         <h3 style="color:var(--text-secondary)">No CRM records found</h3>
         <p style="color:var(--text-muted);margin-top:8px">No active customer repeat profiles found matching queries.</p>
       </div>

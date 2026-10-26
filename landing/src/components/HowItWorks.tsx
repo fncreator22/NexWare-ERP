@@ -31,8 +31,8 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
     title: 'Data Ingestion & Import',
     subtitle: 'Connect your existing tools & import data instantly',
     icon: UploadCloud,
-    accentColor: '#6366f1',
-    bgGlow: 'from-[#6366f1]/20 to-[#6366f1]/5',
+    accentColor: '#f59e0b',
+    bgGlow: 'from-[#f59e0b]/20 to-[#f59e0b]/5',
     copy: 'Eliminate disconnected data silos by bulk importing CSV manifests, legacy database records, and SKU catalogues into isolated tenant storage.',
     valueProp: 'Eliminates disconnected data silos & manual entry',
     uiPreviewType: 'ingestion',
@@ -71,8 +71,8 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
     title: 'Live Real-Time Analytics',
     subtitle: 'Track key operational metrics in real time',
     icon: BarChart3,
-    accentColor: '#febc2e',
-    bgGlow: 'from-[#febc2e]/20 to-[#febc2e]/5',
+    accentColor: '#d97706',
+    bgGlow: 'from-[#d97706]/20 to-[#d97706]/5',
     copy: 'Monitor revenue trends, stock health indicators, and warehouse productivity in real-time backed by MongoDB Change Streams & WebSocket push updates.',
     valueProp: 'Bridges raw inventory data to decision making',
     uiPreviewType: 'analytics',
@@ -91,8 +91,8 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
     title: 'Enterprise Growth Engine',
     subtitle: 'Expand operations without operational friction',
     icon: TrendingUp,
-    accentColor: '#818cf8',
-    bgGlow: 'from-[#818cf8]/20 to-[#818cf8]/5',
+    accentColor: '#06b6d4',
+    bgGlow: 'from-[#06b6d4]/20 to-[#06b6d4]/5',
     copy: 'Add unlimited warehouse locations, invite staff with 5-tier RBAC access, and build dynamic custom data schemas as your enterprise expands.',
     valueProp: 'Adapts smoothly to enterprise business growth',
     uiPreviewType: 'growth',
@@ -124,18 +124,18 @@ export default function HowItWorks() {
   }
 
   return (
-    <section id="how-it-works" className="relative bg-[#070814] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
+    <section id="how-it-works" className="relative bg-[#08090c] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 
         {/* ═══════════ SECTION HEADER ════════════════════════ */}
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#f59e0b]/10 border border-[#f59e0b]/30 text-[#f59e0b] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
             <Workflow className="w-3.5 h-3.5" /> Linear 4-Step Onboarding Architecture
           </div>
           <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white mb-4">
             From Zero to Real-Time ERP Operations<br />
-            <span className="bg-gradient-to-r from-white via-[#c7d2fe] to-[#10b981] bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-white via-[#fde68a] to-[#10b981] bg-clip-text text-transparent">
               In under 5 minutes
             </span>
           </h2>
@@ -150,7 +150,7 @@ export default function HowItWorks() {
           {/* Desktop Connecting Line (Neon Accent) */}
           <div className="hidden lg:block absolute top-1/2 left-12 right-12 h-1 bg-white/10 -translate-y-1/2 z-0">
             <div
-              className="h-full bg-gradient-to-r from-[#6366f1] via-[#10b981] to-[#818cf8] transition-all duration-700"
+              className="h-full bg-gradient-to-r from-[#f59e0b] via-[#06b6d4] to-[#10b981] transition-all duration-700"
               style={{ width: `${((activeStepId - 1) / 3) * 100}%` }}
             />
           </div>
@@ -163,20 +163,20 @@ export default function HowItWorks() {
                 <div
                   key={st.id}
                   onClick={() => setActiveStepId(st.id)}
-                  className={`group relative bg-[#0c0d1e] border rounded-xl p-6 transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl ${
+                  className={`group relative bg-[#12151c] border rounded-xl p-6 transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl ${
                     isActive
-                      ? 'border-[#6366f1] ring-1 ring-[#6366f1]/50 scale-[1.02]'
-                      : 'border-white/10 hover:border-white/20 hover:bg-[#111328]'
+                      ? 'border-[#f59e0b] ring-1 ring-[#f59e0b]/50 scale-[1.02]'
+                      : 'border-white/10 hover:border-white/20 hover:bg-[#161922]'
                   }`}
                 >
                   <div>
                     {/* Top Row: Icon & Step Badge */}
                     <div className="flex items-center justify-between mb-4">
                       <div
-                        className="w-11 h-11 rounded-lg flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110"
+                        className="w-11 h-11 rounded-lg flex items-center justify-center text-carbon-950 font-bold shadow-lg transition-transform group-hover:scale-110"
                         style={{ background: st.accentColor }}
                       >
-                        <Icon className="w-5 h-5" />
+                        <Icon className="w-5 h-5 text-gray-900" />
                       </div>
                       <span className="text-xs font-mono font-bold text-white/50 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
                         {st.badge}
@@ -204,7 +204,7 @@ export default function HowItWorks() {
         </div>
 
         {/* ═══════════ DETAILED DISPLAY WIDGET & PREVIEW ═══════ */}
-        <div className="bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 lg:p-10 shadow-xl relative overflow-hidden">
+        <div className="bg-[#12151c] border border-white/10 rounded-xl p-6 sm:p-8 lg:p-10 shadow-xl relative overflow-hidden">
           
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
 
@@ -224,7 +224,7 @@ export default function HowItWorks() {
                 {activeStep.copy}
               </p>
 
-              <div className="p-4 rounded-lg bg-[#080918] border border-white/10 space-y-2">
+              <div className="p-4 rounded-lg bg-[#0d0f14] border border-white/10 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#10b981]">
                   <CheckCircle2 className="w-4 h-4" /> Core Business Value Delivered:
                 </div>
@@ -237,7 +237,7 @@ export default function HowItWorks() {
               <div className="pt-2">
                 <button
                   onClick={() => setExpandedSpecId(expandedSpecId === activeStep.id ? null : activeStep.id)}
-                  className="flex items-center gap-2 text-xs font-semibold text-[#818cf8] hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-xs font-semibold text-[#f59e0b] hover:text-white transition-colors"
                 >
                   <span>
                     {expandedSpecId === activeStep.id ? 'Hide Technical Architecture Specs' : 'View Technical Architecture Specs'}
@@ -246,7 +246,7 @@ export default function HowItWorks() {
                 </button>
 
                 {expandedSpecId === activeStep.id && (
-                  <div className="mt-3 p-4 rounded-lg bg-[#080918] border border-[#6366f1]/30 text-xs space-y-3 animate-fade-up">
+                  <div className="mt-3 p-4 rounded-lg bg-[#0d0f14] border border-[#f59e0b]/30 text-xs space-y-3 animate-fade-up">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2">
                       <span className="font-bold text-white">{activeStep.techSpecs.title}</span>
                     </div>
@@ -264,30 +264,30 @@ export default function HowItWorks() {
             </div>
 
             {/* Right 6 Columns: Interactive Visual Mockup Widget */}
-            <div className="lg:col-span-6 bg-[#080918] border border-white/10 rounded-lg p-6 relative min-h-[340px] flex flex-col justify-between">
+            <div className="lg:col-span-6 bg-[#0d0f14] border border-white/10 rounded-lg p-6 relative min-h-[340px] flex flex-col justify-between">
 
               {/* Step 1 Preview: Ingestion Dropzone */}
               {activeStep.uiPreviewType === 'ingestion' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-white flex items-center gap-2">
-                      <Database className="w-4 h-4 text-[#6366f1]" /> Central Data Dropzone
+                      <Database className="w-4 h-4 text-[#f59e0b]" /> Central Data Dropzone
                     </span>
                     <span className="text-[10px] text-[#10b981] font-mono">CSV / JSON / SQL Supported</span>
                   </div>
 
                   <div
                     onClick={handleSimulateUpload}
-                    className="border-2 border-dashed border-[#6366f1]/40 hover:border-[#6366f1] bg-white/[0.02] hover:bg-white/[0.04] p-8 rounded-lg text-center space-y-3 cursor-pointer transition-all duration-300 group"
+                    className="border-2 border-dashed border-[#f59e0b]/40 hover:border-[#f59e0b] bg-white/[0.02] hover:bg-white/[0.04] p-8 rounded-lg text-center space-y-3 cursor-pointer transition-all duration-300 group"
                   >
-                    <div className="w-12 h-12 rounded-lg bg-[#6366f1]/20 text-[#818cf8] flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 rounded-lg bg-[#f59e0b]/20 text-[#f59e0b] flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
                       <UploadCloud className="w-6 h-6 animate-pulse" />
                     </div>
                     <div>
                       <p className="text-xs font-bold text-white">Click or Drag & Drop Data File</p>
                       <p className="text-[10px] text-white/50 mt-1">Simulate ingestion of manifest & SKU database</p>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-md text-[10px] text-[#c7d2fe] font-mono">
+                    <div className="inline-flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-md text-[10px] text-[#fde68a] font-mono">
                       <FileSpreadsheet className="w-3 h-3" /> {ingestFile}
                     </div>
                   </div>
@@ -312,27 +312,27 @@ export default function HowItWorks() {
                   </div>
 
                   <div className="space-y-3">
-                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#12151c] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <span className="text-white/60">1. Invoice Event Triggered</span>
                       <span className="text-[#10b981] font-mono font-bold">INV-0038 Issued</span>
                     </div>
 
                     <div className="flex justify-center">
-                      <div className="w-0.5 h-6 bg-gradient-to-b from-[#10b981] to-[#6366f1] animate-pulse" />
+                      <div className="w-0.5 h-6 bg-gradient-to-b from-[#10b981] to-[#f59e0b] animate-pulse" />
                     </div>
 
-                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#12151c] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <span className="text-white/60">2. Tax Rate Snapshot Applied</span>
                       <span className="text-[#febc2e] font-mono font-bold">5% Standard ($45.50)</span>
                     </div>
 
                     <div className="flex justify-center">
-                      <div className="w-0.5 h-6 bg-gradient-to-b from-[#febc2e] to-[#818cf8] animate-pulse" />
+                      <div className="w-0.5 h-6 bg-gradient-to-b from-[#febc2e] to-[#06b6d4] animate-pulse" />
                     </div>
 
-                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#12151c] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <span className="text-white/60">3. Stock Decrement & Audit Log</span>
-                      <span className="text-[#818cf8] font-mono font-bold">Atomic 80 Pcs</span>
+                      <span className="text-[#06b6d4] font-mono font-bold">Atomic 80 Pcs</span>
                     </div>
                   </div>
                 </div>
@@ -343,25 +343,25 @@ export default function HowItWorks() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-white flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-[#febc2e]" /> Real-Time Analytics Counter
+                      <BarChart3 className="w-4 h-4 text-[#f59e0b]" /> Real-Time Analytics Counter
                     </span>
-                    <span className="text-[10px] text-[#febc2e] font-mono">Live WebSocket Broadcast</span>
+                    <span className="text-[10px] text-[#f59e0b] font-mono">Live WebSocket Broadcast</span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3.5 bg-[#080918] rounded-lg border border-white/10 space-y-1">
+                    <div className="p-3.5 bg-[#12151c] rounded-lg border border-white/10 space-y-1">
                       <span className="text-[10px] text-white/40 uppercase">Total Revenue</span>
                       <p className="text-xl font-bold text-white font-mono">$124,700</p>
                       <span className="text-[9px] text-[#10b981]">↑ 18% vs last month</span>
                     </div>
-                    <div className="p-3.5 bg-[#080918] rounded-lg border border-white/10 space-y-1">
+                    <div className="p-3.5 bg-[#12151c] rounded-lg border border-white/10 space-y-1">
                       <span className="text-[10px] text-white/40 uppercase">Invoices Issued</span>
                       <p className="text-xl font-bold text-white font-mono">38</p>
                       <span className="text-[9px] text-[#10b981]">100% Paid on time</span>
                     </div>
                   </div>
 
-                  <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
+                  <div className="p-3 bg-[#12151c] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                     <span className="text-white/60">Stock Health Index</span>
                     <span className="text-[#10b981] font-bold font-mono">94% Healthy</span>
                   </div>
@@ -373,13 +373,13 @@ export default function HowItWorks() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-white flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-[#818cf8]" /> Enterprise Growth Matrix
+                      <TrendingUp className="w-4 h-4 text-[#06b6d4]" /> Enterprise Growth Matrix
                     </span>
-                    <span className="text-[10px] text-[#818cf8] font-mono">Unlimited Scaling</span>
+                    <span className="text-[10px] text-[#06b6d4] font-mono">Unlimited Scaling</span>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#12151c] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <div>
                         <p className="font-bold text-white">Dallas Logistics Depot</p>
                         <p className="text-[10px] text-white/40">5 Staff · $42,300 Revenue</p>
@@ -387,7 +387,7 @@ export default function HowItWorks() {
                       <span className="text-[#10b981] font-semibold">Active ●</span>
                     </div>
 
-                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#12151c] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <div>
                         <p className="font-bold text-white">Houston HQ Distribution</p>
                         <p className="text-[10px] text-white/40">8 Staff · $58,900 Revenue</p>
@@ -395,7 +395,7 @@ export default function HowItWorks() {
                       <span className="text-[#10b981] font-semibold">Active ●</span>
                     </div>
 
-                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#12151c] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <div>
                         <p className="font-bold text-white">Austin Depot North</p>
                         <p className="text-[10px] text-white/40">3 Staff · $23,550 Revenue</p>
@@ -417,7 +417,7 @@ export default function HowItWorks() {
 
                 <button
                   onClick={() => setActiveStepId(prev => (prev === 4 ? 1 : prev + 1))}
-                  className="flex items-center gap-1 font-bold text-[#818cf8] hover:text-white transition-colors"
+                  className="flex items-center gap-1 font-bold text-[#f59e0b] hover:text-white transition-colors"
                 >
                   <span>Next Step</span> <ArrowRight className="w-3.5 h-3.5" />
                 </button>

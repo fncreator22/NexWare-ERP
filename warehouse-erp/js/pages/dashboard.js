@@ -101,8 +101,8 @@ export function renderDashboard() {
 
       ${_dashWhFilter ? `
       <div style="margin-bottom:20px;padding:10px 16px;background:rgba(99,102,241,0.12);border:1px solid var(--border-brand);border-radius:10px;display:flex;align-items:center;justify-content:space-between;font-size:13px">
-        <span>🎯 Filtered by Warehouse: <strong>${whs.find(w=>w.id===_dashWhFilter)?.name || 'Warehouse'}</strong></span>
-        <button class="btn btn-secondary btn-xs" id="clear-dash-wh-filter" style="font-size:11px">✕ Clear Filter</button>
+        <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("target", 14)} Filtered by Warehouse: <strong>${whs.find(w=>w.id===_dashWhFilter)?.name || 'Warehouse'}</strong></span>
+        <button class="btn btn-secondary btn-xs" id="clear-dash-wh-filter" style="font-size:11px;display:inline-flex;align-items:center;gap:4px">${getSvgIcon('close', 12)} Clear Filter</button>
       </div>
       ` : ''}
 
@@ -283,7 +283,7 @@ export function renderDashboard() {
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
           </div>
           ${lowStock.length === 0
-            ? `<div style="text-align:center;padding:16px;color:var(--accent-emerald);font-size:13px">✅ All stock levels healthy</div>`
+            ? `<div style="text-align:center;padding:16px;color:var(--accent-emerald);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px">${getSvgIcon('check', 16)} All stock levels healthy</div>`
             : lowStock.map(i=>`
               <div class="clickable-list-item" onclick="location.hash='#/items?id=${i.id}'" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-subtle);cursor:pointer;border-radius:4px;transition:background 0.15s;" onmouseenter="this.style.background='var(--bg-input)'" onmouseleave="this.style.background='transparent'">
                 <div style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${i.name}</div>

@@ -42,4 +42,4 @@ bundle += `\n// ===== app.js =====\n${appCode.trim()}\n`;
 
 const out = join(base, 'bundle.js');
 writeFileSync(out, bundle, 'utf8');
-console.log('✅ Bundle:', statSync(out).size, 'bytes');
+console.log('[bundle] ERP bundle generated:', statSync(out).size, 'bytes');

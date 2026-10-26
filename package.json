@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "landing"
+  ],
   "scripts": {
     "build": "node scripts/assemble-build.mjs",
     "test": "npm --prefix landing test"

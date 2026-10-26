@@ -1311,14 +1311,19 @@ function getToastContainer() {
 }
 
 function showToast(title, message = '', type = 'info', duration = 4000) {
-  const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+  const iconSvgs = {
+    success: getSvgIcon('check', 16),
+    error: getSvgIcon('close', 16),
+    warning: getSvgIcon('warning', 16),
+    info: getSvgIcon('info', 16),
+  };
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
   // sanitizeHTML prevents XSS from user-supplied toast titles/messages
   const safeTitle = sanitizeHTML(title);
   const safeMsg = sanitizeHTML(message);
   el.innerHTML = `
-    <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+    <span class="toast-icon">${iconSvgs[type] || getSvgIcon('info', 16)}</span>
     <div class="toast-body">
       <div class="toast-title">${safeTitle}</div>
       ${safeMsg ? `<div class="toast-msg">${safeMsg}</div>` : ''}
@@ -1745,6 +1750,23 @@ function getSvgIcon(name, size = 20) {
     location:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
     mail:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
     phone:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+    zap:        `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+    eye:        `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    eye_off:    `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
+    factory:    `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1"/><path d="M12 18h1"/><path d="M7 18h1"/></svg>`,
+    truck:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+    construction:`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10 14 2.3 6.3"/><path d="m14 6 7.7 7.7"/><path d="m8 6 8 8"/></svg>`,
+    building:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="9" y1="22" x2="9" y2="22.01"/><line x1="15" y1="22" x2="15" y2="22.01"/><line x1="9" y1="6" x2="9" y2="6.01"/><line x1="15" y1="6" x2="15" y2="6.01"/><line x1="9" y1="10" x2="9" y2="10.01"/><line x1="15" y1="10" x2="15" y2="10.01"/><line x1="9" y1="14" x2="9" y2="14.01"/><line x1="15" y1="14" x2="15" y2="14.01"/><line x1="9" y1="18" x2="9" y2="18.01"/><line x1="15" y1="18" x2="15" y2="18.01"/></svg>`,
+    gear:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+    print:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`,
+    calendar:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+    file:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+    target:     `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`,
+    rocket:     `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>`,
+    crown:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>`,
+    dollar:     `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+    copy:       `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+    share:      `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`,
     // Sidebar panel collapse/expand icons
     panel_left:        `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`,
     panel_left_open:   `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="14 9 17 12 14 15"/></svg>`,
@@ -2355,7 +2377,7 @@ function exportPDF(entity) {
           <td><strong>$${b.total?.toFixed(2)}</strong></td>
           <td>${new Date(b.createdAt).toLocaleDateString()}</td>
         </tr>`).join('');
-      sections += `<h2>💰 Billing (${d.bills.length} invoices)</h2>
+      sections += `<h2>Billing (${d.bills.length} invoices)</h2>
         <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Warehouse</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Date</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
     }
@@ -2368,7 +2390,7 @@ function exportPDF(entity) {
       const rows = d.users.map(u => `
         <tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td>
         <td>${whs[u.warehouseId]||'Global'}</td><td>${u.status}</td></tr>`).join('');
-      sections += `<h2>👥 Workforce (${d.users.length} members)</h2>
+      sections += `<h2>Workforce (${d.users.length} members)</h2>
         <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Warehouse</th><th>Status</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
     }
@@ -2382,7 +2404,7 @@ function exportPDF(entity) {
         <tr><td>${i.name}</td><td>${i.sku}</td><td>${i.category}</td>
         <td>${i.taxCategory}</td><td>$${i.price?.toFixed(2)}</td><td>${i.stock}</td>
         <td>${whs[i.warehouseId]||''}</td></tr>`).join('');
-      sections += `<h2>📦 Inventory (${d.items.length} items)</h2>
+      sections += `<h2>Inventory (${d.items.length} items)</h2>
         <table><thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Tax Cat</th><th>Price</th><th>Stock</th><th>Warehouse</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
     }
@@ -2409,7 +2431,7 @@ function exportPDF(entity) {
     @page{size:A4;margin:15mm}
     @media print{.no-print{display:none}}
   </style></head><body>
-  <div class="no-print" onclick="window.print()">🖨️ Click to Print / Save as PDF</div>
+  <div class="no-print" onclick="window.print()">Click to Print / Save as PDF</div>
   <h1>WareOps ERP — Data Export</h1>
   <p>Generated: ${ts}</p>
   <p>User: ${user.name} · Role: ${user.role}</p>
@@ -3916,20 +3938,20 @@ function renderLogin() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Welcome back</h1>
         <p class="auth-subtitle">Sign in to your enterprise workspace</p>
         <form id="login-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">📧</span>
+            <span class="auth-input-icon">${getSvgIcon("mail", 16)}</span>
             <input type="email" id="login-email" class="form-control" placeholder="Email address" required autocomplete="email" />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="login-password" class="form-control" placeholder="Password" required autocomplete="current-password" />
-            <button type="button" class="auth-password-toggle" id="toggle-pw">👁️</button>
+            <button type="button" class="auth-password-toggle" id="toggle-pw">${getSvgIcon("eye", 16)}</button>
           </div>
           <div style="display:flex;justify-content:flex-end;margin-bottom:16px;margin-top:-8px">
             <a href="#/forgot-password" style="font-size:12.5px;color:var(--brand-500);text-decoration:none;font-weight:600">Forgot Password?</a>
@@ -3979,24 +4001,24 @@ function renderSignup() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Create your account</h1>
         <p class="auth-subtitle">Start your free enterprise workspace</p>
         <form id="signup-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">👤</span>
+            <span class="auth-input-icon">${getSvgIcon("user", 16)}</span>
             <input type="text" id="signup-name" class="form-control" placeholder="Full name" required />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">📧</span>
+            <span class="auth-input-icon">${getSvgIcon("mail", 16)}</span>
             <input type="email" id="signup-email" class="form-control" placeholder="Work email" required autocomplete="email" />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="signup-password" class="form-control" placeholder="Create password (min 8 chars)" required minlength="8" />
-            <button type="button" class="auth-password-toggle" id="toggle-pw2">👁️</button>
+            <button type="button" class="auth-password-toggle" id="toggle-pw2">${getSvgIcon("eye", 16)}</button>
           </div>
           <div style="margin-bottom:16px">
             <label class="checkbox-group">
@@ -4047,7 +4069,7 @@ function renderWarehouseRegistration() {
       ${authBgHTML()}
       <header class="warehouse-reg-header">
         <div style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚡</div>
+          <div class="auth-logo-icon" style="width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${getSvgIcon("zap", 20)}</div>
           <span style="font-size:18px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WareOps</span>
         </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
@@ -4058,14 +4080,14 @@ function renderWarehouseRegistration() {
       <div class="warehouse-reg-body">
         <div class="warehouse-reg-card animate-slideUp">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-            <span style="font-size:32px">🏭</span>
+            <span style="display:inline-flex;align-items:center;">${getSvgIcon("factory", 32)}</span>
             <div>
               <h1 class="warehouse-reg-title">Register Your First Warehouse</h1>
               <p class="warehouse-reg-subtitle">This warehouse will be your primary operational hub</p>
             </div>
           </div>
           <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:12px 16px;margin-bottom:28px;display:flex;align-items:center;gap:10px">
-            <span>👑</span>
+            <span style="display:inline-flex;align-items:center;">${getSvgIcon("crown", 16)}</span>
             <span style="font-size:13px;color:var(--text-secondary)">You're registering as <strong style="color:var(--text-primary)">Super Admin</strong>. You can add more warehouses later from your dashboard.</span>
           </div>
           <form id="warehouse-form">
@@ -4105,18 +4127,18 @@ function renderWarehouseRegistration() {
               <div class="form-group">
                 <label class="form-label">Warehouse Logo <span style="color:var(--text-muted);font-size:11px">(Optional)</span></label>
                 <select id="wh-logo" class="form-control">
-                  <option value="🏭">🏭 Factory</option>
-                  <option value="🏗️">🏗️ Construction</option>
-                  <option value="🚛">🚛 Logistics</option>
-                  <option value="📦">📦 Storage</option>
-                  <option value="🏢">🏢 Office</option>
-                  <option value="⚙️">⚙️ Manufacturing</option>
+                  <option value="factory">Factory</option>
+                  <option value="construction">Construction</option>
+                  <option value="logistics">Logistics</option>
+                  <option value="storage">Storage</option>
+                  <option value="office">Office</option>
+                  <option value="manufacturing">Manufacturing</option>
                 </select>
               </div>
             </div>
             <div style="display:flex;gap:12px;margin-top:8px">
               <button type="submit" class="btn btn-primary" style="flex:1;height:48px;font-size:15px" id="wh-submit-btn">
-                🚀 Create Warehouse & Enter Dashboard
+                Create Warehouse & Enter Dashboard
               </button>
             </div>
           </form>
@@ -4143,14 +4165,14 @@ function renderWarehouseRegistration() {
     if (!name || !businessName || !address || !contact || !email) {
       showToast('Validation', 'Please fill all required fields', 'warning');
       btn.disabled = false;
-      btn.innerHTML = '🚀 Create Warehouse & Enter Dashboard';
+      btn.innerHTML = 'Create Warehouse & Enter Dashboard';
       return;
     }
     const wh = await createWarehouse({ name, businessName, address, contact, email, taxPreference: document.getElementById('wh-tax').value, logo: document.getElementById('wh-logo').value });
     if (wh.error) {
       showToast('Error', wh.error, 'error');
       btn.disabled = false;
-      btn.innerHTML = '🚀 Create Warehouse & Enter Dashboard';
+      btn.innerHTML = 'Create Warehouse & Enter Dashboard';
       return;
     }
     showToast('Warehouse created!', `${wh.name} is ready`, 'success');
@@ -4164,14 +4186,14 @@ function renderForgotPassword() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Reset password</h1>
         <p class="auth-subtitle">Enter your email to request a reset token</p>
         <form id="forgot-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">📧</span>
+            <span class="auth-input-icon">${getSvgIcon("mail", 16)}</span>
             <input type="email" id="forgot-email" class="form-control" placeholder="Email address" required autocomplete="email" />
           </div>
           <button type="submit" class="btn btn-primary" id="forgot-btn">
@@ -4239,18 +4261,18 @@ function renderResetPassword() {
       ${authBgHTML()}
       <div class="auth-card animate-slideUp">
         <div class="auth-logo" style="cursor:pointer" onclick="window.location.hash='#/'">
-          <div class="auth-logo-icon">⚡</div>
+          <div class="auth-logo-icon">${getSvgIcon("zap", 22)}</div>
           <span class="auth-logo-name">WareOps</span>
         </div>
         <h1 class="auth-title">Create new password</h1>
         <p class="auth-subtitle">Enter your new secure password (min 8 characters)</p>
         <form id="reset-form">
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="reset-password" class="form-control" placeholder="New Password" required minlength="8" />
           </div>
           <div class="auth-input-group">
-            <span class="auth-input-icon">🔒</span>
+            <span class="auth-input-icon">${getSvgIcon("lock", 16)}</span>
             <input type="password" id="reset-confirm" class="form-control" placeholder="Confirm New Password" required minlength="8" />
           </div>
           <button type="submit" class="btn btn-primary" id="reset-btn">
@@ -4314,7 +4336,7 @@ function renderPrivacy() {
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
           <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
-            <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
+            <div class="auth-logo-icon" style="width:36px;height:36px;">${getSvgIcon("zap", 18)}</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="window.location.hash='#/signup'" style="font-size:12px;padding:6px 12px;cursor:pointer">← Back to Signup</button>
@@ -4362,7 +4384,7 @@ function renderTerms() {
       <div class="auth-card" style="max-width:720px;padding:var(--space-8) var(--space-10)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;border-bottom:1px solid var(--border-subtle);padding-bottom:16px;flex-wrap:wrap;gap:12px">
           <div class="auth-logo" style="cursor:pointer;margin-bottom:0" onclick="window.location.hash='#/'">
-            <div class="auth-logo-icon" style="width:36px;height:36px;font-size:16px">⚡</div>
+            <div class="auth-logo-icon" style="width:36px;height:36px;">${getSvgIcon("zap", 18)}</div>
             <span class="auth-logo-name" style="font-size:20px">WareOps</span>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="window.location.hash='#/signup'" style="font-size:12px;padding:6px 12px;cursor:pointer">← Back to Signup</button>
@@ -4498,8 +4520,8 @@ function renderDashboard() {
 
       ${_dashWhFilter ? `
       <div style="margin-bottom:20px;padding:10px 16px;background:rgba(99,102,241,0.12);border:1px solid var(--border-brand);border-radius:10px;display:flex;align-items:center;justify-content:space-between;font-size:13px">
-        <span>🎯 Filtered by Warehouse: <strong>${whs.find(w=>w.id===_dashWhFilter)?.name || 'Warehouse'}</strong></span>
-        <button class="btn btn-secondary btn-xs" id="clear-dash-wh-filter" style="font-size:11px">✕ Clear Filter</button>
+        <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("target", 14)} Filtered by Warehouse: <strong>${whs.find(w=>w.id===_dashWhFilter)?.name || 'Warehouse'}</strong></span>
+        <button class="btn btn-secondary btn-xs" id="clear-dash-wh-filter" style="font-size:11px;display:inline-flex;align-items:center;gap:4px">${getSvgIcon('close', 12)} Clear Filter</button>
       </div>
       ` : ''}
 
@@ -4680,7 +4702,7 @@ function renderDashboard() {
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#/items'" style="font-size:11px">View →</button>
           </div>
           ${lowStock.length === 0
-            ? `<div style="text-align:center;padding:16px;color:var(--accent-emerald);font-size:13px">✅ All stock levels healthy</div>`
+            ? `<div style="text-align:center;padding:16px;color:var(--accent-emerald);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px">${getSvgIcon('check', 16)} All stock levels healthy</div>`
             : lowStock.map(i=>`
               <div class="clickable-list-item" onclick="location.hash='#/items?id=${i.id}'" style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-subtle);cursor:pointer;border-radius:4px;transition:background 0.15s;" onmouseenter="this.style.background='var(--bg-input)'" onmouseleave="this.style.background='transparent'">
                 <div style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${i.name}</div>
@@ -9196,11 +9218,11 @@ function _updatePageMeta() {
   const ownerStr = currentPageMeta.created_by ? `Owner: ID ${currentPageMeta.created_by.slice(0, 8)}` : 'System';
 
   metaEl.innerHTML = `
-    <span>📄 Page ${_activePage}</span>
-    <span>📅 Created: ${dateStr}</span>
-    <span>👤 ${ownerStr}</span>
-    <span>🔒 Roles: ${rolesStr}</span>
-    <span>💾 Storage: ${storageStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("file", 13)} Page ${_activePage}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("calendar", 13)} Created: ${dateStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("user", 13)} ${ownerStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("lock", 13)} Roles: ${rolesStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("database", 13)} Storage: ${storageStr}</span>
   `;
 }
 
@@ -9321,7 +9343,7 @@ function _buildReadonlyCell(value, col) {
   switch (col.type) {
     case 'checkbox': return v 
       ? `<span style="color:var(--accent-emerald);font-weight:700;display:inline-flex;align-items:center">${getSvgIcon('check', 12)}</span>` 
-      : `<span style="color:var(--text-disabled);font-size:14px;font-family:sans-serif;user-select:none">☐</span>`;
+      : `<span style="display:inline-block;width:12px;height:12px;border:1px solid var(--border-strong);border-radius:2px;vertical-align:middle;"></span>`;
     case 'price':    return `<strong>$${Number(v).toFixed(2)}</strong>`;
     case 'date':     return `<span style="font-size:12px;font-family:var(--font-mono)">${v}</span>`;
     case 'tags':     return String(v).split(',').map(t => `<span class="badge badge-purple" style="margin-right:2px">${t.trim()}</span>`).join('');
@@ -9816,7 +9838,7 @@ function _handleWsEvent(e) {
 }
 
 function _showCollabToast(msg) {
-  showToast('👥 Collaboration', msg, 'info', 3000);
+  showToast('Collaboration', msg, 'info', 3000);
 }
 
 async function _refreshRowsFromServer() {
@@ -11294,7 +11316,7 @@ async function _showBarcodePrintSheet() {
         <div class="header">
           <h1>NexWare ERP Scan Sheet</h1>
           <p>Scan-ready laser barcode tags sheet. Print onto label paper or sheets.</p>
-          <button onclick="window.print()" style="padding: 10px 20px; font-size:14px; font-weight:bold; color:white; background:#6366f1; border:none; border-radius:6px; cursor:pointer">🖨️ Print Label Sheet</button>
+          <button onclick="window.print()" style="padding: 10px 20px; font-size:14px; font-weight:bold; color:white; background:#6366f1; border:none; border-radius:6px; cursor:pointer">Print Label Sheet</button>
         </div>
         <div class="grid">
           ${entries.map(e => {
@@ -12517,7 +12539,7 @@ function printBill(billId) {
 </head>
 <body>
   <div class="no-print" style="text-align:center;padding:12px;background:#111827;color:#fff;font-family:sans-serif;font-size:14px;cursor:pointer" onclick="window.print();window.close()">
-    🖨 Click here to Print / Save as PDF — then close this window
+    Click here to Print / Save as PDF — then close this window
   </div>
   <div style="padding:20px">${invoiceHTML}</div>
   <script>setTimeout(()=>window.print(),700);<\/script>
@@ -13151,7 +13173,7 @@ function renderAudit() {
       
       <div class="table-toolbar">
         <div class="table-search">
-          <span>🔍</span>
+          <span style="display:inline-flex;align-items:center;">${getSvgIcon("search", 16)}</span>
           <input type="text" id="audit-search" placeholder="Search by description, user, or action..." value="${au_searchQ}" />
         </div>
         <div class="table-filter">
@@ -13264,7 +13286,7 @@ async function renderAuditTable() {
     if (!res || !res.success || !Array.isArray(res.data)) {
       container.innerHTML = `
         <div class="card" style="text-align:center;padding:48px">
-          <div style="font-size:40px;margin-bottom:16px;opacity:0.4">⚠️</div>
+          <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center;">${getSvgIcon("warning", 40)}</div>
           <h3 style="color:var(--text-secondary)">Failed to load audit logs</h3>
           <p style="color:var(--text-muted);font-size:13px;margin-top:8px">${res?.error || 'Unable to fetch audit logs from backend.'}</p>
         </div>
@@ -13280,7 +13302,7 @@ async function renderAuditTable() {
     if (logs.length === 0) {
       container.innerHTML = `
         <div class="card" style="text-align:center;padding:64px">
-          <div style="font-size:48px;margin-bottom:16px;opacity:0.3">📋</div>
+          <div style="margin-bottom:16px;opacity:0.3;display:flex;justify-content:center;">${getSvgIcon("audit", 48)}</div>
           <h3 style="color:var(--text-secondary);font-weight:600">No activity logs recorded</h3>
           <p style="color:var(--text-muted);font-size:13px;margin-top:8px">No system actions matched the selected filters.</p>
         </div>
@@ -13381,7 +13403,7 @@ async function renderAuditTable() {
     console.error('[AuditLog] Error rendering table:', err);
     container.innerHTML = `
       <div class="card" style="text-align:center;padding:48px">
-        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">⚠️</div>
+        <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center;">${getSvgIcon("warning", 40)}</div>
         <h3 style="color:var(--text-secondary)">An unexpected error occurred</h3>
         <p style="color:var(--text-muted);font-size:13px;margin-top:8px">Unable to connect to the ERP server.</p>
       </div>
@@ -14391,12 +14413,12 @@ function renderSubscription() {
         <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:16px">Plan Features</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           ${[
-            { icon:getSvgIcon('warehouses', 20), feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : '✓', enterprise: '✓ Unlimited' },
-            { icon:getSvgIcon('workforce', 20), feat:'Workforce Management', starter:'✓', enterprise:'✓ + Cross-Warehouse' },
-            { icon:getSvgIcon('revenue', 20), feat:'Billing & Invoicing', starter:'✓', enterprise:'✓' },
-            { icon:getSvgIcon('analytics', 20), feat:'Analytics & Reports', starter:'Basic', enterprise:'✓ Global' },
-            { icon:getSvgIcon('tables', 20), feat:'Dynamic Table Builder', starter:'Limited', enterprise:'✓ Unlimited' },
-            { icon:getSvgIcon('search', 20), feat:'Audit Logs', starter:'30 days', enterprise:'✓ Full History' },
+            { icon:getSvgIcon('warehouses', 20), feat:'Multi-Warehouse Support', starter: isStarter ? '1 Warehouse' : 'Included', enterprise: 'Unlimited' },
+            { icon:getSvgIcon('workforce', 20), feat:'Workforce Management', starter:'Included', enterprise:'Included (+ Cross-Warehouse)' },
+            { icon:getSvgIcon('revenue', 20), feat:'Billing & Invoicing', starter:'Included', enterprise:'Included' },
+            { icon:getSvgIcon('analytics', 20), feat:'Analytics & Reports', starter:'Basic', enterprise:'Global Telemetry' },
+            { icon:getSvgIcon('tables', 20), feat:'Dynamic Table Builder', starter:'Limited', enterprise:'Unlimited' },
+            { icon:getSvgIcon('search', 20), feat:'Audit Logs', starter:'30 days', enterprise:'Full History' },
           ].map(f=>`
             <div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px">
               <span style="display:flex;align-items:center;color:var(--text-secondary)">${f.icon}</span>
@@ -14555,7 +14577,7 @@ async function fetchAndRenderCustomers() {
     if (container) {
       container.innerHTML = `
         <div class="card" style="text-align:center;padding:48px;border-color:rgba(239,68,68,0.2)">
-          <div style="font-size:40px;margin-bottom:16px;color:rgba(239,68,68,0.7)">⚠️</div>
+          <div style="margin-bottom:16px;color:rgba(239,68,68,0.7);display:flex;justify-content:center;">${getSvgIcon("warning", 40)}</div>
           <h3 style="color:var(--text-secondary)">CRM Offline</h3>
           <p style="color:var(--text-muted);margin-top:8px">${res.error}</p>
         </div>
@@ -14577,7 +14599,7 @@ async function fetchAndRenderCustomers() {
   if (customers.length === 0) {
     container.innerHTML = `
       <div class="card" style="text-align:center;padding:48px">
-        <div style="font-size:40px;margin-bottom:16px;opacity:0.4">👥</div>
+        <div style="margin-bottom:16px;opacity:0.4;display:flex;justify-content:center;">${getSvgIcon("workforce", 40)}</div>
         <h3 style="color:var(--text-secondary)">No CRM records found</h3>
         <p style="color:var(--text-muted);margin-top:8px">No active customer repeat profiles found matching queries.</p>
       </div>
@@ -15495,7 +15517,7 @@ function renderNotificationsList() {
   if (filtered.length === 0) {
     container.innerHTML = `
       <div style="padding:64px 24px;text-align:center;color:var(--text-muted)">
-        <div style="font-size:48px;margin-bottom:16px;opacity:0.3">🔔</div>
+        <div style="margin-bottom:16px;opacity:0.3;display:flex;justify-content:center;">${getSvgIcon("bell", 48)}</div>
         <h3 style="color:var(--text-secondary);font-size:16px;font-weight:600">No notifications found</h3>
         <p style="font-size:13px;color:var(--text-muted);margin-top:8px">
           ${notif_filter === 'unread' ? 'You do not have any unread notifications.' : 'Your notification tray is empty.'}
@@ -15533,7 +15555,7 @@ function renderNotificationsList() {
                   ● Mark as read
                 </button>
               ` : `
-                <span style="font-size:11px;color:var(--text-disabled);display:inline-flex;align-items:center;gap:4px">✓ Read</span>
+                <span style="font-size:11px;color:var(--text-disabled);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('check', 12)} Read</span>
               `}
             </div>
           </div>
@@ -16225,7 +16247,7 @@ function show2FASetupModal(userDoc) {
         <div style="color:#0f1029;font-family:var(--font-mono)">
           <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px">Secret Key</div>
           <div style="font-size:14px;font-weight:800;letter-spacing:1px;background:#f1f5f9;padding:6px 10px;border-radius:6px" id="2fa-secret-text">${secretKey}</div>
-          <button type="button" class="btn btn-ghost btn-xs" id="btn-copy-secret" style="margin-top:6px;font-size:10px;color:#6366f1">📋 Copy Key</button>
+          <button type="button" class="btn btn-ghost btn-xs" id="btn-copy-secret" style="margin-top:6px;font-size:10px;color:#6366f1;display:inline-flex;align-items:center;gap:4px">${getSvgIcon('copy', 12)} Copy Key</button>
         </div>
       </div>
 
@@ -16440,7 +16462,7 @@ function showIDCardModal(u) {
     <!-- FRONT SIDE -->
     <div class="id-card">
       <div class="id-card-header">
-        <div class="id-logo">⚡ WAREOPS</div>
+        <div class="id-logo" style="display:inline-flex;align-items:center;gap:6px;">${getSvgIcon("zap", 16)} WAREOPS</div>
         <div class="id-badge">ACCESS ID</div>
       </div>
       <div class="id-profile">
@@ -16608,7 +16630,7 @@ function renderAutomation() {
         </div>
         <div class="page-header-actions" style="display:flex;gap:10px">
           <button class="btn btn-secondary btn-sm" id="btn-run-rules" style="display:inline-flex;align-items:center;gap:6px">
-            ⚡ Run Test Triggers
+            ${getSvgIcon("zap", 14)} Run Test Triggers
           </button>
           <button class="btn btn-primary btn-sm" id="btn-create-rule" style="display:inline-flex;align-items:center;gap:6px">
             + Create New Rule
@@ -16667,7 +16689,7 @@ function renderAutomation() {
                 <!-- Visual Flow Diagram -->
                 <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:8px;flex-wrap:wrap">
                   <span style="padding:3px 8px;background:var(--bg-input);border-radius:4px;color:var(--accent-cyan);font-weight:600">IF ${rule.trigger.replace('_', ' ').toUpperCase()} ${rule.conditionOp} ${rule.conditionVal}</span>
-                  <span style="color:var(--text-muted)">➔</span>
+                  <span style="color:var(--text-muted)">→</span>
                   <span style="padding:3px 8px;background:var(--bg-input);border-radius:4px;color:var(--accent-emerald);font-weight:600">THEN ${rule.actionType.replace('_', ' ').toUpperCase()}</span>
                   <span style="color:var(--text-muted);font-size:11px">(${rule.actionTarget})</span>
                 </div>
@@ -16686,8 +16708,8 @@ function renderAutomation() {
                   </div>
                 </label>
 
-                <button class="btn btn-ghost btn-sm btn-test-rule" data-id="${rule.id}" title="Test Run Rule" style="font-size:11px">▶ Test</button>
-                <button class="btn btn-ghost btn-sm btn-delete-rule" data-id="${rule.id}" title="Delete Rule" style="color:var(--accent-rose);font-size:11px">🗑</button>
+                <button class="btn btn-ghost btn-sm btn-test-rule" data-id="${rule.id}" title="Test Run Rule" style="font-size:11px">${getSvgIcon('collapse', 12)} Test</button>
+                <button class="btn btn-ghost btn-sm btn-delete-rule" data-id="${rule.id}" title="Delete Rule" style="color:var(--accent-rose);font-size:11px;display:inline-flex;align-items:center;">${getSvgIcon('trash', 14)}</button>
               </div>
             </div>
           `).join('')}

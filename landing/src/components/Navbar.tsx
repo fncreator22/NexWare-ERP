@@ -15,16 +15,16 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
   }
 
   return (
-    <nav className="animate-fade-down sticky top-0 z-40 backdrop-blur-xl bg-[#070814]/80 border-b border-white/10 transition-all">
-      <div className="flex items-center justify-between px-5 sm:px-8 lg:px-10 py-4 sm:py-4 max-w-7xl mx-auto">
+    <nav className="animate-fade-down sticky top-0 z-40 backdrop-blur-xl bg-[#08090c]/85 border-b border-white/10 transition-all">
+      <div className="flex items-center justify-between px-5 sm:px-8 lg:px-10 py-3.5 sm:py-4 max-w-7xl mx-auto">
 
         {/* ── LOGO ─────────────────────────────────── */}
         <a href="/" className="flex items-center gap-2.5 text-white group">
-          <div className="w-8 h-8 rounded-lg bg-[#6366f1]/20 border border-[#6366f1]/40 flex items-center justify-center text-[#818cf8] group-hover:scale-105 transition-transform">
+          <div className="w-8 h-8 rounded-lg bg-[#f59e0b]/20 border border-[#f59e0b]/40 flex items-center justify-center text-[#f59e0b] group-hover:scale-105 transition-transform">
             <Logo className="w-4 h-4 text-white" />
           </div>
           <span className="font-semibold text-base tracking-tight">
-            Nex<em className="not-italic text-[#818cf8]">Ware</em> <span className="text-[10px] font-mono uppercase bg-white/10 px-1.5 py-0.5 rounded text-white/60 ml-1">ERP</span>
+            Nex<em className="not-italic text-[#f59e0b]">Ware</em> <span className="text-[10px] font-mono uppercase bg-white/10 px-1.5 py-0.5 rounded text-white/60 ml-1">ERP</span>
           </span>
         </a>
 
@@ -35,21 +35,21 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
           <div className="relative">
             <button
               onClick={() => setFeaturesOpen(o => !o)}
-              className="flex items-center gap-1 text-[13px] text-white/80 hover:text-white transition-colors py-1"
+              className="flex items-center gap-1 text-[13px] text-white/80 hover:text-white transition-colors py-1 font-medium"
             >
               Modules <ChevronDown className={`w-3.5 h-3.5 transition-transform ${featuresOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {featuresOpen && (
               <div
-                className="absolute left-0 top-full mt-2 w-64 rounded-xl bg-[#0c0d1e]/95 backdrop-blur-xl border border-white/15 p-2 shadow-2xl space-y-1 animate-fade-up z-50"
+                className="absolute left-0 top-full mt-2 w-64 rounded-lg bg-[#12151c]/95 backdrop-blur-xl border border-white/15 p-2 shadow-2xl space-y-1 animate-fade-up z-50"
                 onMouseLeave={() => setFeaturesOpen(false)}
               >
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('finance') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
-                  <FileText className="w-4 h-4 text-[#818cf8]" />
+                  <FileText className="w-4 h-4 text-[#f59e0b]" />
                   <div>
                     <p className="font-semibold">Financial & Tax Engine</p>
                     <p className="text-[10px] text-white/40">Invoices, GL, 5%/15% tax</p>
@@ -58,9 +58,9 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('logistics') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
-                  <Building2 className="w-4 h-4 text-[#10b981]" />
+                  <Building2 className="w-4 h-4 text-[#06b6d4]" />
                   <div>
                     <p className="font-semibold">Multi-Warehouse Logistics</p>
                     <p className="text-[10px] text-white/40">Live GPS tracking & SKUs</p>
@@ -69,9 +69,9 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('workforce') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
-                  <Users className="w-4 h-4 text-amber-400" />
+                  <Users className="w-4 h-4 text-[#fbbf24]" />
                   <div>
                     <p className="font-semibold">5-Tier Workforce RBAC</p>
                     <p className="text-[10px] text-white/40">Cascading user access</p>
@@ -80,9 +80,9 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('audit') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
-                  <Shield className="w-4 h-4 text-rose-400" />
+                  <Shield className="w-4 h-4 text-[#10b981]" />
                   <div>
                     <p className="font-semibold">Compliance Audit Stream</p>
                     <p className="text-[10px] text-white/40">Tamper-evident logs</p>
@@ -92,11 +92,11 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
             )}
           </div>
 
-          <a href="#features"      className="text-[13px] text-white/80 hover:text-white transition-colors">Features</a>
-          <a href="#interactive-tour" className="text-[13px] text-white/80 hover:text-white transition-colors">Product Tour</a>
-          <a href="#how-it-works"  className="text-[13px] text-white/80 hover:text-white transition-colors">How It Works</a>
-          <a href="#pricing"       className="text-[13px] text-white/80 hover:text-white transition-colors">Pricing</a>
-          <a href="#security-faq"  className="text-[13px] text-white/80 hover:text-white transition-colors">Security FAQ</a>
+          <a href="#features"      className="text-[13px] text-white/80 hover:text-white transition-colors font-medium">Features</a>
+          <a href="#interactive-tour" className="text-[13px] text-white/80 hover:text-white transition-colors font-medium">Product Tour</a>
+          <a href="#how-it-works"  className="text-[13px] text-white/80 hover:text-white transition-colors font-medium">How It Works</a>
+          <a href="#pricing"       className="text-[13px] text-white/80 hover:text-white transition-colors font-medium">Pricing</a>
+          <a href="#security-faq"  className="text-[13px] text-white/80 hover:text-white transition-colors font-medium">Security FAQ</a>
         </div>
 
         {/* ── CTA + LOGIN REDIRECTION ──────────────── */}
@@ -110,7 +110,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
           <button
             onClick={() => handleLaunchApp('/signup')}
-            className="bg-white text-gray-900 text-[13px] font-bold px-4 sm:px-5 py-2 rounded-lg hover:bg-white/90 transition-all shadow-md flex items-center gap-1.5"
+            className="bg-[#f59e0b] text-gray-900 text-[13px] font-bold px-4 sm:px-5 py-2 rounded-lg hover:bg-[#fbbf24] transition-all shadow-md flex items-center gap-1.5"
           >
             Start Free Trial <ExternalLink className="w-3 h-3" />
           </button>
@@ -128,7 +128,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
       {/* ── MOBILE DROPDOWN ──────────────────────────── */}
       {open && (
-        <div className="absolute left-4 right-4 top-full rounded-xl bg-[#0c0d1e]/95 backdrop-blur-xl border border-white/15 px-5 py-4 animate-fade-up md:hidden space-y-3 shadow-2xl">
+        <div className="absolute left-4 right-4 top-full rounded-xl bg-[#12151c]/95 backdrop-blur-xl border border-white/15 px-5 py-4 animate-fade-up md:hidden space-y-3 shadow-2xl">
           <div className="space-y-2 border-b border-white/10 pb-3">
             <p className="text-[10px] font-mono uppercase text-white/40 font-bold">Navigation Links</p>
             {['Features', 'Product Tour', 'How It Works', 'Pricing', 'Security FAQ'].map((item) => (
@@ -152,7 +152,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
             </button>
             <button
               onClick={() => handleLaunchApp('/signup')}
-              className="w-full py-2.5 rounded-lg bg-white text-gray-900 text-xs font-bold hover:bg-white/90 transition-colors"
+              className="w-full py-2.5 rounded-lg bg-[#f59e0b] text-gray-900 text-xs font-bold hover:bg-[#fbbf24] transition-colors"
             >
               Create Free Account →
             </button>

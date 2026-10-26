@@ -7,71 +7,73 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #070814;
-    color: #ffffff;
+    background-color: #08090c;
+    color: #f1f5f9;
   }
 
   body {
     font-family: "Nimbus Sans TW01", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    background-color: #070814;
+    background-color: #08090c;
   }
 
-  /* Custom dark scrollbar */
+  /* Custom technical dark scrollbar */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #070814;
+    background: #08090c;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(99, 102, 241, 0.5);
+    background: rgba(245, 158, 11, 0.4);
   }
 }
 
-/* ─── Glassmorphism utility classes ─────────────────────── */
+/* ─── Industrial Precision Surface & Glass ──────────────── */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(16, 20, 27, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .glass-panel-elevated {
-  background: rgba(15, 16, 41, 0.75);
+  background: rgba(20, 24, 33, 0.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .glass-card-hover {
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .glass-card-hover:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(129, 140, 248, 0.4);
-  box-shadow: 0 12px 30px rgba(99, 102, 241, 0.15), 0 0 0 1px rgba(99, 102, 241, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: rgba(24, 30, 42, 0.95);
+  border-color: rgba(245, 158, 11, 0.35);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(245, 158, 11, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15);
   transform: translateY(-2px);
 }
 
-/* ─── Dot-grid section texture ───────────────────────────── */
-/* Apply .section-texture to any non-Hero section for depth  */
+/* ─── Precision Technical Grid Section Texture ───────────── */
 .section-texture {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 /* ─── Reduced motion support ─────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
   .animate-fade-down,
-  .animate-hero-rise {
+  .animate-hero-rise,
+  .animate-pulse-subtle {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

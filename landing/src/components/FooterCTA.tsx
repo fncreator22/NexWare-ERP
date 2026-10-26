@@ -20,19 +20,19 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
   }
 
   return (
-    <footer className="relative bg-[#070814] text-white overflow-hidden border-t border-white/10">
+    <footer className="relative bg-[#08090c] text-white overflow-hidden border-t border-white/10">
 
       {/* ═══════════ 1. HIGH-TRUST CONVERSION CTA SECTION ════ */}
-      <div id="get-started" className="relative z-10 py-16 lg:py-24 border-b border-white/10 bg-[#0c0d1e]/80 backdrop-blur-xl">
+      <div id="get-started" className="relative z-10 py-16 lg:py-24 border-b border-white/10 bg-[#12151c]/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10">
 
-          <div className="bg-[#0c0d1e] border border-white/15 rounded-xl p-8 sm:p-12 lg:p-16 shadow-2xl relative overflow-hidden">
+          <div className="bg-[#12151c] border border-white/15 rounded-xl p-8 sm:p-12 lg:p-16 shadow-2xl relative overflow-hidden">
             
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
 
               {/* Left Column */}
               <div className="lg:col-span-7 space-y-6">
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-mono bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs uppercase tracking-wider">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-mono bg-[#f59e0b]/10 border border-[#f59e0b]/30 text-[#f59e0b] text-xs uppercase tracking-wider">
                   <Sparkles className="w-3.5 h-3.5" /> High-Trust Enterprise Onboarding
                 </div>
 
@@ -77,10 +77,10 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
               </div>
 
               {/* Right Column: Interactive ROI Calculator */}
-              <div className="lg:col-span-5 bg-[#080918] border border-white/10 rounded-lg p-6 space-y-6 shadow-2xl">
+              <div className="lg:col-span-5 bg-[#0d0f14] border border-white/10 rounded-lg p-6 space-y-6 shadow-2xl">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-white flex items-center gap-2">
-                    <Calculator className="w-4 h-4 text-[#818cf8]" /> Estimate Monthly ROI Savings
+                    <Calculator className="w-4 h-4 text-[#f59e0b]" /> Estimate Monthly ROI Savings
                   </span>
                   <span className="text-[10px] text-[#10b981] font-mono bg-[#10b981]/10 px-2 py-0.5 rounded-md">
                     Interactive Calculator
@@ -90,7 +90,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-white/60">Monthly Invoices Issued:</span>
-                    <span className="font-mono text-[#818cf8] font-bold text-sm bg-[#6366f1]/20 px-2.5 py-0.5 rounded-md">
+                    <span className="font-mono text-[#f59e0b] font-bold text-sm bg-[#f59e0b]/10 px-2.5 py-0.5 rounded-md">
                       {monthlyInvoices} Invoices / mo
                     </span>
                   </div>
@@ -101,7 +101,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
                     step="10"
                     value={monthlyInvoices}
                     onChange={(e) => setMonthlyInvoices(Number(e.target.value))}
-                    className="w-full accent-[#6366f1] bg-white/10 rounded-lg cursor-pointer h-2"
+                    className="w-full accent-[#f59e0b] bg-white/10 rounded-lg cursor-pointer h-2"
                   />
                   <div className="flex justify-between text-[9px] text-white/40 font-mono">
                     <span>20 Invoices</span>
@@ -121,7 +121,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
 
                   <div className="p-3.5 bg-white/[0.03] rounded-lg border border-white/5 space-y-1">
                     <div className="flex items-center gap-1 text-[10px] text-white/50">
-                      <TrendingUp className="w-3 h-3 text-[#6366f1]" /> Est. Cost Saved
+                      <TrendingUp className="w-3 h-3 text-[#f59e0b]" /> Est. Cost Saved
                     </div>
                     <p className="text-xl font-bold text-[#10b981] font-mono">${dollarsSaved.toLocaleString()}</p>
                     <p className="text-[9px] text-white/40">Operational overhead</p>
@@ -130,7 +130,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
 
                 <button
                   onClick={() => handleLaunchApp('/signup')}
-                  className="w-full flex items-center justify-center gap-2 bg-[#6366f1] text-white font-bold text-xs py-3 rounded-lg hover:bg-[#4f46e5] transition-all shadow-md"
+                  className="w-full flex items-center justify-center gap-2 bg-[#f59e0b] text-[#08090c] font-bold text-xs py-3 rounded-lg hover:bg-[#d97706] transition-all shadow-md"
                 >
                   Calculate & Claim Savings in ERP <ExternalLink className="w-3.5 h-3.5" />
                 </button>
@@ -151,11 +151,11 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
           {/* COLUMN 1: BRAND & STATUS */}
           <div className="space-y-4">
             <a href="/" className="flex items-center gap-2.5 text-white">
-              <div className="w-7 h-7 rounded-lg bg-[#6366f1]/20 border border-[#6366f1]/40 flex items-center justify-center text-[#818cf8]">
+              <div className="w-7 h-7 rounded-lg bg-[#f59e0b]/20 border border-[#f59e0b]/40 flex items-center justify-center text-[#f59e0b]">
                 <Logo className="w-4 h-4 text-white" />
               </div>
               <span className="font-semibold text-lg tracking-tight">
-                Nex<em className="not-italic text-[#818cf8]">Ware</em>
+                Nex<em className="not-italic text-[#f59e0b]">Ware</em>
               </span>
             </a>
 
@@ -296,7 +296,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
             </h4>
             <div className="space-y-2 text-xs text-white/60">
               <div className="flex items-center gap-2 text-white font-medium">
-                <Phone className="w-3.5 h-3.5 text-[#818cf8]" />
+                <Phone className="w-3.5 h-3.5 text-[#f59e0b]" />
                 <span>Sales: contact@nexware.io</span>
               </div>
               <p className="text-[11px] text-[#10b981]">24/7/365 Priority Help Desk</p>
@@ -341,7 +341,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
           </div>
 
           <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-3 py-1 rounded-md text-white/70 text-[11px]">
-            <Globe className="w-3.5 h-3.5 text-[#818cf8]" />
+            <Globe className="w-3.5 h-3.5 text-[#f59e0b]" />
             <span>Global (English)</span>
           </div>
         </div>

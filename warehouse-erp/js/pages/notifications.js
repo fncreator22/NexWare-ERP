@@ -98,7 +98,7 @@ function renderNotificationsList() {
   if (filtered.length === 0) {
     container.innerHTML = `
       <div style="padding:64px 24px;text-align:center;color:var(--text-muted)">
-        <div style="font-size:48px;margin-bottom:16px;opacity:0.3">🔔</div>
+        <div style="margin-bottom:16px;opacity:0.3;display:flex;justify-content:center;">${getSvgIcon("bell", 48)}</div>
         <h3 style="color:var(--text-secondary);font-size:16px;font-weight:600">No notifications found</h3>
         <p style="font-size:13px;color:var(--text-muted);margin-top:8px">
           ${notif_filter === 'unread' ? 'You do not have any unread notifications.' : 'Your notification tray is empty.'}
@@ -136,7 +136,7 @@ function renderNotificationsList() {
                   ● Mark as read
                 </button>
               ` : `
-                <span style="font-size:11px;color:var(--text-disabled);display:inline-flex;align-items:center;gap:4px">✓ Read</span>
+                <span style="font-size:11px;color:var(--text-disabled);display:inline-flex;align-items:center;gap:4px">${getSvgIcon('check', 12)} Read</span>
               `}
             </div>
           </div>

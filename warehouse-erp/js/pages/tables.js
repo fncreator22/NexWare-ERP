@@ -1050,11 +1050,11 @@ function _updatePageMeta() {
   const ownerStr = currentPageMeta.created_by ? `Owner: ID ${currentPageMeta.created_by.slice(0, 8)}` : 'System';
 
   metaEl.innerHTML = `
-    <span>📄 Page ${_activePage}</span>
-    <span>📅 Created: ${dateStr}</span>
-    <span>👤 ${ownerStr}</span>
-    <span>🔒 Roles: ${rolesStr}</span>
-    <span>💾 Storage: ${storageStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("file", 13)} Page ${_activePage}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("calendar", 13)} Created: ${dateStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("user", 13)} ${ownerStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("lock", 13)} Roles: ${rolesStr}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;">${getSvgIcon("database", 13)} Storage: ${storageStr}</span>
   `;
 }
 
@@ -1175,7 +1175,7 @@ function _buildReadonlyCell(value, col) {
   switch (col.type) {
     case 'checkbox': return v 
       ? `<span style="color:var(--accent-emerald);font-weight:700;display:inline-flex;align-items:center">${getSvgIcon('check', 12)}</span>` 
-      : `<span style="color:var(--text-disabled);font-size:14px;font-family:sans-serif;user-select:none">☐</span>`;
+      : `<span style="display:inline-block;width:12px;height:12px;border:1px solid var(--border-strong);border-radius:2px;vertical-align:middle;"></span>`;
     case 'price':    return `<strong>$${Number(v).toFixed(2)}</strong>`;
     case 'date':     return `<span style="font-size:12px;font-family:var(--font-mono)">${v}</span>`;
     case 'tags':     return String(v).split(',').map(t => `<span class="badge badge-purple" style="margin-right:2px">${t.trim()}</span>`).join('');
@@ -1670,7 +1670,7 @@ function _handleWsEvent(e) {
 }
 
 function _showCollabToast(msg) {
-  showToast('👥 Collaboration', msg, 'info', 3000);
+  showToast('Collaboration', msg, 'info', 3000);
 }
 
 async function _refreshRowsFromServer() {
@@ -3148,7 +3148,7 @@ async function _showBarcodePrintSheet() {
         <div class="header">
           <h1>NexWare ERP Scan Sheet</h1>
           <p>Scan-ready laser barcode tags sheet. Print onto label paper or sheets.</p>
-          <button onclick="window.print()" style="padding: 10px 20px; font-size:14px; font-weight:bold; color:white; background:#6366f1; border:none; border-radius:6px; cursor:pointer">🖨️ Print Label Sheet</button>
+          <button onclick="window.print()" style="padding: 10px 20px; font-size:14px; font-weight:bold; color:white; background:#6366f1; border:none; border-radius:6px; cursor:pointer">Print Label Sheet</button>
         </div>
         <div class="grid">
           ${entries.map(e => {

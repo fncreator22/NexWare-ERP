@@ -86,7 +86,7 @@ export function renderAutomation() {
         </div>
         <div class="page-header-actions" style="display:flex;gap:10px">
           <button class="btn btn-secondary btn-sm" id="btn-run-rules" style="display:inline-flex;align-items:center;gap:6px">
-            ⚡ Run Test Triggers
+            ${getSvgIcon("zap", 14)} Run Test Triggers
           </button>
           <button class="btn btn-primary btn-sm" id="btn-create-rule" style="display:inline-flex;align-items:center;gap:6px">
             + Create New Rule
@@ -145,7 +145,7 @@ export function renderAutomation() {
                 <!-- Visual Flow Diagram -->
                 <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:8px;flex-wrap:wrap">
                   <span style="padding:3px 8px;background:var(--bg-input);border-radius:4px;color:var(--accent-cyan);font-weight:600">IF ${rule.trigger.replace('_', ' ').toUpperCase()} ${rule.conditionOp} ${rule.conditionVal}</span>
-                  <span style="color:var(--text-muted)">➔</span>
+                  <span style="color:var(--text-muted)">→</span>
                   <span style="padding:3px 8px;background:var(--bg-input);border-radius:4px;color:var(--accent-emerald);font-weight:600">THEN ${rule.actionType.replace('_', ' ').toUpperCase()}</span>
                   <span style="color:var(--text-muted);font-size:11px">(${rule.actionTarget})</span>
                 </div>
@@ -164,8 +164,8 @@ export function renderAutomation() {
                   </div>
                 </label>
 
-                <button class="btn btn-ghost btn-sm btn-test-rule" data-id="${rule.id}" title="Test Run Rule" style="font-size:11px">▶ Test</button>
-                <button class="btn btn-ghost btn-sm btn-delete-rule" data-id="${rule.id}" title="Delete Rule" style="color:var(--accent-rose);font-size:11px">🗑</button>
+                <button class="btn btn-ghost btn-sm btn-test-rule" data-id="${rule.id}" title="Test Run Rule" style="font-size:11px">${getSvgIcon('collapse', 12)} Test</button>
+                <button class="btn btn-ghost btn-sm btn-delete-rule" data-id="${rule.id}" title="Delete Rule" style="color:var(--accent-rose);font-size:11px;display:inline-flex;align-items:center;">${getSvgIcon('trash', 14)}</button>
               </div>
             </div>
           `).join('')}

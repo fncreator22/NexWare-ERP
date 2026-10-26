@@ -313,7 +313,7 @@ export function exportPDF(entity) {
           <td><strong>$${b.total?.toFixed(2)}</strong></td>
           <td>${new Date(b.createdAt).toLocaleDateString()}</td>
         </tr>`).join('');
-      sections += `<h2>💰 Billing (${d.bills.length} invoices)</h2>
+      sections += `<h2>Billing (${d.bills.length} invoices)</h2>
         <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Warehouse</th><th>Subtotal</th><th>Tax</th><th>Total</th><th>Date</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
     }
@@ -326,7 +326,7 @@ export function exportPDF(entity) {
       const rows = d.users.map(u => `
         <tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td>
         <td>${whs[u.warehouseId]||'Global'}</td><td>${u.status}</td></tr>`).join('');
-      sections += `<h2>👥 Workforce (${d.users.length} members)</h2>
+      sections += `<h2>Workforce (${d.users.length} members)</h2>
         <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Warehouse</th><th>Status</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
     }
@@ -340,7 +340,7 @@ export function exportPDF(entity) {
         <tr><td>${i.name}</td><td>${i.sku}</td><td>${i.category}</td>
         <td>${i.taxCategory}</td><td>$${i.price?.toFixed(2)}</td><td>${i.stock}</td>
         <td>${whs[i.warehouseId]||''}</td></tr>`).join('');
-      sections += `<h2>📦 Inventory (${d.items.length} items)</h2>
+      sections += `<h2>Inventory (${d.items.length} items)</h2>
         <table><thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Tax Cat</th><th>Price</th><th>Stock</th><th>Warehouse</th></tr></thead>
         <tbody>${rows}</tbody></table>`;
     }
@@ -367,7 +367,7 @@ export function exportPDF(entity) {
     @page{size:A4;margin:15mm}
     @media print{.no-print{display:none}}
   </style></head><body>
-  <div class="no-print" onclick="window.print()">🖨️ Click to Print / Save as PDF</div>
+  <div class="no-print" onclick="window.print()">Click to Print / Save as PDF</div>
   <h1>WareOps ERP — Data Export</h1>
   <p>Generated: ${ts}</p>
   <p>User: ${user.name} · Role: ${user.role}</p>

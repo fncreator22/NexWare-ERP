@@ -266,13 +266,13 @@ export default function ModuleTour() {
   }
 
   return (
-    <section id="interactive-tour" className="relative bg-[#070814] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
+    <section id="interactive-tour" className="relative bg-[#08090c] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 
         {/* ═══════════ SECTION HEADER ════════════════════════ */}
         <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#f59e0b]/10 border border-[#f59e0b]/30 text-[#f59e0b] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
             <Sparkles className="w-3.5 h-3.5" /> Interactive Product Tour
           </div>
           <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white mb-4">
@@ -297,7 +297,7 @@ export default function ModuleTour() {
                 onClick={() => handlePersonaChange(p.id)}
                 className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   selectedPersona === p.id
-                    ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/30 ring-1 ring-[#818cf8]/50'
+                    ? 'bg-[#f59e0b] text-[#08090c] font-bold shadow-lg shadow-[#f59e0b]/20 ring-1 ring-[#fbbf24]/50'
                     : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
                 }`}
               >
@@ -321,7 +321,7 @@ export default function ModuleTour() {
                 onClick={() => handleModuleChange(m.id)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                   active
-                    ? 'bg-gradient-to-r from-[#6366f1] to-[#4f46e5] text-white shadow-md border border-[#818cf8]/40'
+                    ? 'bg-[#f59e0b] text-[#08090c] font-bold shadow-md border border-[#fbbf24]/40'
                     : 'bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.08] border border-white/5'
                 }`}
               >
@@ -338,13 +338,13 @@ export default function ModuleTour() {
           {/* ───────────────────────────────────────────────────
               LEFT COLUMN (35% - 4 Cols on LG): CONTROLS & STEPPER
           ─────────────────────────────────────────────────── */}
-          <div className="lg:col-span-4 bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-7 space-y-6 shadow-xl flex flex-col justify-between">
+          <div className="lg:col-span-4 bg-[#12151c] border border-white/10 rounded-xl p-6 sm:p-7 space-y-6 shadow-xl flex flex-col justify-between">
 
             <div>
               {/* Module Header & ROI Banner */}
               <div className="space-y-2 mb-6">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#818cf8] uppercase tracking-wider">
+                  <span className="text-xs font-bold text-[#f59e0b] uppercase tracking-wider">
                     {activeModule.label}
                   </span>
                   <span className="text-[10px] bg-[#10b981]/20 text-[#10b981] px-2 py-0.5 rounded-md font-mono">
@@ -373,7 +373,7 @@ export default function ModuleTour() {
                       onClick={() => { setCurrentStepIdx(idx); setTourCompleted(false) }}
                       className={`p-3.5 rounded-lg border transition-all cursor-pointer ${
                         isCurrent
-                          ? 'bg-[#080918] border-[#6366f1] ring-1 ring-[#6366f1]/50'
+                          ? 'bg-[#0d0f14] border-[#f59e0b] ring-1 ring-[#f59e0b]/50'
                           : isDone
                           ? 'bg-white/[0.02] border-white/10 opacity-70'
                           : 'bg-white/[0.01] border-white/5 opacity-40 hover:opacity-70'
@@ -382,11 +382,11 @@ export default function ModuleTour() {
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <span
-                            className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                            className={`w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${
                               isDone
                                 ? 'bg-[#10b981] text-gray-900'
                                 : isCurrent
-                                ? 'bg-[#6366f1] text-white'
+                                ? 'bg-[#f59e0b] text-[#08090c]'
                                 : 'bg-white/10 text-white/50'
                             }`}
                           >
@@ -395,14 +395,14 @@ export default function ModuleTour() {
                           <span className="text-xs font-semibold text-white">{st.title}</span>
                         </div>
                         {isCurrent && (
-                          <span className="flex h-2 w-2 rounded-full bg-[#6366f1] animate-ping" />
+                          <span className="flex h-2 w-2 rounded-full bg-[#f59e0b] animate-ping" />
                         )}
                       </div>
                       {isCurrent && (
                         <div className="mt-2 text-xs text-white/70 space-y-2 animate-fade-up">
                           <p>{st.desc}</p>
-                          <div className="flex items-center gap-1.5 text-[10px] text-[#c7d2fe] font-mono bg-[#6366f1]/20 p-2 rounded-md border border-[#6366f1]/30">
-                          <Lightbulb className="w-3 h-3 shrink-0 text-[#818cf8]" /> Outcome: {st.roiMetric}
+                          <div className="flex items-center gap-1.5 text-[10px] text-[#fde68a] font-mono bg-[#f59e0b]/10 p-2 rounded-md border border-[#f59e0b]/30">
+                          <Lightbulb className="w-3 h-3 shrink-0 text-[#f59e0b]" /> Outcome: {st.roiMetric}
                           </div>
                         </div>
                       )}
@@ -456,30 +456,30 @@ export default function ModuleTour() {
           {/* ───────────────────────────────────────────────────
               RIGHT COLUMN (65% - 8 Cols on LG): INTERACTIVE CANVAS
           ─────────────────────────────────────────────────── */}
-          <div className="lg:col-span-8 bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 space-y-6 shadow-xl relative">
+          <div className="lg:col-span-8 bg-[#12151c] border border-white/10 rounded-xl p-6 sm:p-8 space-y-6 shadow-xl relative">
 
             {/* Hotspot Pulsing Indicator Header */}
-            <div className="flex items-center justify-between bg-[#080918] border border-white/10 px-4 py-3 rounded-lg">
+            <div className="flex items-center justify-between bg-[#0d0f14] border border-white/10 px-4 py-3 rounded-lg">
               <div className="flex items-center gap-2 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#6366f1] animate-ping" />
+                <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] animate-ping" />
                 <span className="font-semibold text-white">Active Hotspot Objective:</span>
-                <span className="text-[#818cf8] font-mono text-[11px] truncate max-w-xs sm:max-w-none">
+                <span className="text-[#f59e0b] font-mono text-[11px] truncate max-w-xs sm:max-w-none">
                   {currentStep.hotspotLabel}
                 </span>
               </div>
 
               <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-white/50 font-mono">
-                <MousePointer className="w-3.5 h-3.5 text-[#818cf8]" /> Click hotspot to advance
+                <MousePointer className="w-3.5 h-3.5 text-[#f59e0b]" /> Click hotspot to advance
               </div>
             </div>
 
             {/* Simulated Interactive Screen Mockup */}
-            <div className="relative rounded-lg bg-[#080918] border border-white/10 p-6 overflow-hidden min-h-[420px] flex flex-col justify-between">
+            <div className="relative rounded-lg bg-[#0d0f14] border border-white/10 p-6 overflow-hidden min-h-[420px] flex flex-col justify-between">
 
               {/* Screen Top Bar */}
               <div className="flex items-center justify-between pb-4 border-b border-white/10 text-xs">
                 <div className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-[#818cf8]" />
+                  <Building2 className="w-4 h-4 text-[#f59e0b]" />
                   <span className="font-bold text-white">NexWare ERP</span>
                   <span className="text-white/40">/ {activeModule.label}</span>
                 </div>
@@ -498,9 +498,9 @@ export default function ModuleTour() {
                       <span className="text-sm font-bold text-white">Warehouse Inventory (247 Items)</span>
                       <button
                         onClick={handleHotspotClick}
-                        className={`relative group px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        className={`relative group px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                           currentStepIdx === 2
-                            ? 'bg-[#6366f1] text-white shadow-lg ring-4 ring-[#6366f1]/40 animate-bounce'
+                            ? 'bg-[#f59e0b] text-[#08090c] shadow-lg ring-4 ring-[#f59e0b]/40 animate-bounce'
                             : 'bg-white/10 text-white/80 hover:bg-white/20'
                         }`}
                       >
@@ -515,7 +515,7 @@ export default function ModuleTour() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between text-xs">
+                      <div className="p-3 bg-white/5 rounded-lg border border-white/5 flex items-center justify-between text-xs">
                         <div>
                           <p className="font-semibold text-white">Industrial Steel Pipes (SKU-PIPE-001)</p>
                           <p className="text-[10px] text-white/40">Dallas Depot · Category: Tools</p>
@@ -525,7 +525,7 @@ export default function ModuleTour() {
 
                       <div
                         onClick={handleHotspotClick}
-                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between text-xs ${
+                        className={`p-3 rounded-lg border transition-all cursor-pointer flex items-center justify-between text-xs ${
                           currentStepIdx === 0
                             ? 'bg-rose-500/20 border-rose-500 ring-2 ring-rose-500/50 animate-pulse'
                             : 'bg-white/5 border-white/5'
@@ -548,7 +548,7 @@ export default function ModuleTour() {
                       <span className="text-sm font-bold text-white">Billing & Recent Invoices</span>
                       <button
                         onClick={handleHotspotClick}
-                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                           currentStepIdx === 2
                             ? 'bg-[#10b981] text-gray-900 shadow-lg ring-4 ring-[#10b981]/40 animate-bounce'
                             : 'bg-white/10 text-white/80'
@@ -560,14 +560,14 @@ export default function ModuleTour() {
 
                     <div
                       onClick={handleHotspotClick}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                      className={`p-4 rounded-lg border transition-all cursor-pointer ${
                         currentStepIdx === 0 || currentStepIdx === 1
-                          ? 'bg-[#141638] border-[#6366f1] ring-2 ring-[#6366f1]/50'
+                          ? 'bg-[#181c24] border-[#f59e0b] ring-2 ring-[#f59e0b]/50'
                           : 'bg-white/5 border-white/5'
                       }`}
                     >
                       <div className="flex justify-between items-center text-xs mb-2">
-                        <span className="font-mono text-[#818cf8] font-bold">INV-0038</span>
+                        <span className="font-mono text-[#f59e0b] font-bold">INV-0038</span>
                         <span className="text-[#10b981] font-semibold bg-[#10b981]/20 px-2 py-0.5 rounded">Paid</span>
                       </div>
                       <p className="text-sm font-bold text-white">Texas Ironworks Ltd.</p>
@@ -589,14 +589,14 @@ export default function ModuleTour() {
 
                     <div
                       onClick={handleHotspotClick}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between text-xs ${
+                      className={`p-3.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between text-xs ${
                         currentStepIdx === 0
-                          ? 'bg-[#6366f1]/20 border-[#6366f1] ring-2 ring-[#6366f1]/50'
+                          ? 'bg-[#f59e0b]/20 border-[#f59e0b] ring-2 ring-[#f59e0b]/50'
                           : 'bg-white/5 border-white/5'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#6366f1] flex items-center justify-center font-bold text-white">
+                        <div className="w-8 h-8 rounded bg-[#f59e0b] flex items-center justify-center font-bold text-[#08090c]">
                           SC
                         </div>
                         <div>
@@ -604,7 +604,7 @@ export default function ModuleTour() {
                           <p className="text-[10px] text-white/40">sarah@nexware.com · Dallas Depot</p>
                         </div>
                       </div>
-                      <span className="bg-[#6366f1]/30 text-[#818cf8] px-2.5 py-1 rounded-lg font-semibold text-[10px]">
+                      <span className="bg-[#f59e0b]/20 text-[#f59e0b] px-2.5 py-1 rounded-md font-semibold text-[10px]">
                         Manager Tier
                       </span>
                     </div>
@@ -618,8 +618,8 @@ export default function ModuleTour() {
                       <span className="font-bold text-white">Compliance Audit Trail Stream</span>
                       <button
                         onClick={handleHotspotClick}
-                        className={`px-3 py-1 rounded-lg text-[10px] font-bold ${
-                          currentStepIdx === 2 ? 'bg-[#6366f1] text-white ring-2 ring-[#818cf8]' : 'bg-white/10 text-white/70'
+                        className={`px-3 py-1 rounded-md text-[10px] font-bold ${
+                          currentStepIdx === 2 ? 'bg-[#f59e0b] text-[#08090c] ring-2 ring-[#fbbf24]' : 'bg-white/10 text-white/70'
                         }`}
                       >
                         Export Log CSV
@@ -628,7 +628,7 @@ export default function ModuleTour() {
 
                     <div
                       onClick={handleHotspotClick}
-                      className={`p-3 rounded-xl border transition-all cursor-pointer text-xs space-y-1 ${
+                      className={`p-3 rounded-lg border transition-all cursor-pointer text-xs space-y-1 ${
                         currentStepIdx === 0
                           ? 'bg-[#10b981]/10 border-[#10b981] ring-2 ring-[#10b981]/50'
                           : 'bg-white/5 border-white/5'
@@ -654,25 +654,25 @@ export default function ModuleTour() {
 
                     <div
                       onClick={handleHotspotClick}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                      className={`p-4 rounded-lg border transition-all cursor-pointer ${
                         currentStepIdx === 0 || currentStepIdx === 1
-                          ? 'bg-[#6366f1]/20 border-[#6366f1] ring-2 ring-[#6366f1]/50'
+                          ? 'bg-[#06b6d4]/20 border-[#06b6d4] ring-2 ring-[#06b6d4]/50'
                           : 'bg-white/5 border-white/5'
                       }`}
                     >
                       <p className="text-xs text-white/60 mb-2">Revenue Breakdown by Warehouse</p>
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="p-2 bg-white/5 rounded-xl">
+                        <div className="p-2 bg-white/5 rounded-md">
                           <p className="text-[10px] text-white/40">Houston HQ</p>
-                          <p className="text-sm font-bold text-[#818cf8]">$58,900</p>
+                          <p className="text-sm font-bold text-[#06b6d4]">$58,900</p>
                         </div>
-                        <div className="p-2 bg-white/5 rounded-xl">
+                        <div className="p-2 bg-white/5 rounded-md">
                           <p className="text-[10px] text-white/40">Dallas Depot</p>
                           <p className="text-sm font-bold text-[#10b981]">$42,300</p>
                         </div>
-                        <div className="p-2 bg-white/5 rounded-xl">
+                        <div className="p-2 bg-white/5 rounded-md">
                           <p className="text-[10px] text-white/40">Austin North</p>
-                          <p className="text-sm font-bold text-[#febc2e]">$23,550</p>
+                          <p className="text-sm font-bold text-[#f59e0b]">$23,550</p>
                         </div>
                       </div>
                     </div>
@@ -683,7 +683,7 @@ export default function ModuleTour() {
 
               {/* Hotspot Visual Feedback Notification */}
               {hotspotSuccess && (
-                <div className="absolute inset-x-4 bottom-4 bg-[#10b981] text-gray-900 p-3 rounded-xl font-bold text-xs flex items-center justify-between shadow-2xl animate-fade-up">
+                <div className="absolute inset-x-4 bottom-4 bg-[#10b981] text-gray-900 p-3 rounded-lg font-bold text-xs flex items-center justify-between shadow-2xl animate-fade-up">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Hotspot Validated! Advancing to next step...</span>
@@ -694,8 +694,8 @@ export default function ModuleTour() {
 
               {/* Tour Completed Summary Card Overlay */}
               {tourCompleted && (
-                <div className="absolute inset-0 bg-[#0c0e20]/95 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center space-y-4 animate-fade-up">
-                  <div className="w-14 h-14 rounded-full bg-[#10b981]/20 text-[#10b981] flex items-center justify-center border border-[#10b981]/40">
+                <div className="absolute inset-0 bg-[#08090c]/95 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center space-y-4 animate-fade-up">
+                  <div className="w-14 h-14 rounded-lg bg-[#10b981]/20 text-[#10b981] flex items-center justify-center border border-[#10b981]/40">
                     <CheckCircle2 className="w-8 h-8" />
                   </div>
                   <h4 className="text-xl font-bold text-white">
@@ -707,13 +707,13 @@ export default function ModuleTour() {
                   <div className="flex items-center gap-3 pt-2">
                     <button
                       onClick={handleResetTour}
-                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold transition-all"
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold transition-all"
                     >
                       Replay Tour
                     </button>
                     <button
                       onClick={() => { window.location.href = '/warehouse-erp/index.html#/signup' }}
-                      className="px-5 py-2.5 bg-white text-gray-900 rounded-xl text-xs font-bold hover:bg-white/90 transition-all shadow-lg flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-white text-gray-900 rounded-lg text-xs font-bold hover:bg-white/90 transition-all shadow-lg flex items-center gap-1.5"
                     >
                       Start Free Trial <ArrowRight className="w-3.5 h-3.5" />
                     </button>

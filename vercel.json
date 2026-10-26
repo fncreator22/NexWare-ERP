@@ -1,13 +1,13 @@
 {
-  "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "installCommand": "npm --prefix landing install",
   "cleanUrls": true,
   "trailingSlash": false,
-  "routes": [
-    { "src": "/warehouse-erp$", "dest": "/warehouse-erp/index.html" },
-    { "src": "/warehouse-erp/(.*)", "dest": "/warehouse-erp/$1" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/warehouse-erp", "destination": "/warehouse-erp/index.html" },
+    { "source": "/warehouse-erp/", "destination": "/warehouse-erp/index.html" },
+    { "source": "/warehouse-erp/:path*", "destination": "/warehouse-erp/:path*" },
+    { "source": "/:match*", "destination": "/index.html" }
   ]
 }

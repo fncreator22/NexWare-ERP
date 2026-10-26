@@ -1118,7 +1118,7 @@ export function printBill(billId) {
 </head>
 <body>
   <div class="no-print" style="text-align:center;padding:12px;background:#111827;color:#fff;font-family:sans-serif;font-size:14px;cursor:pointer" onclick="window.print();window.close()">
-    🖨 Click here to Print / Save as PDF — then close this window
+    Click here to Print / Save as PDF — then close this window
   </div>
   <div style="padding:20px">${invoiceHTML}</div>
   <script>setTimeout(()=>window.print(),700);<\/script>
