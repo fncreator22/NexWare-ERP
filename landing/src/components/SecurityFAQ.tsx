@@ -159,15 +159,11 @@ export default function SecurityFAQ() {
   return (
     <section id="security-faq" className="relative bg-[#070814] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
-      {/* Background ambient lighting */}
-      <div className="absolute top-1/3 left-10 w-96 h-96 bg-[#6366f1]/10 blur-[150px] pointer-events-none rounded-full" />
-      <div className="absolute bottom-10 right-10 w-96 h-96 bg-[#10b981]/10 blur-[150px] pointer-events-none rounded-full" />
-
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 
         {/* ═══════════ SECTION HEADER ════════════════════════ */}
         <div className="text-center max-w-3xl mx-auto mb-12">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-mono bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs uppercase tracking-wider mb-4">
             <ShieldCheck className="w-3.5 h-3.5" /> Enterprise Security & Compliance FAQ
           </div>
           <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white mb-4">
@@ -187,7 +183,7 @@ export default function SecurityFAQ() {
               placeholder="Search security questions (e.g. SAML, AES-256, RBAC, Argon2id, SLA)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#0f1029] border border-white/15 rounded-2xl pl-12 pr-4 py-3.5 text-sm text-white placeholder-white/40 outline-none focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/30 transition-all shadow-xl"
+              className="w-full bg-[#0c0d1e] border border-white/15 rounded-lg pl-12 pr-4 py-3.5 text-sm text-white placeholder-white/40 outline-none focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1]/30 transition-all shadow-xl"
             />
             {searchQuery && (
               <button
@@ -206,7 +202,7 @@ export default function SecurityFAQ() {
           {/* ───────────────────────────────────────────────────
               LEFT COLUMN (4 Cols): CATEGORY SIDEBAR NAV
           ─────────────────────────────────────────────────── */}
-          <div className="lg:col-span-4 bg-[#0f1029] border border-white/10 rounded-3xl p-4 space-y-2 shadow-2xl sticky top-24">
+          <div className="lg:col-span-4 bg-[#0c0d1e] border border-white/10 rounded-xl p-4 space-y-2 shadow-2xl sticky top-24">
             <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest px-3 py-2">
               Filter By Topic
             </p>
@@ -223,7 +219,7 @@ export default function SecurityFAQ() {
                 <button
                   key={cat.id}
                   onClick={() => { setActiveCategory(cat.id); setSearchQuery('') }}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-semibold transition-all ${
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-xs font-semibold transition-all ${
                     isActive
                       ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/30'
                       : 'text-white/70 hover:text-white hover:bg-white/5'
@@ -234,7 +230,7 @@ export default function SecurityFAQ() {
                     <span>{cat.label}</span>
                   </div>
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                    className={`text-[10px] px-2 py-0.5 rounded-md font-mono ${
                       isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-white/40'
                     }`}
                   >
@@ -271,7 +267,7 @@ export default function SecurityFAQ() {
           ─────────────────────────────────────────────────── */}
           <div className="lg:col-span-8 space-y-4">
             {filteredItems.length === 0 ? (
-              <div className="bg-[#0f1029] border border-white/10 rounded-3xl p-8 text-center text-white/50 space-y-2">
+              <div className="bg-[#0c0d1e] border border-white/10 rounded-xl p-8 text-center text-white/50 space-y-2">
                 <Search className="w-8 h-8 mx-auto text-white/20" />
                 <p className="text-sm font-bold text-white">No security questions found matching "{searchQuery}"</p>
                 <p className="text-xs">Try searching for keywords like "SAML", "AES-256", "RBAC", or "SLA".</p>
@@ -284,17 +280,17 @@ export default function SecurityFAQ() {
                     key={item.id}
                     id={`faq-${item.id}`}
                     onClick={() => toggleAccordion(item.id)}
-                    className={`rounded-3xl border transition-all duration-300 cursor-pointer overflow-hidden shadow-xl ${
+                    className={`rounded-xl border transition-all duration-300 cursor-pointer overflow-hidden shadow-xl ${
                       isExpanded
-                        ? 'bg-[#141638] border-[#6366f1] ring-1 ring-[#6366f1]/40'
-                        : 'bg-[#0f1029] border-white/10 hover:border-white/20 hover:bg-[#131538]'
+                        ? 'bg-[#0c0d1e] border-[#6366f1] ring-1 ring-[#6366f1]/40'
+                        : 'bg-[#0c0d1e] border-white/10 hover:border-white/20 hover:bg-[#10122e]'
                     }`}
                   >
                     {/* Accordion Question Header */}
                     <div className="p-5 sm:p-6 flex items-start justify-between gap-4">
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wider bg-[#6366f1]/20 text-[#818cf8] border border-[#6366f1]/30 px-2.5 py-0.5 rounded-full font-mono">
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-[#6366f1]/20 text-[#818cf8] border border-[#6366f1]/30 px-2.5 py-0.5 rounded-md font-mono">
                             {item.badge}
                           </span>
                         </div>
@@ -314,7 +310,7 @@ export default function SecurityFAQ() {
                         </button>
 
                         <div
-                          className={`w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-white/70 transition-transform duration-300 ${
+                          className={`w-7 h-7 rounded-md bg-white/5 flex items-center justify-center text-white/70 transition-transform duration-300 ${
                             isExpanded ? 'rotate-180 bg-[#6366f1] text-white' : ''
                           }`}
                         >
@@ -338,7 +334,7 @@ export default function SecurityFAQ() {
                         </p>
 
                         {item.technicalDetails && (
-                          <div className="p-4 rounded-2xl bg-[#0f1029] border border-white/5 space-y-2 text-xs">
+                          <div className="p-4 rounded-lg bg-[#080918] border border-white/5 space-y-2 text-xs">
                             <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest font-mono">
                               Technical Implementation Specs:
                             </p>

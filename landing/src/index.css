@@ -67,38 +67,11 @@
   background-size: 28px 28px;
 }
 
-/* ─── Scroll-triggered entrance animation ─────────────────── */
-/* JS toggles .in-view class via IntersectionObserver         */
-.reveal {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
-              transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.reveal.in-view {
-  opacity: 1;
-  transform: translateY(0);
-}
-.reveal-delay-1 { transition-delay: 0.1s; }
-.reveal-delay-2 { transition-delay: 0.2s; }
-.reveal-delay-3 { transition-delay: 0.3s; }
-.reveal-delay-4 { transition-delay: 0.4s; }
-
-/* ─── Glow utilities ─────────────────────────────────────── */
-.glow-indigo {
-  box-shadow: 0 0 40px rgba(99, 102, 241, 0.25);
-}
-
-.glow-emerald {
-  box-shadow: 0 0 40px rgba(16, 185, 129, 0.25);
-}
-
 /* ─── Reduced motion support ─────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
   .animate-fade-down,
-  .animate-hero-rise,
-  .reveal {
+  .animate-hero-rise {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

@@ -111,9 +111,6 @@ export default function SocialProof() {
   return (
     <section className="relative bg-[#070814] text-white py-24 lg:py-32 overflow-hidden border-t border-white/10">
 
-      {/* Atmospheric ambient light */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[400px] bg-[#6366f1]/15 blur-[160px] pointer-events-none rounded-full" />
-
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10 space-y-24">
 
         {/* ═══════════ 1. LOGO GRID ═══════════ */}
@@ -127,12 +124,12 @@ export default function SocialProof() {
               <div
                 key={brand.name}
                 onClick={() => handleLaunchApp('/dashboard')}
-                className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/10 hover:border-[#818cf8]/50 rounded-2xl p-4 flex flex-col items-center justify-center transition-all duration-300 cursor-pointer shadow-lg hover:shadow-[#6366f1]/10 hover:-translate-y-1"
+                className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/10 hover:border-[#818cf8]/50 rounded-lg p-4 flex flex-col items-center justify-center transition-all duration-300 cursor-pointer shadow-lg hover:shadow-[#6366f1]/10 hover:-translate-y-1"
               >
                 <div className="text-sm font-bold text-white/70 group-hover:text-white transition-colors tracking-tight text-center">
                   {brand.name}
                 </div>
-                <div className="text-[9px] text-white/40 group-hover:text-[#818cf8] transition-colors mt-0.5 text-center truncate w-full">
+                <div className="text-[9px] text-white/40 group-hover:text-[#818cf8] transition-colors mt-0.5 text-center truncate w-full font-mono">
                   {brand.sub}
                 </div>
               </div>
@@ -143,7 +140,7 @@ export default function SocialProof() {
         {/* ═══════════ 2. HARD PROOF METRICS ═════════════════ */}
         <div>
           <div className="text-center max-w-2xl mx-auto mb-12">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-semibold uppercase tracking-wider mb-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
               <CheckCircle2 className="w-3.5 h-3.5 text-[#10b981]" /> Institutional Grade Reliability
             </div>
             <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-white">
@@ -157,11 +154,11 @@ export default function SocialProof() {
               return (
                 <div
                   key={m.label}
-                  className="relative group bg-[#0f1029]/80 backdrop-blur-xl border border-white/10 hover:border-[#818cf8]/50 rounded-3xl p-6 transition-all duration-300 flex flex-col justify-between shadow-xl hover:-translate-y-1"
+                  className="relative group bg-[#0c0d1e] border border-white/10 hover:border-[#818cf8]/50 rounded-xl p-6 transition-all duration-300 flex flex-col justify-between shadow-xl hover:-translate-y-1"
                 >
                   <div>
                     <div className="flex items-center justify-between mb-4">
-                      <div className="w-11 h-11 rounded-2xl bg-white/5 flex items-center justify-center text-[#818cf8] border border-white/10 group-hover:scale-110 transition-transform">
+                      <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-[#818cf8] border border-white/10 group-hover:scale-110 transition-transform">
                         <Icon className="w-5 h-5" />
                       </div>
                       
@@ -183,7 +180,7 @@ export default function SocialProof() {
                   </div>
 
                   {activeTooltip === idx && (
-                    <div className="mt-4 pt-3 border-t border-white/10 text-[10px] text-[#c7d2fe] bg-[#6366f1]/20 p-3 rounded-xl animate-fade-up flex items-center gap-1.5">
+                    <div className="mt-4 pt-3 border-t border-white/10 text-[10px] text-[#c7d2fe] bg-[#6366f1]/20 p-3 rounded-lg animate-fade-up flex items-center gap-1.5 font-mono">
                       <Lightbulb className="w-3 h-3 shrink-0 text-[#818cf8]" />
                       <span>{m.tooltip}</span>
                     </div>
@@ -195,7 +192,7 @@ export default function SocialProof() {
         </div>
 
         {/* ═══════════ 3. CASE STUDY SLIDER ═════ */}
-        <div className="bg-gradient-to-b from-[#0f1029]/90 to-[#141638]/90 backdrop-blur-xl border border-white/15 rounded-3xl p-6 sm:p-10 lg:p-12 relative overflow-hidden shadow-2xl">
+        <div className="bg-[#0c0d1e] border border-white/15 rounded-xl p-6 sm:p-10 lg:p-12 relative overflow-hidden shadow-2xl">
           
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-white/10">
             <div className="flex items-center gap-2">
@@ -238,7 +235,7 @@ export default function SocialProof() {
               </blockquote>
 
               <div className="flex items-center gap-4 pt-2">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#6366f1] to-[#4f46e5] flex items-center justify-center text-white font-bold text-base shadow-lg">
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#4f46e5] flex items-center justify-center text-white font-bold text-base shadow-lg">
                   {currentCase.initials}
                 </div>
                 <div>
@@ -250,7 +247,7 @@ export default function SocialProof() {
               </div>
             </div>
 
-            <div className="lg:col-span-5 bg-white/[0.03] border border-white/10 rounded-2xl p-6 space-y-5">
+            <div className="lg:col-span-5 bg-[#080918] border border-white/10 rounded-lg p-6 space-y-5">
               <div className="text-xs font-mono font-semibold tracking-wider text-white/40 uppercase">
                 Validated Enterprise Impact
               </div>
@@ -266,7 +263,7 @@ export default function SocialProof() {
 
               <button
                 onClick={() => handleLaunchApp(currentCase.appRoute)}
-                className="w-full flex items-center justify-center gap-2 bg-white text-gray-900 font-bold text-xs py-3 px-4 rounded-xl hover:bg-white/90 transition-all shadow-lg"
+                className="w-full flex items-center justify-center gap-2 bg-white text-gray-900 font-bold text-xs py-3 px-4 rounded-lg hover:bg-white/90 transition-all shadow-lg"
               >
                 Read Full Case Study <ExternalLink className="w-3.5 h-3.5" />
               </button>

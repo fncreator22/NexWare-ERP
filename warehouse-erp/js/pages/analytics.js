@@ -4,7 +4,7 @@
 import { getCurrentUser, getBills, getItems, getAllUsers, getWarehouses, getTaxConfig } from '../modules/store.js';
 import { canDo } from '../modules/permissions.js';
 import { renderShell } from '../components/shell.js';
-import { formatCurrency, formatDate, getSvgIcon, renderWarehouseLogo } from '../modules/ui.js';
+import { formatCurrency, formatDate, getSvgIcon, renderWarehouseLogo, showToast } from '../modules/ui.js';
 
 // Persisted filter state (survives re-renders within session)
 let an_whFilter  = '';
@@ -32,7 +32,7 @@ export function renderAnalytics() {
 
   // Build year options from actual bill data
   const allBills = getBills();
-  const billYears = [...new Set(allBills.map(b => new Date(b.createdAt).getFullYear()))].sort((a,b)=>b-a);
+  const billYears = [...new Set(allBills.map(b => new Date(b.createdAt).getFullYear()).filter(y => !isNaN(y) && y > 1970))].sort((a,b)=>b-a);
   if (!billYears.includes(an_year)) an_year = billYears[0] || new Date().getFullYear();
 
   const months = ['All Months','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -255,6 +255,7 @@ function destroyChart(id) {
 }
 
 function updateCharts(bills, items, users, whs) {
+  if (typeof Chart === 'undefined') return;
   const CHART_OPTS = {
     responsive: true, maintainAspectRatio: false,
     plugins: {

@@ -71,7 +71,7 @@ export default function Hero({ onOpenModal }: HeroProps) {
       <div className="relative z-10 flex flex-col items-center text-center px-5 max-w-5xl mx-auto">
 
         {/* Top Badge */}
-        <div className="animate-fade-up inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-[#c7d2fe] text-xs font-semibold uppercase tracking-wider mb-6">
+        <div className="animate-fade-up inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-white/10 backdrop-blur-md border border-white/20 text-[#c7d2fe] text-xs font-mono font-semibold uppercase tracking-wider mb-6">
           <span className="w-2 h-2 rounded-full bg-[#10b981] animate-ping" />
           Enterprise ERP Engine v2.0 · Live WebSocket Sync
         </div>
@@ -84,21 +84,22 @@ export default function Hero({ onOpenModal }: HeroProps) {
           </span>
         </h1>
 
-        {/* Search bar */}
+        {/* Search command bar */}
         <form
           onSubmit={e => { e.preventDefault(); handleLaunchApp('/items') }}
           className="animate-fade-up [animation-delay:220ms] mt-6 sm:mt-8 w-full max-w-xl"
         >
-          <div className="flex items-center gap-3 rounded-full bg-white/15 backdrop-blur-md ring-1 ring-white/25 pl-5 pr-1.5 py-1.5 shadow-2xl hover:bg-white/20 transition-all">
+          <div className="flex items-center gap-3 rounded-lg bg-[#0c0d1e]/90 border border-white/15 pl-4 pr-1.5 py-1.5 shadow-xl hover:border-white/30 transition-all">
+            <span className="text-white/40 font-mono text-xs select-none">❯</span>
             <input
               type="text"
               placeholder="Search inventory, invoices, staff, warehouses..."
-              className="flex-1 bg-transparent text-sm sm:text-base text-white placeholder-white/60 outline-none py-2"
+              className="flex-1 bg-transparent text-sm sm:text-base text-white placeholder-white/50 outline-none py-1.5"
             />
             <button
               type="submit"
               aria-label="Search ERP"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white text-gray-900 hover:scale-105 active:scale-95 transition-transform shrink-0 flex items-center justify-center font-bold"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-md bg-white text-gray-900 hover:bg-white/90 active:scale-95 transition-all shrink-0 flex items-center justify-center font-bold"
             >
               <ArrowUpIcon className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </button>
@@ -119,14 +120,14 @@ export default function Hero({ onOpenModal }: HeroProps) {
         <div className="animate-fade-up [animation-delay:460ms] mt-6 flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={() => handleLaunchApp('/signup')}
-            className="bg-white text-gray-900 text-sm font-bold px-7 py-3 rounded-full hover:bg-white/90 hover:shadow-xl transition-all shadow-white/10"
+            className="bg-white text-gray-900 text-sm font-bold px-7 py-3 rounded-lg hover:bg-white/90 hover:shadow-xl transition-all shadow-white/10"
           >
             Start Free Trial
           </button>
 
           <button
             onClick={() => handleLaunchApp('/login')}
-            className="text-white text-sm font-semibold px-7 py-3 rounded-full ring-1 ring-white/30 hover:bg-white/10 backdrop-blur-md transition-colors"
+            className="text-white text-sm font-semibold px-7 py-3 rounded-lg ring-1 ring-white/30 hover:bg-white/10 backdrop-blur-md transition-colors"
           >
             Schedule a Demo
           </button>

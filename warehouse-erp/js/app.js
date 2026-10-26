@@ -14,7 +14,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // Modules
-import { getCurrentUser, getWarehouses, getStore, seedDemoData, getActiveCurrency, syncWithBackend } from './modules/store.js';
+import { getCurrentUser, getWarehouses, getStore, getActiveCurrency, syncWithBackend } from './modules/store.js';
 import { getSvgIcon, applyTheme } from './modules/ui.js';
 import { canDo } from './modules/permissions.js';
 

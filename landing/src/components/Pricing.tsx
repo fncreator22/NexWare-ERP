@@ -243,14 +243,11 @@ export default function Pricing() {
   return (
     <section id="pricing" className="relative bg-[#070814] section-texture text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
-      {/* Background glow */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-[#6366f1]/10 blur-[160px] pointer-events-none rounded-full" />
-
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 
         {/* ═══════════ SECTION HEADER ════════════════════════ */}
         <div className="text-center max-w-3xl mx-auto mb-12">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-mono bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs uppercase tracking-wider mb-4">
             <Sparkles className="w-3.5 h-3.5" /> Predictable Enterprise Pricing
           </div>
           <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white mb-4">
@@ -262,17 +259,17 @@ export default function Pricing() {
         </div>
 
         {/* ═══════════ 1. GLOBAL CONTROLS (TOP LEVEL) ════════ */}
-        <div className="bg-[#0f1029] border border-white/10 rounded-3xl p-6 sm:p-8 max-w-4xl mx-auto mb-16 shadow-2xl space-y-6">
+        <div className="bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 max-w-4xl mx-auto mb-16 shadow-2xl space-y-6">
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
 
             {/* Billing Cycle Toggle */}
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold text-white/60">Billing Cycle:</span>
-              <div className="flex items-center bg-white/5 border border-white/10 rounded-full p-1">
+              <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-1">
                 <button
                   onClick={() => setBillingCycle('monthly')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     billingCycle === 'monthly' ? 'bg-[#6366f1] text-white shadow' : 'text-white/60 hover:text-white'
                   }`}
                 >
@@ -280,12 +277,12 @@ export default function Pricing() {
                 </button>
                 <button
                   onClick={() => setBillingCycle('annual')}
-                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     billingCycle === 'annual' ? 'bg-[#6366f1] text-white shadow' : 'text-white/60 hover:text-white'
                   }`}
                 >
                   <span>Annual</span>
-                  <span className="bg-[#10b981] text-gray-900 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  <span className="bg-[#10b981] text-gray-900 text-[10px] font-bold px-1.5 py-0.5 rounded-md font-mono">
                     Save 20%
                   </span>
                 </button>
@@ -295,12 +292,12 @@ export default function Pricing() {
             {/* Currency Selector */}
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold text-white/60">Currency:</span>
-              <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-1">
+              <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-1">
                 {(['USD', 'EUR', 'GBP'] as const).map(c => (
                   <button
                     key={c}
                     onClick={() => setCurrency(c)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                    className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${
                       currency === c ? 'bg-[#6366f1] text-white' : 'text-white/50 hover:text-white'
                     }`}
                   >
@@ -318,7 +315,7 @@ export default function Pricing() {
               <span className="font-semibold text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-[#818cf8]" /> Estimate Headcount / Active Seats:
               </span>
-              <span className="font-mono text-[#818cf8] font-bold text-sm bg-[#6366f1]/20 px-3 py-0.5 rounded-full">
+              <span className="font-mono text-[#818cf8] font-bold text-sm bg-[#6366f1]/20 px-3 py-0.5 rounded-md">
                 {employeeHeadcount} Active Seats
               </span>
             </div>
@@ -349,15 +346,15 @@ export default function Pricing() {
             return (
               <div
                 key={plan.id}
-                className={`relative rounded-3xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-300 shadow-2xl ${
+                className={`relative rounded-xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-300 shadow-2xl ${
                   isEnterprise
-                    ? 'bg-gradient-to-b from-[#141638] to-[#0f1029] border-2 border-[#6366f1] ring-2 ring-[#6366f1]/30 scale-[1.03]'
-                    : 'bg-[#0f1029] border border-white/10 hover:border-white/20'
+                    ? 'bg-[#0c0d1e] border-2 border-[#6366f1] ring-1 ring-[#6366f1]/30'
+                    : 'bg-[#0c0d1e] border border-white/10 hover:border-white/20'
                 }`}
               >
                 {/* Popular Badge Ribbon */}
                 {plan.badge && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-[#6366f1] to-[#4f46e5] text-white text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-wider shadow-lg">
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-[#6366f1] text-white text-[10px] font-bold px-3 py-0.5 rounded-md font-mono uppercase tracking-wider shadow-lg">
                     {plan.badge}
                   </div>
                 )}
@@ -397,7 +394,7 @@ export default function Pricing() {
                 {/* CTA Button */}
                 <button
                   onClick={() => { window.location.href = '/warehouse-erp/index.html#/signup' }}
-                  className={`w-full py-3.5 rounded-2xl text-xs font-bold transition-all shadow-lg ${
+                  className={`w-full py-3.5 rounded-lg text-xs font-bold transition-all shadow-lg ${
                     plan.ctaVariant === 'primary'
                       ? 'bg-white text-gray-900 hover:bg-white/90 shadow-white/10'
                       : plan.ctaVariant === 'outline'
@@ -413,7 +410,7 @@ export default function Pricing() {
         </div>
 
         {/* ═══════════ 3. DETAILED COMPARISON MATRIX GRID ═════ */}
-        <div className="bg-[#0f1029] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl mb-20 overflow-x-auto">
+        <div className="bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 shadow-2xl mb-20 overflow-x-auto">
           
           <div className="text-center max-w-2xl mx-auto mb-8">
             <h3 className="text-2xl font-bold text-white">Full Feature Capability Matrix</h3>
@@ -525,7 +522,7 @@ export default function Pricing() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
 
           {/* Transparent Add-on Blocks (Left 6 Cols) */}
-          <div className="lg:col-span-6 bg-[#0f1029] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-4">
+          <div className="lg:col-span-6 bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 space-y-4">
             <h4 className="text-base font-bold text-white flex items-center gap-2">
               <Server className="w-4 h-4 text-[#818cf8]" /> Transparent Infrastructure Add-ons
             </h4>
@@ -535,7 +532,7 @@ export default function Pricing() {
 
             <div className="space-y-3 pt-2">
               {ADDONS.map(addon => (
-                <div key={addon.name} className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/5 text-xs">
+                <div key={addon.name} className="flex items-center justify-between p-3 rounded-lg bg-[#080918] border border-white/5 text-xs">
                   <div>
                     <p className="font-semibold text-white">{addon.name}</p>
                     <p className="text-[10px] text-white/40">{addon.detail}</p>
@@ -547,7 +544,7 @@ export default function Pricing() {
           </div>
 
           {/* Compliance & Trust Badges (Right 6 Cols) */}
-          <div className="lg:col-span-6 bg-[#0f1029] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-4">
+          <div className="lg:col-span-6 bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 space-y-4">
             <h4 className="text-base font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-[#10b981]" /> Enterprise Security & Compliance
             </h4>
@@ -556,7 +553,7 @@ export default function Pricing() {
             </p>
 
             <div className="grid grid-cols-2 gap-3 pt-2">
-              <div className="p-3 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center gap-2 text-xs text-white">
+              <div className="p-3 bg-[#080918] rounded-lg border border-white/5 flex items-center gap-2 text-xs text-white">
                 <Lock className="w-4 h-4 text-[#6366f1]" />
                 <div>
                   <p className="font-bold text-xs">Argon2id Hashing</p>
@@ -564,7 +561,7 @@ export default function Pricing() {
                 </div>
               </div>
 
-              <div className="p-3 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center gap-2 text-xs text-white">
+              <div className="p-3 bg-[#080918] rounded-lg border border-white/5 flex items-center gap-2 text-xs text-white">
                 <ShieldCheck className="w-4 h-4 text-[#10b981]" />
                 <div>
                   <p className="font-bold text-xs">SOC2 & ISO 27001</p>
@@ -572,7 +569,7 @@ export default function Pricing() {
                 </div>
               </div>
 
-              <div className="p-3 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center gap-2 text-xs text-white">
+              <div className="p-3 bg-[#080918] rounded-lg border border-white/5 flex items-center gap-2 text-xs text-white">
                 <Building2 className="w-4 h-4 text-[#febc2e]" />
                 <div>
                   <p className="font-bold text-xs">MongoDB Isolation</p>
@@ -580,7 +577,7 @@ export default function Pricing() {
                 </div>
               </div>
 
-              <div className="p-3 bg-white/[0.03] rounded-2xl border border-white/5 flex items-center gap-2 text-xs text-white">
+              <div className="p-3 bg-[#080918] rounded-lg border border-white/5 flex items-center gap-2 text-xs text-white">
                 <Globe className="w-4 h-4 text-[#818cf8]" />
                 <div>
                   <p className="font-bold text-xs">GDPR Compliant</p>

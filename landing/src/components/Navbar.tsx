@@ -20,7 +20,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
         {/* ── LOGO ─────────────────────────────────── */}
         <a href="/" className="flex items-center gap-2.5 text-white group">
-          <div className="w-8 h-8 rounded-xl bg-[#6366f1]/20 border border-[#6366f1]/40 flex items-center justify-center text-[#818cf8] group-hover:scale-105 transition-transform">
+          <div className="w-8 h-8 rounded-lg bg-[#6366f1]/20 border border-[#6366f1]/40 flex items-center justify-center text-[#818cf8] group-hover:scale-105 transition-transform">
             <Logo className="w-4 h-4 text-white" />
           </div>
           <span className="font-semibold text-base tracking-tight">
@@ -42,12 +42,12 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
             {featuresOpen && (
               <div
-                className="absolute left-0 top-full mt-2 w-64 rounded-2xl bg-[#0f1029]/95 backdrop-blur-xl border border-white/15 p-2 shadow-2xl space-y-1 animate-fade-up z-50"
+                className="absolute left-0 top-full mt-2 w-64 rounded-xl bg-[#0c0d1e]/95 backdrop-blur-xl border border-white/15 p-2 shadow-2xl space-y-1 animate-fade-up z-50"
                 onMouseLeave={() => setFeaturesOpen(false)}
               >
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('finance') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
                   <FileText className="w-4 h-4 text-[#818cf8]" />
                   <div>
@@ -58,7 +58,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('logistics') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
                   <Building2 className="w-4 h-4 text-[#10b981]" />
                   <div>
@@ -69,7 +69,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('workforce') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
                   <Users className="w-4 h-4 text-amber-400" />
                   <div>
@@ -80,7 +80,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
                 <div
                   onClick={() => { setFeaturesOpen(false); onOpenModal?.('audit') }}
-                  className="flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-white/10 text-xs text-white cursor-pointer transition-colors"
                 >
                   <Shield className="w-4 h-4 text-rose-400" />
                   <div>
@@ -110,7 +110,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
           <button
             onClick={() => handleLaunchApp('/signup')}
-            className="bg-white text-gray-900 text-[13px] font-bold px-4 sm:px-5 py-2 rounded-full hover:bg-white/90 transition-all shadow-md flex items-center gap-1.5"
+            className="bg-white text-gray-900 text-[13px] font-bold px-4 sm:px-5 py-2 rounded-lg hover:bg-white/90 transition-all shadow-md flex items-center gap-1.5"
           >
             Start Free Trial <ExternalLink className="w-3 h-3" />
           </button>
@@ -119,7 +119,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
           <button
             onClick={() => setOpen(o => !o)}
             aria-label="Toggle mobile menu"
-            className="md:hidden w-9 h-9 flex items-center justify-center rounded-full text-white hover:bg-white/10 transition-colors"
+            className="md:hidden w-9 h-9 flex items-center justify-center rounded-md text-white hover:bg-white/10 transition-colors"
           >
             {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -128,7 +128,7 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
 
       {/* ── MOBILE DROPDOWN ──────────────────────────── */}
       {open && (
-        <div className="absolute left-4 right-4 top-full rounded-2xl bg-[#0f1029]/95 backdrop-blur-xl border border-white/15 px-5 py-4 animate-fade-up md:hidden space-y-3 shadow-2xl">
+        <div className="absolute left-4 right-4 top-full rounded-xl bg-[#0c0d1e]/95 backdrop-blur-xl border border-white/15 px-5 py-4 animate-fade-up md:hidden space-y-3 shadow-2xl">
           <div className="space-y-2 border-b border-white/10 pb-3">
             <p className="text-[10px] font-mono uppercase text-white/40 font-bold">Navigation Links</p>
             {['Features', 'Product Tour', 'How It Works', 'Pricing', 'Security FAQ'].map((item) => (
@@ -146,13 +146,13 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
           <div className="flex flex-col gap-2 pt-1">
             <button
               onClick={() => handleLaunchApp('/login')}
-              className="w-full py-2.5 rounded-xl border border-white/20 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
+              className="w-full py-2.5 rounded-lg border border-white/20 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
             >
               Log In to NexWare ERP
             </button>
             <button
               onClick={() => handleLaunchApp('/signup')}
-              className="w-full py-2.5 rounded-xl bg-white text-gray-900 text-xs font-bold hover:bg-white/90 transition-colors"
+              className="w-full py-2.5 rounded-lg bg-white text-gray-900 text-xs font-bold hover:bg-white/90 transition-colors"
             >
               Create Free Account →
             </button>

@@ -268,14 +268,11 @@ export default function ModuleTour() {
   return (
     <section id="interactive-tour" className="relative bg-[#070814] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
-      {/* Background ambient lighting */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-[#6366f1]/10 blur-[160px] pointer-events-none rounded-full" />
-
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 
         {/* ═══════════ SECTION HEADER ════════════════════════ */}
         <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
             <Sparkles className="w-3.5 h-3.5" /> Interactive Product Tour
           </div>
           <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white mb-4">
@@ -298,9 +295,9 @@ export default function ModuleTour() {
               <button
                 key={p.id}
                 onClick={() => handlePersonaChange(p.id)}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   selectedPersona === p.id
-                    ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/30 ring-2 ring-[#818cf8]/50'
+                    ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/30 ring-1 ring-[#818cf8]/50'
                     : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
                 }`}
               >
@@ -322,7 +319,7 @@ export default function ModuleTour() {
               <button
                 key={m.id}
                 onClick={() => handleModuleChange(m.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                   active
                     ? 'bg-gradient-to-r from-[#6366f1] to-[#4f46e5] text-white shadow-md border border-[#818cf8]/40'
                     : 'bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.08] border border-white/5'
@@ -341,7 +338,7 @@ export default function ModuleTour() {
           {/* ───────────────────────────────────────────────────
               LEFT COLUMN (35% - 4 Cols on LG): CONTROLS & STEPPER
           ─────────────────────────────────────────────────── */}
-          <div className="lg:col-span-4 bg-[#0f1029] border border-white/10 rounded-3xl p-6 sm:p-7 space-y-6 shadow-2xl flex flex-col justify-between">
+          <div className="lg:col-span-4 bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-7 space-y-6 shadow-xl flex flex-col justify-between">
 
             <div>
               {/* Module Header & ROI Banner */}
@@ -350,12 +347,12 @@ export default function ModuleTour() {
                   <span className="text-xs font-bold text-[#818cf8] uppercase tracking-wider">
                     {activeModule.label}
                   </span>
-                  <span className="text-[10px] bg-[#10b981]/20 text-[#10b981] px-2 py-0.5 rounded-full font-mono">
+                  <span className="text-[10px] bg-[#10b981]/20 text-[#10b981] px-2 py-0.5 rounded-md font-mono">
                     Live Interactive Mode
                   </span>
                 </div>
                 <h3 className="text-lg font-bold text-white">{activeModule.tagline}</h3>
-                <div className="p-2.5 bg-[#10b981]/10 border border-[#10b981]/30 rounded-xl text-xs text-[#10b981] font-semibold flex items-center gap-2">
+                <div className="p-2.5 bg-[#10b981]/10 border border-[#10b981]/30 rounded-lg text-xs text-[#10b981] font-semibold flex items-center gap-2">
                   <Zap className="w-4 h-4 shrink-0" />
                   <span>{activeModule.businessImpact}</span>
                 </div>
@@ -374,9 +371,9 @@ export default function ModuleTour() {
                     <div
                       key={st.stepNum}
                       onClick={() => { setCurrentStepIdx(idx); setTourCompleted(false) }}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                      className={`p-3.5 rounded-lg border transition-all cursor-pointer ${
                         isCurrent
-                          ? 'bg-[#141638] border-[#6366f1] ring-1 ring-[#6366f1]/50'
+                          ? 'bg-[#080918] border-[#6366f1] ring-1 ring-[#6366f1]/50'
                           : isDone
                           ? 'bg-white/[0.02] border-white/10 opacity-70'
                           : 'bg-white/[0.01] border-white/5 opacity-40 hover:opacity-70'
@@ -404,7 +401,7 @@ export default function ModuleTour() {
                       {isCurrent && (
                         <div className="mt-2 text-xs text-white/70 space-y-2 animate-fade-up">
                           <p>{st.desc}</p>
-                          <div className="flex items-center gap-1.5 text-[10px] text-[#c7d2fe] font-mono bg-[#6366f1]/20 p-2 rounded-lg border border-[#6366f1]/30">
+                          <div className="flex items-center gap-1.5 text-[10px] text-[#c7d2fe] font-mono bg-[#6366f1]/20 p-2 rounded-md border border-[#6366f1]/30">
                           <Lightbulb className="w-3 h-3 shrink-0 text-[#818cf8]" /> Outcome: {st.roiMetric}
                           </div>
                         </div>
@@ -423,7 +420,7 @@ export default function ModuleTour() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsAutoplay(a => !a)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold transition-all ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all ${
                       isAutoplay
                         ? 'bg-[#10b981] text-gray-900 shadow-md'
                         : 'bg-white/10 text-white/80 hover:bg-white/20'
@@ -448,7 +445,7 @@ export default function ModuleTour() {
               {/* Persistent CTA */}
               <button
                 onClick={() => { window.location.href = '/warehouse-erp/index.html#/signup' }}
-                className="w-full flex items-center justify-center gap-2 bg-white text-gray-900 font-bold text-xs py-3 px-4 rounded-xl hover:bg-white/90 transition-all shadow-lg"
+                className="w-full flex items-center justify-center gap-2 bg-white text-gray-900 font-bold text-xs py-3 px-4 rounded-lg hover:bg-white/90 transition-all shadow-lg"
               >
                 Start Free Trial Now <ArrowRight className="w-3.5 h-3.5" />
               </button>
@@ -459,10 +456,10 @@ export default function ModuleTour() {
           {/* ───────────────────────────────────────────────────
               RIGHT COLUMN (65% - 8 Cols on LG): INTERACTIVE CANVAS
           ─────────────────────────────────────────────────── */}
-          <div className="lg:col-span-8 bg-[#0f1029] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl relative">
+          <div className="lg:col-span-8 bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 space-y-6 shadow-xl relative">
 
             {/* Hotspot Pulsing Indicator Header */}
-            <div className="flex items-center justify-between bg-[#141638] border border-white/10 px-4 py-3 rounded-2xl">
+            <div className="flex items-center justify-between bg-[#080918] border border-white/10 px-4 py-3 rounded-lg">
               <div className="flex items-center gap-2 text-xs">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#6366f1] animate-ping" />
                 <span className="font-semibold text-white">Active Hotspot Objective:</span>
@@ -477,7 +474,7 @@ export default function ModuleTour() {
             </div>
 
             {/* Simulated Interactive Screen Mockup */}
-            <div className="relative rounded-2xl bg-[#0c0e20] border border-white/10 p-6 overflow-hidden min-h-[420px] flex flex-col justify-between">
+            <div className="relative rounded-lg bg-[#080918] border border-white/10 p-6 overflow-hidden min-h-[420px] flex flex-col justify-between">
 
               {/* Screen Top Bar */}
               <div className="flex items-center justify-between pb-4 border-b border-white/10 text-xs">

@@ -22,20 +22,17 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
   return (
     <footer className="relative bg-[#070814] text-white overflow-hidden border-t border-white/10">
 
-      {/* Ambient lighting */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-[#6366f1]/15 blur-[180px] pointer-events-none rounded-full" />
-
       {/* ═══════════ 1. HIGH-TRUST CONVERSION CTA SECTION ════ */}
-      <div id="get-started" className="relative z-10 py-16 lg:py-24 border-b border-white/10 bg-[#0f1029]/80 backdrop-blur-xl">
+      <div id="get-started" className="relative z-10 py-16 lg:py-24 border-b border-white/10 bg-[#0c0d1e]/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10">
 
-          <div className="bg-gradient-to-br from-[#141638] via-[#0f1029] to-[#181a42] border border-white/15 rounded-3xl p-8 sm:p-12 lg:p-16 shadow-2xl relative overflow-hidden">
+          <div className="bg-[#0c0d1e] border border-white/15 rounded-xl p-8 sm:p-12 lg:p-16 shadow-2xl relative overflow-hidden">
             
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
 
               {/* Left Column */}
               <div className="lg:col-span-7 space-y-6">
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-semibold uppercase tracking-wider">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-mono bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs uppercase tracking-wider">
                   <Sparkles className="w-3.5 h-3.5" /> High-Trust Enterprise Onboarding
                 </div>
 
@@ -65,14 +62,14 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
                 <div className="flex flex-wrap items-center gap-4 pt-4">
                   <button
                     onClick={() => handleLaunchApp('/signup')}
-                    className="flex items-center gap-2 bg-white text-gray-900 font-bold text-sm px-7 py-3.5 rounded-2xl hover:bg-white/90 transition-all shadow-xl shadow-white/10"
+                    className="flex items-center gap-2 bg-white text-gray-900 font-bold text-sm px-7 py-3.5 rounded-lg hover:bg-white/90 transition-all shadow-xl shadow-white/10"
                   >
                     Start Free Trial <ArrowRight className="w-4 h-4" />
                   </button>
 
                   <button
                     onClick={() => handleLaunchApp('/login')}
-                    className="flex items-center gap-2 bg-white/10 text-white font-semibold text-sm px-7 py-3.5 rounded-2xl hover:bg-white/20 border border-white/20 transition-all"
+                    className="flex items-center gap-2 bg-white/10 text-white font-semibold text-sm px-7 py-3.5 rounded-lg hover:bg-white/20 border border-white/20 transition-all"
                   >
                     Talk to an Expert
                   </button>
@@ -80,12 +77,12 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
               </div>
 
               {/* Right Column: Interactive ROI Calculator */}
-              <div className="lg:col-span-5 bg-[#0c0e20] border border-white/10 rounded-2xl p-6 space-y-6 shadow-2xl">
+              <div className="lg:col-span-5 bg-[#080918] border border-white/10 rounded-lg p-6 space-y-6 shadow-2xl">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-white flex items-center gap-2">
                     <Calculator className="w-4 h-4 text-[#818cf8]" /> Estimate Monthly ROI Savings
                   </span>
-                  <span className="text-[10px] text-[#10b981] font-mono bg-[#10b981]/10 px-2 py-0.5 rounded">
+                  <span className="text-[10px] text-[#10b981] font-mono bg-[#10b981]/10 px-2 py-0.5 rounded-md">
                     Interactive Calculator
                   </span>
                 </div>
@@ -93,7 +90,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-white/60">Monthly Invoices Issued:</span>
-                    <span className="font-mono text-[#818cf8] font-bold text-sm bg-[#6366f1]/20 px-2.5 py-0.5 rounded">
+                    <span className="font-mono text-[#818cf8] font-bold text-sm bg-[#6366f1]/20 px-2.5 py-0.5 rounded-md">
                       {monthlyInvoices} Invoices / mo
                     </span>
                   </div>
@@ -114,7 +111,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div className="p-3.5 bg-white/[0.03] rounded-xl border border-white/5 space-y-1">
+                  <div className="p-3.5 bg-white/[0.03] rounded-lg border border-white/5 space-y-1">
                     <div className="flex items-center gap-1 text-[10px] text-white/50">
                       <Clock className="w-3 h-3 text-[#10b981]" /> Est. Time Saved
                     </div>
@@ -122,7 +119,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
                     <p className="text-[9px] text-white/40">In billing & tax audit</p>
                   </div>
 
-                  <div className="p-3.5 bg-white/[0.03] rounded-xl border border-white/5 space-y-1">
+                  <div className="p-3.5 bg-white/[0.03] rounded-lg border border-white/5 space-y-1">
                     <div className="flex items-center gap-1 text-[10px] text-white/50">
                       <TrendingUp className="w-3 h-3 text-[#6366f1]" /> Est. Cost Saved
                     </div>
@@ -133,7 +130,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
 
                 <button
                   onClick={() => handleLaunchApp('/signup')}
-                  className="w-full flex items-center justify-center gap-2 bg-[#6366f1] text-white font-bold text-xs py-3 rounded-xl hover:bg-[#4f46e5] transition-all shadow-md"
+                  className="w-full flex items-center justify-center gap-2 bg-[#6366f1] text-white font-bold text-xs py-3 rounded-lg hover:bg-[#4f46e5] transition-all shadow-md"
                 >
                   Calculate & Claim Savings in ERP <ExternalLink className="w-3.5 h-3.5" />
                 </button>
@@ -166,7 +163,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
               Autonomous enterprise resource planning for modern logistics and warehouse infrastructure.
             </p>
 
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#10b981]/10 border border-[#10b981]/30 w-fit">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md font-mono bg-[#10b981]/10 border border-[#10b981]/30 w-fit">
               <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
               <span className="text-[11px] font-semibold text-[#10b981]">
                 All Systems Operational
@@ -343,7 +340,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
             <button onClick={() => onOpenModal?.('cookies')} className="hover:text-white transition-colors duration-150">Cookie Preferences</button>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-white/70 text-[11px]">
+          <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-3 py-1 rounded-md text-white/70 text-[11px]">
             <Globe className="w-3.5 h-3.5 text-[#818cf8]" />
             <span>Global (English)</span>
           </div>

@@ -126,15 +126,11 @@ export default function HowItWorks() {
   return (
     <section id="how-it-works" className="relative bg-[#070814] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
-      {/* Ambient background glow */}
-      <div className="absolute top-1/2 right-10 w-96 h-96 bg-[#6366f1]/10 blur-[150px] pointer-events-none rounded-full" />
-      <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#10b981]/10 blur-[150px] pointer-events-none rounded-full" />
-
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 
         {/* ═══════════ SECTION HEADER ════════════════════════ */}
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
             <Workflow className="w-3.5 h-3.5" /> Linear 4-Step Onboarding Architecture
           </div>
           <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white mb-4">
@@ -167,22 +163,22 @@ export default function HowItWorks() {
                 <div
                   key={st.id}
                   onClick={() => setActiveStepId(st.id)}
-                  className={`group relative bg-[#0f1029] border rounded-3xl p-6 transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl ${
+                  className={`group relative bg-[#0c0d1e] border rounded-xl p-6 transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl ${
                     isActive
-                      ? 'border-[#6366f1] ring-2 ring-[#6366f1]/40 scale-[1.02]'
-                      : 'border-white/10 hover:border-white/20 hover:bg-[#131538]'
+                      ? 'border-[#6366f1] ring-1 ring-[#6366f1]/50 scale-[1.02]'
+                      : 'border-white/10 hover:border-white/20 hover:bg-[#111328]'
                   }`}
                 >
                   <div>
                     {/* Top Row: Icon & Step Badge */}
                     <div className="flex items-center justify-between mb-4">
                       <div
-                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110"
+                        className="w-11 h-11 rounded-lg flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110"
                         style={{ background: st.accentColor }}
                       >
-                        <Icon className="w-6 h-6" />
+                        <Icon className="w-5 h-5" />
                       </div>
-                      <span className="text-xs font-mono font-bold text-white/50 bg-white/5 px-2.5 py-1 rounded-full border border-white/5">
+                      <span className="text-xs font-mono font-bold text-white/50 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
                         {st.badge}
                       </span>
                     </div>
@@ -208,14 +204,14 @@ export default function HowItWorks() {
         </div>
 
         {/* ═══════════ DETAILED DISPLAY WIDGET & PREVIEW ═══════ */}
-        <div className="bg-[#0f1029] border border-white/10 rounded-3xl p-6 sm:p-8 lg:p-10 shadow-2xl relative overflow-hidden">
+        <div className="bg-[#0c0d1e] border border-white/10 rounded-xl p-6 sm:p-8 lg:p-10 shadow-xl relative overflow-hidden">
           
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
 
             {/* Left 6 Columns: Active Step Deep Dive */}
             <div className="lg:col-span-6 space-y-6">
 
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-bold text-white bg-white/10 border border-white/10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono font-bold text-white bg-white/10 border border-white/10">
                 <StepIcon className="w-4 h-4" style={{ color: activeStep.accentColor }} />
                 <span>Active Onboarding Phase {activeStep.id} of 4</span>
               </div>
@@ -228,7 +224,7 @@ export default function HowItWorks() {
                 {activeStep.copy}
               </p>
 
-              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
+              <div className="p-4 rounded-lg bg-[#080918] border border-white/10 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#10b981]">
                   <CheckCircle2 className="w-4 h-4" /> Core Business Value Delivered:
                 </div>
@@ -250,7 +246,7 @@ export default function HowItWorks() {
                 </button>
 
                 {expandedSpecId === activeStep.id && (
-                  <div className="mt-3 p-4 rounded-2xl bg-[#141638] border border-[#6366f1]/30 text-xs space-y-3 animate-fade-up">
+                  <div className="mt-3 p-4 rounded-lg bg-[#080918] border border-[#6366f1]/30 text-xs space-y-3 animate-fade-up">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2">
                       <span className="font-bold text-white">{activeStep.techSpecs.title}</span>
                     </div>
@@ -268,7 +264,7 @@ export default function HowItWorks() {
             </div>
 
             {/* Right 6 Columns: Interactive Visual Mockup Widget */}
-            <div className="lg:col-span-6 bg-[#141638] border border-white/10 rounded-2xl p-6 relative min-h-[340px] flex flex-col justify-between">
+            <div className="lg:col-span-6 bg-[#080918] border border-white/10 rounded-lg p-6 relative min-h-[340px] flex flex-col justify-between">
 
               {/* Step 1 Preview: Ingestion Dropzone */}
               {activeStep.uiPreviewType === 'ingestion' && (
@@ -282,22 +278,22 @@ export default function HowItWorks() {
 
                   <div
                     onClick={handleSimulateUpload}
-                    className="border-2 border-dashed border-[#6366f1]/50 hover:border-[#6366f1] bg-white/[0.02] hover:bg-white/[0.05] p-8 rounded-2xl text-center space-y-3 cursor-pointer transition-all duration-300 group"
+                    className="border-2 border-dashed border-[#6366f1]/40 hover:border-[#6366f1] bg-white/[0.02] hover:bg-white/[0.04] p-8 rounded-lg text-center space-y-3 cursor-pointer transition-all duration-300 group"
                   >
-                    <div className="w-12 h-12 rounded-full bg-[#6366f1]/20 text-[#818cf8] flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 rounded-lg bg-[#6366f1]/20 text-[#818cf8] flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
                       <UploadCloud className="w-6 h-6 animate-pulse" />
                     </div>
                     <div>
                       <p className="text-xs font-bold text-white">Click or Drag & Drop Data File</p>
                       <p className="text-[10px] text-white/50 mt-1">Simulate ingestion of manifest & SKU database</p>
                     </div>
-                    <div className="inline-flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-full text-[10px] text-[#c7d2fe] font-mono">
+                    <div className="inline-flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-md text-[10px] text-[#c7d2fe] font-mono">
                       <FileSpreadsheet className="w-3 h-3" /> {ingestFile}
                     </div>
                   </div>
 
                   {ingestSuccess && (
-                    <div className="p-3 bg-[#10b981] text-gray-900 rounded-xl text-xs font-bold flex items-center justify-between animate-fade-up">
+                    <div className="p-3 bg-[#10b981] text-gray-900 rounded-lg text-xs font-bold flex items-center justify-between animate-fade-up">
                       <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> Ingested 247 items & 4 warehouse mappings into tenant!</span>
                       <CheckCircle2 className="w-4 h-4" />
                     </div>
@@ -316,7 +312,7 @@ export default function HowItWorks() {
                   </div>
 
                   <div className="space-y-3">
-                    <div className="p-3 bg-[#0f1029] rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <span className="text-white/60">1. Invoice Event Triggered</span>
                       <span className="text-[#10b981] font-mono font-bold">INV-0038 Issued</span>
                     </div>
@@ -325,7 +321,7 @@ export default function HowItWorks() {
                       <div className="w-0.5 h-6 bg-gradient-to-b from-[#10b981] to-[#6366f1] animate-pulse" />
                     </div>
 
-                    <div className="p-3 bg-[#0f1029] rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <span className="text-white/60">2. Tax Rate Snapshot Applied</span>
                       <span className="text-[#febc2e] font-mono font-bold">5% Standard ($45.50)</span>
                     </div>
@@ -334,7 +330,7 @@ export default function HowItWorks() {
                       <div className="w-0.5 h-6 bg-gradient-to-b from-[#febc2e] to-[#818cf8] animate-pulse" />
                     </div>
 
-                    <div className="p-3 bg-[#0f1029] rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <span className="text-white/60">3. Stock Decrement & Audit Log</span>
                       <span className="text-[#818cf8] font-mono font-bold">Atomic 80 Pcs</span>
                     </div>
@@ -353,19 +349,19 @@ export default function HowItWorks() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3.5 bg-[#0f1029] rounded-xl border border-white/10 space-y-1">
+                    <div className="p-3.5 bg-[#080918] rounded-lg border border-white/10 space-y-1">
                       <span className="text-[10px] text-white/40 uppercase">Total Revenue</span>
                       <p className="text-xl font-bold text-white font-mono">$124,700</p>
                       <span className="text-[9px] text-[#10b981]">↑ 18% vs last month</span>
                     </div>
-                    <div className="p-3.5 bg-[#0f1029] rounded-xl border border-white/10 space-y-1">
+                    <div className="p-3.5 bg-[#080918] rounded-lg border border-white/10 space-y-1">
                       <span className="text-[10px] text-white/40 uppercase">Invoices Issued</span>
                       <p className="text-xl font-bold text-white font-mono">38</p>
                       <span className="text-[9px] text-[#10b981]">100% Paid on time</span>
                     </div>
                   </div>
 
-                  <div className="p-3 bg-[#0f1029] rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                  <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                     <span className="text-white/60">Stock Health Index</span>
                     <span className="text-[#10b981] font-bold font-mono">94% Healthy</span>
                   </div>
@@ -383,7 +379,7 @@ export default function HowItWorks() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="p-3 bg-[#0f1029] rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <div>
                         <p className="font-bold text-white">Dallas Logistics Depot</p>
                         <p className="text-[10px] text-white/40">5 Staff · $42,300 Revenue</p>
@@ -391,7 +387,7 @@ export default function HowItWorks() {
                       <span className="text-[#10b981] font-semibold">Active ●</span>
                     </div>
 
-                    <div className="p-3 bg-[#0f1029] rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <div>
                         <p className="font-bold text-white">Houston HQ Distribution</p>
                         <p className="text-[10px] text-white/40">8 Staff · $58,900 Revenue</p>
@@ -399,7 +395,7 @@ export default function HowItWorks() {
                       <span className="text-[#10b981] font-semibold">Active ●</span>
                     </div>
 
-                    <div className="p-3 bg-[#0f1029] rounded-xl border border-white/10 flex items-center justify-between text-xs">
+                    <div className="p-3 bg-[#080918] rounded-lg border border-white/10 flex items-center justify-between text-xs">
                       <div>
                         <p className="font-bold text-white">Austin Depot North</p>
                         <p className="text-[10px] text-white/40">3 Staff · $23,550 Revenue</p>

@@ -3,7 +3,7 @@
  */
 import { getCurrentUser, apiFetch } from '../modules/store.js';
 import { renderShell } from '../components/shell.js';
-import { showToast, createModal, formatDate, formatDateTime, getSvgIcon } from '../modules/ui.js';
+import { showToast, createModal, formatDate, formatDateTime, getSvgIcon, generateBarcodeSVG } from '../modules/ui.js';
 import { navigate } from '../modules/router.js';
 
 let custSearchQ = '';
@@ -279,7 +279,7 @@ function updateCRMStats(customers, total) {
 }
 
 function showPortfolioModal(c) {
-  const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${c.customer_id}`;
+  const barcodeSvg = generateBarcodeSVG(c.customer_id, { height: 40, color: '#111', showLabel: false });
   const invoicesList = c.invoices || [];
 
   const body = `
@@ -299,7 +299,7 @@ function showPortfolioModal(c) {
       <!-- Barcode Card -->
       <div class="card" style="padding:16px;text-align:center;background:var(--bg-secondary);border:1px solid var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center">
         <h4 style="margin-top:0;margin-bottom:8px;color:var(--text-primary)">Barcode ID</h4>
-        <img src="${barcodeUrl}" style="height:48px;object-fit:contain;background:#ffffff;padding:4px;border:1px solid #e5e7eb;border-radius:4px" />
+        <div style="background:#ffffff;padding:6px;border:1px solid #e5e7eb;border-radius:4px;display:flex;justify-content:center;align-items:center">${barcodeSvg}</div>
         <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:4px">${c.customer_id}</div>
       </div>
     </div>

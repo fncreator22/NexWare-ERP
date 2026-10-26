@@ -9,6 +9,7 @@ import Pricing from './components/Pricing'
 import SecurityFAQ from './components/SecurityFAQ'
 import FooterCTA from './components/FooterCTA'
 import FeatureModal from './components/FeatureModal'
+import BackgroundCanvas from './components/BackgroundCanvas'
 import type { ModalContent } from './components/FeatureModal'
 
 const MODAL_DATA: Record<string, ModalContent> = {
@@ -200,7 +201,8 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-[#070814] text-white">
+      <div className="min-h-screen bg-[#070814] text-white relative">
+        <BackgroundCanvas />
         <Hero onOpenModal={(key) => setActiveModalKey(key)} />
         <SocialProof />
         <FeatureGrid onOpenModal={(key) => setActiveModalKey(key)} />

@@ -49,15 +49,11 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
   return (
     <section id="features" className="relative bg-[#070814] section-texture py-20 lg:py-32 overflow-hidden border-t border-white/5 text-white">
       
-      {/* Ambient glows */}
-      <div className="absolute top-1/3 left-0 w-96 h-96 bg-[#6366f1]/15 rounded-full blur-[160px] pointer-events-none" />
-      <div className="absolute bottom-10 right-0 w-96 h-96 bg-[#10b981]/15 rounded-full blur-[160px] pointer-events-none" />
-
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10 space-y-16">
 
         {/* ═══════════ SECTION HEADER ════════════════════════ */}
         <div className="text-center max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#818cf8] text-xs font-mono font-semibold uppercase tracking-wider mb-4">
             <Zap className="w-3.5 h-3.5" /> Complete Ecosystem Architecture
           </div>
           <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white mb-4">
@@ -80,10 +76,10 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
               <button
                 key={tag.id}
                 onClick={() => setActiveCategory(tag.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-300 ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-300 ${
                   active
-                    ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/30 ring-2 ring-[#818cf8]/50'
-                    : 'bg-white/[0.03] backdrop-blur-md text-white/70 hover:text-white hover:bg-white/[0.08] border border-white/10'
+                    ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/30 ring-1 ring-[#818cf8]/50'
+                    : 'bg-white/[0.03] text-white/70 hover:text-white hover:bg-white/[0.08] border border-white/10'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -98,7 +94,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
 
           {/* ── CARD 1: CORE FINANCE (Col Span 7) ────────────────── */}
           <div
-            className={`md:col-span-7 bg-[#0f1029]/80 backdrop-blur-xl border border-white/15 rounded-3xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-500 hover:border-[#6366f1]/50 shadow-2xl group ${
+            className={`md:col-span-7 bg-[#0c0d1e]/90 backdrop-blur-xl border border-white/10 rounded-xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-300 hover:border-white/20 shadow-xl group ${
               !isMatch('finance') ? 'opacity-30 blur-[1px]' : 'opacity-100'
             }`}
           >
@@ -107,7 +103,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
                 <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#818cf8] uppercase tracking-wider">
                   <DollarSign className="w-4 h-4" /> Finance & General Ledger
                 </div>
-                <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg p-1">
+                <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-md p-1">
                   {(['USD', 'EUR', 'GBP'] as const).map(c => (
                     <button
                       key={c}
@@ -131,7 +127,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
             </div>
 
             {/* Widget */}
-            <div className="bg-[#141638] border border-white/10 rounded-2xl p-5 space-y-4">
+            <div className="bg-[#080918] border border-white/10 rounded-lg p-5 space-y-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/50 font-mono">Real-Time Cash Flow Snapshot</span>
                 <span className="text-[#10b981] font-semibold flex items-center gap-1">
@@ -175,7 +171,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
 
           {/* ── CARD 2: SUPPLY CHAIN & LOGISTICS (Col Span 5) ──────── */}
           <div
-            className={`md:col-span-5 bg-[#0f1029]/80 backdrop-blur-xl border border-white/15 rounded-3xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-500 hover:border-[#6366f1]/50 shadow-2xl group ${
+            className={`md:col-span-5 bg-[#0c0d1e]/90 backdrop-blur-xl border border-white/10 rounded-xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-300 hover:border-white/20 shadow-xl group ${
               !isMatch('logistics') ? 'opacity-30 blur-[1px]' : 'opacity-100'
             }`}
           >
@@ -184,7 +180,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
                 <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#10b981] uppercase tracking-wider">
                   <Truck className="w-4 h-4" /> Multi-Warehouse Logistics
                 </div>
-                <span className="text-[10px] bg-[#10b981]/10 text-[#10b981] px-2 py-0.5 rounded-full font-mono">
+                <span className="text-[10px] bg-[#10b981]/10 text-[#10b981] px-2 py-0.5 rounded-md font-mono">
                   Live GPS Track
                 </span>
               </div>
@@ -197,12 +193,12 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
               </p>
             </div>
 
-            <div className="bg-[#141638] border border-white/10 rounded-2xl p-5 space-y-4">
+            <div className="bg-[#080918] border border-white/10 rounded-lg p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white">Route #DF-904</span>
                 <button
                   onClick={() => setRouteStatus(s => s === 'In Transit' ? 'Delivered' : 'In Transit')}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all ${
+                  className={`text-[10px] font-bold px-2.5 py-1 rounded-md transition-all ${
                     routeStatus === 'Delivered'
                       ? 'bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/40'
                       : 'bg-[#febc2e]/20 text-[#febc2e] border border-[#febc2e]/40 animate-pulse'
@@ -239,7 +235,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
 
           {/* ── CARD 3: REAL-TIME DATA (Col Span 12) ────────────────── */}
           <div
-            className={`md:col-span-12 bg-[#0f1029]/80 backdrop-blur-xl border border-white/15 rounded-3xl p-6 sm:p-8 transition-all duration-500 hover:border-[#6366f1]/50 shadow-2xl group ${
+            className={`md:col-span-12 bg-[#0c0d1e]/90 backdrop-blur-xl border border-white/10 rounded-xl p-6 sm:p-8 transition-all duration-300 hover:border-white/20 shadow-xl group ${
               !isMatch('data') ? 'opacity-30 blur-[1px]' : 'opacity-100'
             }`}
           >
@@ -256,10 +252,10 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
                 </p>
               </div>
 
-              <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-1 shrink-0 self-start md:self-auto">
+              <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg p-1 shrink-0 self-start md:self-auto">
                 <button
                   onClick={() => setDataView('list')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     dataView === 'list' ? 'bg-[#6366f1] text-white shadow-md' : 'text-white/50 hover:text-white'
                   }`}
                 >
@@ -267,7 +263,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
                 </button>
                 <button
                   onClick={() => setDataView('kanban')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     dataView === 'kanban' ? 'bg-[#6366f1] text-white shadow-md' : 'text-white/50 hover:text-white'
                   }`}
                 >
@@ -276,7 +272,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
               </div>
             </div>
 
-            <div className="bg-[#141638] border border-white/10 rounded-2xl p-4 overflow-x-auto">
+            <div className="bg-[#080918] border border-white/10 rounded-lg p-4 overflow-x-auto">
               {dataView === 'list' ? (
                 <table className="w-full text-left text-xs min-w-[600px]">
                   <thead>
@@ -307,21 +303,21 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
                 </table>
               ) : (
                 <div className="grid grid-cols-3 gap-4 min-w-[600px] py-2 text-xs">
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-2">
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/5 space-y-2">
                     <div className="text-[10px] font-bold text-white/50 uppercase">To Inspect (2)</div>
-                    <div className="bg-[#0f1029] p-2.5 rounded-lg border border-white/10 font-semibold text-white">
+                    <div className="bg-[#0c0d1e] p-2.5 rounded-md border border-white/10 font-semibold text-white">
                       Forklift FL-007 Checkup
                     </div>
                   </div>
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-2">
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/5 space-y-2">
                     <div className="text-[10px] font-bold text-[#febc2e] uppercase">In Progress (1)</div>
-                    <div className="bg-[#0f1029] p-2.5 rounded-lg border border-white/10 font-semibold text-white">
+                    <div className="bg-[#0c0d1e] p-2.5 rounded-md border border-white/10 font-semibold text-white">
                       Shipment Track #DF-904
                     </div>
                   </div>
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-2">
+                  <div className="bg-white/5 p-3 rounded-lg border border-white/5 space-y-2">
                     <div className="text-[10px] font-bold text-[#10b981] uppercase">Completed (3)</div>
-                    <div className="bg-[#0f1029] p-2.5 rounded-lg border border-white/10 font-semibold text-white">
+                    <div className="bg-[#0c0d1e] p-2.5 rounded-md border border-white/10 font-semibold text-white">
                       Invoice INV-0038 Issued
                     </div>
                   </div>
@@ -341,7 +337,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
 
           {/* ── CARD 4: WORKFORCE RBAC (Col Span 6) ────────────────── */}
           <div
-            className={`md:col-span-6 bg-[#0f1029]/80 backdrop-blur-xl border border-white/15 rounded-3xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-500 hover:border-[#6366f1]/50 shadow-2xl group ${
+            className={`md:col-span-6 bg-[#0c0d1e]/90 backdrop-blur-xl border border-white/10 rounded-xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-300 hover:border-white/20 shadow-xl group ${
               !isMatch('workforce') ? 'opacity-30 blur-[1px]' : 'opacity-100'
             }`}
           >
@@ -350,7 +346,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
                 <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#818cf8] uppercase tracking-wider">
                   <Users className="w-4 h-4" /> 5-Tier Workforce RBAC
                 </div>
-                <span className="text-[10px] bg-[#6366f1]/20 text-[#818cf8] px-2.5 py-0.5 rounded-full font-mono">
+                <span className="text-[10px] bg-[#6366f1]/20 text-[#818cf8] px-2 py-0.5 rounded-md font-mono">
                   Super Admin Controls
                 </span>
               </div>
@@ -363,13 +359,13 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
               </p>
             </div>
 
-            <div className="bg-[#141638] border border-white/10 rounded-2xl p-4 space-y-3">
+            <div className="bg-[#080918] border border-white/10 rounded-lg p-4 space-y-3">
               <div className="flex gap-2 flex-wrap text-xs">
                 {(['Super Admin', 'Manager', 'Staff'] as const).map(role => (
                   <button
                     key={role}
                     onClick={() => setSelectedRole(role)}
-                    className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                    className={`px-3 py-1 rounded-md font-medium transition-all ${
                       selectedRole === role ? 'bg-[#6366f1] text-white' : 'bg-white/5 text-white/60'
                     }`}
                   >
@@ -391,7 +387,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
 
           {/* ── CARD 5: AUTOMATION & AUDIT (Col Span 6) ───────────── */}
           <div
-            className={`md:col-span-6 bg-[#0f1029]/80 backdrop-blur-xl border border-white/15 rounded-3xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-500 hover:border-[#6366f1]/50 shadow-2xl group ${
+            className={`md:col-span-6 bg-[#0c0d1e]/90 backdrop-blur-xl border border-white/10 rounded-xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-300 hover:border-white/20 shadow-xl group ${
               !isMatch('automation') ? 'opacity-30 blur-[1px]' : 'opacity-100'
             }`}
           >
@@ -400,7 +396,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
                 <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#f59e0b] uppercase tracking-wider">
                   <Zap className="w-4 h-4" /> Automation & Audit Trails
                 </div>
-                <span className="text-[10px] bg-[#f59e0b]/10 text-[#f59e0b] px-2.5 py-0.5 rounded-full font-mono">
+                <span className="text-[10px] bg-[#f59e0b]/10 text-[#f59e0b] px-2 py-0.5 rounded-md font-mono">
                   Active Webhooks
                 </span>
               </div>
@@ -413,8 +409,8 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
               </p>
             </div>
 
-            <div className="bg-[#141638] border border-white/10 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 bg-[#0f1029] p-3 rounded-xl border border-white/10 text-xs">
+            <div className="bg-[#080918] border border-white/10 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2 bg-[#0c0d1e] p-3 rounded-md border border-white/10 text-xs">
                 <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">IF Invoice &gt; $5,000</span>
                 <span className="text-[#818cf8] font-mono">→ Trigger VP Approval</span>
               </div>

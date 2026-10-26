@@ -1,7 +1,7 @@
 /**
  * Auth Pages — Login, Signup, Warehouse Registration
  */
-import { login, signup, createWarehouse, getCurrentUser, getStore, seedDemoData, getTaxConfig } from '../modules/store.js';
+import { login, signup, createWarehouse, getCurrentUser, getStore, getTaxConfig } from '../modules/store.js';
 import { navigate } from '../modules/router.js';
 import { showToast } from '../modules/ui.js';
 

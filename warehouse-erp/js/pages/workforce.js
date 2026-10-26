@@ -515,7 +515,6 @@ function showUserModal(u) {
     : allRoles.filter(r => r.id !== 'super_admin' && r.id !== 'admin');
 
   let m_avatar = u?.avatar || '';
-  const barcodeUrl = u?.barcode ? `http://localhost:8000/api/v1/registry/barcode?code=${u.barcode}` : '';
 
   const body = `
     <form id="user-modal-form">

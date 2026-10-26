@@ -773,8 +773,9 @@ function showImportModal() {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
-    const token = localStorage.getItem('access_token');
-    const url = 'http://localhost:8000/api/v1/items/import';
+    const token = sessionStorage.getItem('access_token');
+    const apiBase = (typeof window !== 'undefined' && window.ENV_API_URL) || 'http://localhost:8000/api/v1';
+    const url = `${apiBase}/items/import`;
 
     try {
       const res = await fetch(url, {
@@ -956,7 +957,7 @@ function showItemCardModal(item) {
         
         <!-- Live Scannable Barcode SVG Block -->
         <div style="padding:12px;background:white;border-radius:var(--radius-md);border:1px solid var(--border-default);display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:12px;">
-          <img src="http://localhost:8000/api/v1/registry/barcode?code=${barcodeStr}" style="height:45px;max-width:100%;mix-blend-mode:multiply;" title="Item Barcode" />
+          ${generateBarcodeSVG(barcodeStr, { height: 45, color: '#111', showLabel: false })}
           <span style="font-family:var(--font-mono);font-size:10px;color:#555;margin-top:4px;letter-spacing:1.5px;">${barcodeStr}</span>
         </div>
       </div>

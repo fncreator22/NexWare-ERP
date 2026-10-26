@@ -210,6 +210,25 @@ async function apiFetch(path, options = {}) {
   }
 }
 
+function createMockToken(user) {
+  try {
+    const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const payload = btoa(JSON.stringify({
+      user_id: user.id,
+      sub: user.id,
+      tenant_id: user.tenantId || 'offline_tenant',
+      role: user.role || 'super_admin',
+      email: user.email,
+      name: user.name,
+      exp: Math.floor(Date.now() / 1000) + 86400 * 30
+    })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `${header}.${payload}.mock_jwt_session_token`;
+  } catch {
+    return 'mock.token.offline';
+  }
+}
+
 async function syncWithBackend() {
   const token = sessionStorage.getItem('access_token');
   if (!token) return;
@@ -229,13 +248,13 @@ async function syncWithBackend() {
       });
     };
 
-    // 1. Fetch Warehouses
+    // 1. Fetch Warehouses — abort if backend is down or unreachable to preserve local data
     const whRes = await apiFetch('/warehouses/');
-    if (whRes && whRes.success && Array.isArray(whRes.data)) {
-      _store.warehouses = normalize(whRes.data);
-    } else {
-      _store.warehouses = [];
+    if (!whRes || whRes.error || !whRes.success || !Array.isArray(whRes.data)) {
+      console.warn('[Store] Backend unreachable or sync failed. Preserving local storage data.');
+      return;
     }
+    _store.warehouses = normalize(whRes.data);
 
     // 2. Fetch Workforce (Users) and Current User Profile
     let currentUser = getCurrentUser();
@@ -254,48 +273,36 @@ async function syncWithBackend() {
       const normalizedWf = normalize(wfRes.data);
       const otherUsers = normalizedWf.filter(u => u.id !== _store.currentUserId);
       _store.users = currentUser ? [currentUser, ...otherUsers] : normalizedWf;
-    } else {
-      _store.users = currentUser ? [currentUser] : [];
     }
 
     // 3. Fetch Items (Inventory)
     const itemsRes = await apiFetch('/items/');
     if (itemsRes && itemsRes.success && Array.isArray(itemsRes.data)) {
       _store.items = normalize(itemsRes.data);
-    } else {
-      _store.items = [];
     }
 
     // 4. Fetch Bills (Billing)
     const billsRes = await apiFetch('/billing/');
     if (billsRes && billsRes.success && Array.isArray(billsRes.data)) {
       _store.bills = normalize(billsRes.data);
-    } else {
-      _store.bills = [];
     }
 
     // 5. Fetch Audit Logs (dashboard preview only)
     const auditRes = await apiFetch('/audit-logs/?limit=10');
     if (auditRes && auditRes.success && Array.isArray(auditRes.data)) {
       _store.auditLogs = normalize(auditRes.data);
-    } else {
-      _store.auditLogs = [];
     }
 
     // 6. Fetch Notifications
     const notifRes = await apiFetch('/realtime/notifications');
     if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
       _store.notifications = normalize(notifRes.data);
-    } else {
-      _store.notifications = [];
     }
 
     // 7. Fetch Roles
     const rolesRes = await apiFetch('/roles/');
     if (rolesRes && rolesRes.success && Array.isArray(rolesRes.data)) {
       _store.roles = normalize(rolesRes.data);
-    } else {
-      _store.roles = [];
     }
 
     saveStore();
@@ -326,32 +333,71 @@ async function login(email, password) {
     body: JSON.stringify({ email, password })
   });
   
-  if (res.error) {
-    return { error: res.error };
+  if (res && !res.error && res.data && res.data.access_token) {
+    const { access_token, user } = res.data;
+    sessionStorage.setItem('access_token', access_token);
+    
+    // Scoping Reset: Reset store pointer to reload the store scoped by this user ID
+    _store = null;
+    const s = getStore();
+    s.currentUserId = user.id;
+    
+    // Cache user document locally
+    const idx = s.users.findIndex(u => u.id === user.id);
+    if (idx === -1) {
+      s.users.push(user);
+    } else {
+      s.users[idx] = user;
+    }
+    
+    saveStore();
+    
+    // Synchronize dynamic tenant database state
+    await syncWithBackend();
+    
+    return user;
   }
   
-  const { access_token, user } = res.data;
-  sessionStorage.setItem('access_token', access_token);
-  
-  // Scoping Reset: Reset store pointer to reload the store scoped by this user ID
-  _store = null;
-  const s = getStore();
-  s.currentUserId = user.id;
-  
-  // Cache user document locally
-  const idx = s.users.findIndex(u => u.id === user.id);
-  if (idx === -1) {
-    s.users.push(user);
-  } else {
-    s.users[idx] = user;
+  // Offline fallback: If server is down, unauthenticated, or network failed, allow offline login
+  if (!res || (res.error && (res.error.includes('Network error') || res.error.includes('Failed to fetch') || res.error.includes('server is running')))) {
+    console.warn('[Store] Backend unreachable. Falling back to offline-first authentication.');
+    const s = getStore();
+    let user = (s.users || []).find(u => u.email && u.email.toLowerCase() === (email || '').toLowerCase());
+    
+    if (!user) {
+      user = {
+        id: 'usr_local_' + Math.random().toString(36).substring(2, 9),
+        name: (email || '').split('@')[0] || 'Enterprise Admin',
+        email: (email || '').toLowerCase(),
+        password: password,
+        role: 'super_admin',
+        warehouseId: null,
+        warehouseOverrides: [],
+        createdAt: new Date().toISOString()
+      };
+      if (!s.users) s.users = [];
+      s.users.push(user);
+    } else if (user.password && user.password !== password) {
+      return { error: 'Invalid password. Please try again.' };
+    }
+    
+    const token = createMockToken(user);
+    sessionStorage.setItem('access_token', token);
+    
+    _store = null;
+    const reloadedStore = getStore();
+    reloadedStore.currentUserId = user.id;
+    const idx = reloadedStore.users.findIndex(u => u.id === user.id);
+    if (idx === -1) {
+      reloadedStore.users.push(user);
+    } else {
+      reloadedStore.users[idx] = user;
+    }
+    saveStore();
+    return user;
   }
   
-  saveStore();
-  
-  // Synchronize dynamic tenant database state
-  await syncWithBackend();
-  
-  return user;
+  return { error: (res && res.error) ? res.error : 'Login failed' };
 }
 
 async function logout() {
@@ -384,16 +430,47 @@ async function signup(name, email, password) {
     body: JSON.stringify({ name, email, password })
   });
   
-  if (res.error) {
-    return { error: res.error };
+  if (res && !res.error && res.success) {
+    const loginRes = await login(email, password);
+    if (loginRes && loginRes.error) {
+      return { error: loginRes.error };
+    }
+    return { user: loginRes };
   }
   
-  const loginRes = await login(email, password);
-  if (loginRes && loginRes.error) {
-    return { error: loginRes.error };
+  // Offline-first fallback: If server is unreachable, register user in local store
+  if (!res || (res.error && (res.error.includes('Network error') || res.error.includes('Failed to fetch') || res.error.includes('server is running')))) {
+    console.warn('[Store] Backend unreachable. Falling back to offline-first user registration.');
+    const s = getStore();
+    const existing = (s.users || []).find(u => u.email && u.email.toLowerCase() === (email || '').toLowerCase());
+    if (existing) {
+      return { error: 'An account with this email already exists.' };
+    }
+    
+    const newUser = {
+      id: 'usr_local_' + Math.random().toString(36).substring(2, 9),
+      name: name || 'Enterprise Admin',
+      email: (email || '').toLowerCase(),
+      password: password,
+      role: 'super_admin',
+      warehouseId: null,
+      warehouseOverrides: [],
+      createdAt: new Date().toISOString()
+    };
+    
+    const token = createMockToken(newUser);
+    sessionStorage.setItem('access_token', token);
+    
+    _store = null;
+    const reloadedStore = getStore();
+    reloadedStore.currentUserId = newUser.id;
+    if (!reloadedStore.users) reloadedStore.users = [];
+    reloadedStore.users.push(newUser);
+    saveStore();
+    return { user: newUser };
   }
   
-  return { user: loginRes };
+  return { error: res.error || 'Signup failed' };
 }
 
 // ---- WAREHOUSES ----
@@ -1041,10 +1118,6 @@ function getPlanWarehouseLimit() {
   return -1; // unlimited
 }
 
-// ---- SEED DATA ----
-function seedDemoData() {
-  // Safe zero-data startup starter: No demo seeding
-}
 
 // ---- WEB-SOCKET CONNECTION CLIENT ----
 let ws = null;
@@ -6319,7 +6392,6 @@ function showUserModal(u) {
     : allRoles.filter(r => r.id !== 'super_admin' && r.id !== 'admin');
 
   let m_avatar = u?.avatar || '';
-  const barcodeUrl = u?.barcode ? `http://localhost:8000/api/v1/registry/barcode?code=${u.barcode}` : '';
 
   const body = `
     <form id="user-modal-form">
@@ -7490,8 +7562,9 @@ function showImportModal() {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
-    const token = localStorage.getItem('access_token');
-    const url = 'http://localhost:8000/api/v1/items/import';
+    const token = sessionStorage.getItem('access_token');
+    const apiBase = (typeof window !== 'undefined' && window.ENV_API_URL) || 'http://localhost:8000/api/v1';
+    const url = `${apiBase}/items/import`;
 
     try {
       const res = await fetch(url, {
@@ -7673,7 +7746,7 @@ function showItemCardModal(item) {
         
         <!-- Live Scannable Barcode SVG Block -->
         <div style="padding:12px;background:white;border-radius:var(--radius-md);border:1px solid var(--border-default);display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:12px;">
-          <img src="http://localhost:8000/api/v1/registry/barcode?code=${barcodeStr}" style="height:45px;max-width:100%;mix-blend-mode:multiply;" title="Item Barcode" />
+          ${generateBarcodeSVG(barcodeStr, { height: 45, color: '#111', showLabel: false })}
           <span style="font-family:var(--font-mono);font-size:10px;color:#555;margin-top:4px;letter-spacing:1.5px;">${barcodeStr}</span>
         </div>
       </div>
@@ -9197,8 +9270,8 @@ function _buildReadonlyCell(value, col) {
     if (typeof v === 'string' && v.includes('code=')) {
       code = v.split('code=')[1];
     }
-    const srcVal = `http://localhost:8000/api/v1/registry/barcode?code=${code}`;
-    return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" />`;
+    const svg = generateBarcodeSVG(code, { height: 24, showLabel: false });
+    return `<div style="display:flex;justify-content:center;align-items:center;padding:2px;">${svg}</div>`;
   }
 
   switch (col.type) {
@@ -9225,8 +9298,13 @@ function _buildReadonlyCell(value, col) {
         v.match(/\.(jpeg|jpg|gif|png|svg|webp)($|\?)/i)
       );
       if (isUrlOrPath) {
+        if (typeof v === 'string' && (v.includes('/registry/barcode') || v.includes('code='))) {
+          const code = v.includes('code=') ? v.split('code=')[1].split('&')[0] : v;
+          const svg = generateBarcodeSVG(code, { height: 24, showLabel: false });
+          return `<div style="display:flex;justify-content:center;align-items:center;padding:2px;">${svg}</div>`;
+        }
         const srcVal = v.startsWith('/api/') ? 'http://localhost:8000' + v : v;
-        return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" />`;
+        return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" onerror="this.style.display='none'" />`;
       }
       return `<span>${v}</span>`;
     }
@@ -11176,13 +11254,12 @@ async function _showBarcodePrintSheet() {
         </div>
         <div class="grid">
           ${entries.map(e => {
-            const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${e.entity_id}`;
             const snap = e.metadata_snapshot || {};
             const name = snap.name || snap.customer || e.entity_type.toUpperCase();
             return `
               <div class="card">
                 <div class="title">${name}</div>
-                <img class="barcode" src="${barcodeUrl}" />
+                <div class="barcode" style="display:flex;justify-content:center;margin:8px 0;">${generateBarcodeSVG(e.entity_id, { height: 36, color: '#111', showLabel: false })}</div>
                 <div class="footer-info">Type: ${e.entity_type} | Scope: ${e.warehouse_id}</div>
               </div>
             `;
@@ -12520,7 +12597,7 @@ function renderAnalytics() {
 
   // Build year options from actual bill data
   const allBills = getBills();
-  const billYears = [...new Set(allBills.map(b => new Date(b.createdAt).getFullYear()))].sort((a,b)=>b-a);
+  const billYears = [...new Set(allBills.map(b => new Date(b.createdAt).getFullYear()).filter(y => !isNaN(y) && y > 1970))].sort((a,b)=>b-a);
   if (!billYears.includes(an_year)) an_year = billYears[0] || new Date().getFullYear();
 
   const months = ['All Months','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -12743,6 +12820,7 @@ function destroyChart(id) {
 }
 
 function updateCharts(bills, items, users, whs) {
+  if (typeof Chart === 'undefined') return;
   const CHART_OPTS = {
     responsive: true, maintainAspectRatio: false,
     plugins: {
@@ -14573,7 +14651,7 @@ function updateCRMStats(customers, total) {
 }
 
 function showPortfolioModal(c) {
-  const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${c.customer_id}`;
+  const barcodeSvg = generateBarcodeSVG(c.customer_id, { height: 40, color: '#111', showLabel: false });
   const invoicesList = c.invoices || [];
 
   const body = `
@@ -14593,7 +14671,7 @@ function showPortfolioModal(c) {
       <!-- Barcode Card -->
       <div class="card" style="padding:16px;text-align:center;background:var(--bg-secondary);border:1px solid var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center">
         <h4 style="margin-top:0;margin-bottom:8px;color:var(--text-primary)">Barcode ID</h4>
-        <img src="${barcodeUrl}" style="height:48px;object-fit:contain;background:#ffffff;padding:4px;border:1px solid #e5e7eb;border-radius:4px" />
+        <div style="background:#ffffff;padding:6px;border:1px solid #e5e7eb;border-radius:4px;display:flex;justify-content:center;align-items:center">${barcodeSvg}</div>
         <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:4px">${c.customer_id}</div>
       </div>
     </div>
