@@ -241,7 +241,7 @@ export default function Pricing() {
   }
 
   return (
-    <section id="pricing" className="relative bg-[#08090c] section-texture text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
+    <section id="pricing" className="relative bg-transparent section-texture text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 

@@ -54,6 +54,8 @@ function ScaledDashboard() {
   return (
     <div ref={outerRef} className="relative w-full overflow-hidden">
       <div
+        id="dashboard-hud"
+        data-testid="hero-hud"
         ref={innerRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
@@ -72,7 +74,7 @@ function ScaledDashboard() {
           <div
             className="pointer-events-none absolute inset-0 rounded-xl z-30 transition-opacity duration-200"
             style={{
-              background: `radial-gradient(circle 380px at ${tilt.glareX}% ${tilt.glareY}%, rgba(245, 158, 11, 0.08), transparent 75%)`,
+              background: `radial-gradient(circle 380px at ${tilt.glareX}% ${tilt.glareY}%, rgba(245, 158, 11, 0.12), transparent 75%)`,
             }}
           />
         )}
@@ -88,7 +90,7 @@ export default function Hero({ onOpenModal }: HeroProps) {
   }
 
   return (
-    <section className="relative min-h-[100svh] overflow-hidden bg-[#08090c] flex flex-col">
+    <section className="relative min-h-[100svh] overflow-hidden bg-transparent flex flex-col">
       {/* Subtle ambient amber-carbon radial glow & technical grid */}
       <div
         className="absolute inset-0 z-0 pointer-events-none"

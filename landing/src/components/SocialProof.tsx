@@ -109,7 +109,7 @@ export default function SocialProof() {
   }
 
   return (
-    <section className="relative bg-[#08090c] text-white py-20 lg:py-28 overflow-hidden border-t border-white/10">
+    <section className="relative bg-transparent text-white py-20 lg:py-28 overflow-hidden border-t border-white/10">
 
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10 space-y-20">
 

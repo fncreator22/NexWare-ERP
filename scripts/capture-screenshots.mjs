@@ -67,23 +67,38 @@ server.listen(PORT, async () => {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' })
     await page.waitForTimeout(1000)
 
-    // 1. Hero Default
+    // 1. Hero Default (Full view with HUD)
     console.log('Capturing Hero Default...')
-    await page.screenshot({ path: path.join(outDir, 'prod_hero_default.png'), clip: { x: 0, y: 0, width: 1440, height: 850 } })
+    await page.screenshot({ path: path.join(outDir, 'prod_hero_default.png'), clip: { x: 0, y: 0, width: 1440, height: 1100 } })
 
-    // 2. Hero Hover
+    // 2. Hero Hover (Active 3D perspective tilt & specular amber glare on HUD)
     console.log('Capturing Hero Hover on HUD...')
-    const hud = page.locator('#dashboard-hud, [data-testid="hero-hud"], .rounded-xl, .group').first()
+    const hud = page.locator('#dashboard-hud')
     if (await hud.count() > 0) {
       const box = await hud.boundingBox()
       if (box) {
-        await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.3)
-        await page.waitForTimeout(500)
+        await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.35)
+        await page.waitForTimeout(600)
       }
     }
-    await page.screenshot({ path: path.join(outDir, 'prod_hero_hover.png'), clip: { x: 0, y: 0, width: 1440, height: 850 } })
+    await page.screenshot({ path: path.join(outDir, 'prod_hero_hover.png'), clip: { x: 0, y: 0, width: 1440, height: 1100 } })
 
-    // 3. Features
+    // 3. Theme Mode Switcher Test & Light Mode Capture
+    console.log('Capturing Light Mode Blueprint Hero...')
+    const themeBtn = page.locator('button[aria-label*="Light Mode"]').first()
+    if (await themeBtn.count() > 0) {
+      await themeBtn.click()
+      await page.waitForTimeout(600)
+      await page.screenshot({ path: path.join(outDir, 'prod_hero_light.png'), clip: { x: 0, y: 0, width: 1440, height: 1100 } })
+      // Switch back to dark mode for subsequent section captures
+      const darkBtn = page.locator('button[aria-label*="Dark Mode"]').first()
+      if (await darkBtn.count() > 0) {
+        await darkBtn.click()
+        await page.waitForTimeout(400)
+      }
+    }
+
+    // 4. Features
     console.log('Capturing Features...')
     const features = page.locator('#features')
     if (await features.count() > 0) {

@@ -43,8 +43,8 @@ export function renderShell(pageTitle, pageSubtitle, content) {
   `).join('');
 
   const breadcrumb = pageTitle
-    ? `<span class="breadcrumb-item">WareOps</span><span class="breadcrumb-sep">›</span><span class="breadcrumb-item current">${pageTitle}</span>`
-    : `<span class="breadcrumb-item current">WareOps ERP</span>`;
+    ? `<span class="breadcrumb-item">NexWare</span><span class="breadcrumb-sep">›</span><span class="breadcrumb-item current">${pageTitle}</span>`
+    : `<span class="breadcrumb-item current">NexWare ERP</span>`;
 
   const stockHealth = getStockHealth(user.role === 'super_admin' ? null : user.warehouseId);
   const healthColor = stockHealth > 80 ? 'var(--accent-emerald)' : stockHealth > 50 ? 'var(--accent-amber)' : 'var(--accent-rose)';
@@ -74,7 +74,7 @@ export function renderShell(pageTitle, pageSubtitle, content) {
         <div class="sidebar-logo" style="cursor:pointer" onclick="location.hash='#/dashboard'">
           <div class="sidebar-logo-icon" style="color:var(--brand-500);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
           <div class="sidebar-logo-text-wrapper">
-            <div class="sidebar-logo-name">WareOps</div>
+            <div class="sidebar-logo-name">NexWare</div>
             <div class="sidebar-logo-tagline">Enterprise ERP</div>
           </div>
         </div>

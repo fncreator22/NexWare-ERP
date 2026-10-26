@@ -78,7 +78,10 @@ export default function BackgroundCanvas() {
 
       ctx.clearRect(0, 0, width, height)
 
-      // 1. Deep Obsidian Base Gradient
+      // Check active theme (Dark Obsidian vs Light Blueprint)
+      const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('theme-light')
+
+      // 1. Base Gradient
       const baseGrad = ctx.createRadialGradient(
         width * 0.5,
         height * 0.35,
@@ -87,9 +90,15 @@ export default function BackgroundCanvas() {
         height * 0.5,
         Math.max(width, height) * 0.8
       )
-      baseGrad.addColorStop(0, 'rgba(16, 20, 28, 0.75)')
-      baseGrad.addColorStop(0.5, 'rgba(11, 13, 18, 0.92)')
-      baseGrad.addColorStop(1, 'rgba(7, 8, 11, 0.98)')
+      if (isLight) {
+        baseGrad.addColorStop(0, 'rgba(255, 255, 255, 0.96)')
+        baseGrad.addColorStop(0.5, 'rgba(248, 250, 252, 0.98)')
+        baseGrad.addColorStop(1, 'rgba(241, 245, 249, 1.0)')
+      } else {
+        baseGrad.addColorStop(0, 'rgba(16, 20, 28, 0.75)')
+        baseGrad.addColorStop(0.5, 'rgba(11, 13, 18, 0.92)')
+        baseGrad.addColorStop(1, 'rgba(7, 8, 11, 0.98)')
+      }
       ctx.fillStyle = baseGrad
       ctx.fillRect(0, 0, width, height)
 
@@ -108,11 +117,15 @@ export default function BackgroundCanvas() {
         const distFromCenter = Math.abs(i) / numRays
         const alpha = Math.max(0.015, (0.09 - distFromCenter * 0.07))
 
-        // Amber toward center, cyan toward edges
+        // Amber toward center, cyan/slate toward edges
         if (Math.abs(i) <= 2) {
-          ctx.strokeStyle = `rgba(245, 158, 11, ${alpha * 1.5})`
+          ctx.strokeStyle = isLight
+            ? `rgba(217, 119, 6, ${alpha * 2.2})`
+            : `rgba(245, 158, 11, ${alpha * 1.5})`
         } else {
-          ctx.strokeStyle = `rgba(148, 163, 184, ${alpha})`
+          ctx.strokeStyle = isLight
+            ? `rgba(71, 85, 105, ${alpha * 1.6})`
+            : `rgba(148, 163, 184, ${alpha})`
         }
 
         ctx.beginPath()
@@ -136,9 +149,13 @@ export default function BackgroundCanvas() {
         // Highlight every 3rd line with subtle amber pulse
         const isPulseLine = j % 3 === 0
         if (isPulseLine) {
-          ctx.strokeStyle = `rgba(245, 158, 11, ${alpha * 1.4})`
+          ctx.strokeStyle = isLight
+            ? `rgba(217, 119, 6, ${alpha * 2.0})`
+            : `rgba(245, 158, 11, ${alpha * 1.4})`
         } else {
-          ctx.strokeStyle = `rgba(100, 116, 139, ${alpha})`
+          ctx.strokeStyle = isLight
+            ? `rgba(100, 116, 139, ${alpha * 1.5})`
+            : `rgba(100, 116, 139, ${alpha})`
         }
 
         ctx.beginPath()
@@ -160,13 +177,17 @@ export default function BackgroundCanvas() {
           const px = vpX + p.rayIndex * 85 * Math.pow(p.progress, 1.2)
           const alpha = p.progress * (1 - p.progress * 0.5)
 
-          ctx.fillStyle = `${p.color}${alpha * 0.85})`
+          const packetColor = isLight
+            ? (p.color.includes('245') ? 'rgba(217, 119, 6, ' : 'rgba(2, 132, 199, ')
+            : p.color
+
+          ctx.fillStyle = `${packetColor}${alpha * 0.85})`
           ctx.beginPath()
           ctx.arc(px, py, 2.5 * p.progress, 0, Math.PI * 2)
           ctx.fill()
 
           // Subtle packet glow tail
-          ctx.strokeStyle = `${p.color}${alpha * 0.3})`
+          ctx.strokeStyle = `${packetColor}${alpha * 0.3})`
           ctx.beginPath()
           ctx.moveTo(px, py)
           ctx.lineTo(px, py - 8 * p.progress)
@@ -176,8 +197,10 @@ export default function BackgroundCanvas() {
 
       // 4. Orthogonal Top Telemetry Matrix (Header Region)
       const topGridSpacing = 72
-      const topAlpha = 0.025
-      ctx.strokeStyle = `rgba(255, 255, 255, ${topAlpha})`
+      const topAlpha = isLight ? 0.045 : 0.025
+      ctx.strokeStyle = isLight
+        ? `rgba(15, 23, 42, ${topAlpha})`
+        : `rgba(255, 255, 255, ${topAlpha})`
 
       const topShiftY = (tick * 4) % topGridSpacing
       for (let y = topShiftY; y < horizonY; y += topGridSpacing) {
@@ -195,14 +218,18 @@ export default function BackgroundCanvas() {
 
         // Subtle crosshair ticks
         for (let y = topShiftY; y < horizonY; y += topGridSpacing) {
-          ctx.strokeStyle = 'rgba(245, 158, 11, 0.08)'
+          ctx.strokeStyle = isLight
+            ? 'rgba(217, 119, 6, 0.15)'
+            : 'rgba(245, 158, 11, 0.08)'
           ctx.beginPath()
           ctx.moveTo(x - 3, y)
           ctx.lineTo(x + 3, y)
           ctx.moveTo(x, y - 3)
           ctx.lineTo(x, y + 3)
           ctx.stroke()
-          ctx.strokeStyle = `rgba(255, 255, 255, ${topAlpha})`
+          ctx.strokeStyle = isLight
+            ? `rgba(15, 23, 42, ${topAlpha})`
+            : `rgba(255, 255, 255, ${topAlpha})`
         }
       }
 
@@ -211,11 +238,19 @@ export default function BackgroundCanvas() {
         const sweepProgress = (tick * 0.25) % 1
         const sweepY = horizonY + sweepProgress * (height - horizonY)
         const sweepGrad = ctx.createLinearGradient(0, sweepY, width, sweepY)
-        sweepGrad.addColorStop(0, 'rgba(245, 158, 11, 0)')
-        sweepGrad.addColorStop(0.3, 'rgba(245, 158, 11, 0.08)')
-        sweepGrad.addColorStop(0.5, 'rgba(6, 182, 212, 0.12)')
-        sweepGrad.addColorStop(0.7, 'rgba(245, 158, 11, 0.08)')
-        sweepGrad.addColorStop(1, 'rgba(245, 158, 11, 0)')
+        if (isLight) {
+          sweepGrad.addColorStop(0, 'rgba(217, 119, 6, 0)')
+          sweepGrad.addColorStop(0.3, 'rgba(217, 119, 6, 0.15)')
+          sweepGrad.addColorStop(0.5, 'rgba(2, 132, 199, 0.2)')
+          sweepGrad.addColorStop(0.7, 'rgba(217, 119, 6, 0.15)')
+          sweepGrad.addColorStop(1, 'rgba(217, 119, 6, 0)')
+        } else {
+          sweepGrad.addColorStop(0, 'rgba(245, 158, 11, 0)')
+          sweepGrad.addColorStop(0.3, 'rgba(245, 158, 11, 0.08)')
+          sweepGrad.addColorStop(0.5, 'rgba(6, 182, 212, 0.12)')
+          sweepGrad.addColorStop(0.7, 'rgba(245, 158, 11, 0.08)')
+          sweepGrad.addColorStop(1, 'rgba(245, 158, 11, 0)')
+        }
 
         ctx.strokeStyle = sweepGrad
         ctx.lineWidth = 1.5
@@ -227,7 +262,7 @@ export default function BackgroundCanvas() {
         // Radar node on cursor
         const distFromCenter = Math.hypot(mouseX - width * 0.5, mouseY - horizonY)
         if (distFromCenter < 350) {
-          ctx.strokeStyle = 'rgba(245, 158, 11, 0.15)'
+          ctx.strokeStyle = isLight ? 'rgba(217, 119, 6, 0.25)' : 'rgba(245, 158, 11, 0.15)'
           ctx.beginPath()
           ctx.arc(mouseX, mouseY, 30 + Math.sin(tick * 3) * 4, 0, Math.PI * 2)
           ctx.stroke()

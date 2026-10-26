@@ -201,7 +201,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-[#070814] text-white relative">
+      <div className="app-shell-theme min-h-screen bg-[#08090c] text-white relative transition-colors duration-300">
         <BackgroundCanvas />
         <Hero onOpenModal={(key) => setActiveModalKey(key)} />
         <SocialProof />

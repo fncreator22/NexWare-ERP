@@ -124,7 +124,7 @@ export default function HowItWorks() {
   }
 
   return (
-    <section id="how-it-works" className="relative bg-[#08090c] text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
+    <section id="how-it-works" className="relative bg-transparent text-white py-20 lg:py-32 overflow-hidden border-t border-white/5">
 
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10">
 

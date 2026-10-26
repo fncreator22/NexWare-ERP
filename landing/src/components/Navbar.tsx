@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ChevronDown, Menu, X, ExternalLink, Shield, FileText, Users, Building2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ChevronDown, Menu, X, ExternalLink, Shield, FileText, Users, Building2, Sun, Moon } from 'lucide-react'
 import Logo from './Logo'
 
 interface NavbarProps {
@@ -9,6 +9,29 @@ interface NavbarProps {
 export default function Navbar({ onOpenModal }: NavbarProps) {
   const [open, setOpen] = useState(false)
   const [featuresOpen, setFeaturesOpen] = useState(false)
+  const [isLight, setIsLight] = useState(false)
+
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem('wareops_theme')
+      if (savedTheme === 'light') {
+        setIsLight(true)
+        document.documentElement.classList.add('theme-light')
+      }
+    } catch {}
+  }, [])
+
+  const toggleTheme = () => {
+    const next = !isLight
+    setIsLight(next)
+    if (next) {
+      document.documentElement.classList.add('theme-light')
+      try { localStorage.setItem('wareops_theme', 'light') } catch {}
+    } else {
+      document.documentElement.classList.remove('theme-light')
+      try { localStorage.setItem('wareops_theme', 'enterprise') } catch {}
+    }
+  }
 
   const handleLaunchApp = (route: string) => {
     window.location.href = `/warehouse-erp/index.html#${route}`
@@ -100,7 +123,17 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
         </div>
 
         {/* ── CTA + LOGIN REDIRECTION ──────────────── */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Theme Mode Switcher */}
+          <button
+            onClick={toggleTheme}
+            aria-label={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            title={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            className="w-8 h-8 rounded-lg border border-white/10 hover:border-white/30 text-white/80 hover:text-white transition-all bg-white/5 flex items-center justify-center"
+          >
+            {isLight ? <Moon className="w-4 h-4 text-amber-500" /> : <Sun className="w-4 h-4 text-[#f59e0b]" />}
+          </button>
+
           <button
             onClick={() => handleLaunchApp('/login')}
             className="hidden sm:block text-[13px] text-white/80 hover:text-white font-medium px-3 py-1.5 transition-colors"
@@ -130,7 +163,16 @@ export default function Navbar({ onOpenModal }: NavbarProps) {
       {open && (
         <div className="absolute left-4 right-4 top-full rounded-xl bg-[#12151c]/95 backdrop-blur-xl border border-white/15 px-5 py-4 animate-fade-up md:hidden space-y-3 shadow-2xl">
           <div className="space-y-2 border-b border-white/10 pb-3">
-            <p className="text-[10px] font-mono uppercase text-white/40 font-bold">Navigation Links</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-mono uppercase text-white/40 font-bold">Navigation Links</p>
+              <button
+                onClick={toggleTheme}
+                className="flex items-center gap-1.5 text-xs text-white/80 px-2 py-1 rounded border border-white/10 bg-white/5"
+              >
+                {isLight ? <Moon className="w-3.5 h-3.5 text-amber-500" /> : <Sun className="w-3.5 h-3.5 text-[#f59e0b]" />}
+                <span>{isLight ? 'Dark' : 'Light'}</span>
+              </button>
+            </div>
             {['Features', 'Product Tour', 'How It Works', 'Pricing', 'Security FAQ'].map((item) => (
               <a
                 key={item}

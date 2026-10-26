@@ -20,7 +20,7 @@ export default function FooterCTA({ onOpenModal }: FooterCTAProps) {
   }
 
   return (
-    <footer className="relative bg-[#08090c] text-white overflow-hidden border-t border-white/10">
+    <footer className="relative bg-transparent text-white overflow-hidden border-t border-white/10">
 
       {/* ═══════════ 1. HIGH-TRUST CONVERSION CTA SECTION ════ */}
       <div id="get-started" className="relative z-10 py-16 lg:py-24 border-b border-white/10 bg-[#12151c]/80 backdrop-blur-xl">

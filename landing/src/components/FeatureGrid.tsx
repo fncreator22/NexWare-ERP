@@ -47,7 +47,7 @@ export default function FeatureGrid({ onOpenModal }: FeatureGridProps) {
   const isMatch = (cat: Category) => activeCategory === 'all' || activeCategory === cat
 
   return (
-    <section id="features" className="relative bg-[#08090c] section-texture py-20 lg:py-32 overflow-hidden border-t border-white/5 text-white">
+    <section id="features" className="relative bg-transparent section-texture py-20 lg:py-32 overflow-hidden border-t border-white/5 text-white">
       
       <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 relative z-10 space-y-16">
 

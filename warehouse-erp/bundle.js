@@ -2855,8 +2855,8 @@ function renderShell(pageTitle, pageSubtitle, content) {
   `).join('');
 
   const breadcrumb = pageTitle
-    ? `<span class="breadcrumb-item">WareOps</span><span class="breadcrumb-sep">›</span><span class="breadcrumb-item current">${pageTitle}</span>`
-    : `<span class="breadcrumb-item current">WareOps ERP</span>`;
+    ? `<span class="breadcrumb-item">NexWare</span><span class="breadcrumb-sep">›</span><span class="breadcrumb-item current">${pageTitle}</span>`
+    : `<span class="breadcrumb-item current">NexWare ERP</span>`;
 
   const stockHealth = getStockHealth(user.role === 'super_admin' ? null : user.warehouseId);
   const healthColor = stockHealth > 80 ? 'var(--accent-emerald)' : stockHealth > 50 ? 'var(--accent-amber)' : 'var(--accent-rose)';
@@ -2886,7 +2886,7 @@ function renderShell(pageTitle, pageSubtitle, content) {
         <div class="sidebar-logo" style="cursor:pointer" onclick="location.hash='#/dashboard'">
           <div class="sidebar-logo-icon" style="color:var(--brand-500);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
           <div class="sidebar-logo-text-wrapper">
-            <div class="sidebar-logo-name">WareOps</div>
+            <div class="sidebar-logo-name">NexWare</div>
             <div class="sidebar-logo-tagline">Enterprise ERP</div>
           </div>
         </div>
@@ -4528,45 +4528,45 @@ function renderDashboard() {
       <!-- KPI Cards — compact row -->
       <div class="stat-grid" style="margin-bottom:20px">
         ${canViewWarehouses ? `<div class="stat-card">
-          <div class="stat-card-glow" style="background:#6366f1"></div>
-          <div class="stat-card-icon" style="background:rgba(99,102,241,0.15)">${getSvgIcon('warehouses', 20)}</div>
+          <div class="stat-card-glow" style="background: radial-gradient(circle at top right, rgba(245,158,11,0.18), transparent 70%)"></div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.12);color:var(--accent-amber)">${getSvgIcon('warehouses', 20)}</div>
           <div class="stat-card-value">${whs.length}</div>
           <div class="stat-card-label">Warehouses</div>
           <div class="stat-card-trend trend-up">${sub.plan} plan</div>
         </div>` : ''}
         ${canViewBilling ? `
         <div class="stat-card">
-          <div class="stat-card-glow" style="background:#10b981"></div>
-          <div class="stat-card-icon" style="background:rgba(16,185,129,0.15)">${getSvgIcon('revenue', 20)}</div>
+          <div class="stat-card-glow" style="background: radial-gradient(circle at top right, rgba(16,185,129,0.18), transparent 70%)"></div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.12);color:var(--accent-emerald)">${getSvgIcon('revenue', 20)}</div>
           <div class="stat-card-value">${formatCurrency(totalRevenue)}</div>
           <div class="stat-card-label">Revenue</div>
           <div class="stat-card-trend trend-up">Tax: ${formatCurrency(totalTax)}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-card-glow" style="background:#8b5cf6"></div>
-          <div class="stat-card-icon" style="background:rgba(139,92,246,0.15)">${getSvgIcon('billing', 20)}</div>
+          <div class="stat-card-glow" style="background: radial-gradient(circle at top right, rgba(6,182,212,0.18), transparent 70%)"></div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.12);color:var(--accent-cyan)">${getSvgIcon('billing', 20)}</div>
           <div class="stat-card-value">${bills.length}</div>
           <div class="stat-card-label">Invoices</div>
           <div class="stat-card-trend trend-up">↑ This period</div>
         </div>
         ` : ''}
         ${canViewWorkforce ? `<div class="stat-card">
-          <div class="stat-card-glow" style="background:#06b6d4"></div>
-          <div class="stat-card-icon" style="background:rgba(6,182,212,0.15)">${getSvgIcon('workforce', 20)}</div>
+          <div class="stat-card-glow" style="background: radial-gradient(circle at top right, rgba(245,158,11,0.18), transparent 70%)"></div>
+          <div class="stat-card-icon" style="background:rgba(245,158,11,0.12);color:var(--accent-amber)">${getSvgIcon('workforce', 20)}</div>
           <div class="stat-card-value">${activeUsers}</div>
           <div class="stat-card-label">Active Users</div>
           <div class="stat-card-trend">${users.length} total</div>
         </div>` : ''}
         ${canViewInventory ? `<div class="stat-card" id="dash-stock-units-card" style="cursor:pointer">
-          <div class="stat-card-glow" style="background:#f59e0b"></div>
-          <div class="stat-card-icon" style="background:rgba(245,158,11,0.15)">${getSvgIcon('items', 20)}</div>
+          <div class="stat-card-glow" style="background: radial-gradient(circle at top right, rgba(6,182,212,0.18), transparent 70%)"></div>
+          <div class="stat-card-icon" style="background:rgba(6,182,212,0.12);color:var(--accent-cyan)">${getSvgIcon('items', 20)}</div>
           <div class="stat-card-value">${totalStock.toLocaleString()}</div>
           <div class="stat-card-label">Stock Units</div>
           <div class="stat-card-trend ${allLowStockItems.length>0?'trend-down':'trend-up'}">${allLowStockItems.length} low stock</div>
         </div>` : ''}
         ${isSA ? `<div class="stat-card" style="cursor:pointer" onclick="location.hash='#/subscription'">
-          <div class="stat-card-glow" style="background:#f43f5e"></div>
-          <div class="stat-card-icon" style="background:rgba(244,63,94,0.15)">${getSvgIcon('subscription', 20)}</div>
+          <div class="stat-card-glow" style="background: radial-gradient(circle at top right, rgba(16,185,129,0.18), transparent 70%)"></div>
+          <div class="stat-card-icon" style="background:rgba(16,185,129,0.12);color:var(--accent-emerald)">${getSvgIcon('subscription', 20)}</div>
           <div class="stat-card-value" style="font-size:16px;text-transform:capitalize">${sub.plan}</div>
           <div class="stat-card-label">Plan</div>
           <div class="stat-card-trend trend-up">● Active</div>

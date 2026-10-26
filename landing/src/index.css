@@ -68,6 +68,156 @@
   background-size: 32px 32px;
 }
 
+/* ─── Light Mode Enterprise Blueprint Styling ───────────── */
+html.theme-light {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.theme-light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.theme-light .app-shell-theme {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html.theme-light nav {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-bottom-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+html.theme-light nav a,
+html.theme-light nav button {
+  color: #334155 !important;
+}
+
+html.theme-light nav a:hover,
+html.theme-light nav button:hover {
+  color: #0f172a !important;
+}
+
+/* Light mode typography & contrast */
+html.theme-light h1:not(#dashboard-hud *),
+html.theme-light h2:not(#dashboard-hud *),
+html.theme-light h3:not(#dashboard-hud *),
+html.theme-light h4:not(#dashboard-hud *) {
+  color: #0f172a !important;
+}
+
+html.theme-light h1 span.block:first-child {
+  color: #0f172a !important;
+}
+
+html.theme-light h1 span.bg-gradient-to-r {
+  background-image: linear-gradient(to right, #0f172a, #d97706, #b45309) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+}
+
+html.theme-light p:not(#dashboard-hud *) {
+  color: #334155 !important;
+}
+
+/* Hero Badge */
+html.theme-light .animate-fade-up.inline-flex {
+  background-color: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Hero Search Input Form */
+html.theme-light form div.bg-\[\#12151c\]\/95 {
+  background-color: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.06) !important;
+}
+html.theme-light form input {
+  color: #0f172a !important;
+}
+html.theme-light form input::placeholder {
+  color: #64748b !important;
+}
+html.theme-light form svg {
+  color: #64748b !important;
+}
+
+/* Hero Demo Button */
+html.theme-light button.border-white\/20 {
+  color: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.2) !important;
+  background-color: rgba(255, 255, 255, 0.7) !important;
+}
+html.theme-light button.border-white\/20:hover {
+  background-color: rgba(15, 23, 42, 0.05) !important;
+}
+
+/* Glass Panels in Light Mode */
+html.theme-light .glass-panel {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  color: #0f172a;
+}
+
+html.theme-light .glass-panel-elevated {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 1);
+  color: #0f172a;
+}
+
+html.theme-light .glass-card-hover:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(217, 119, 6, 0.4);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(217, 119, 6, 0.2);
+}
+
+/* Cards & containers in light mode */
+html.theme-light div:not(#dashboard-hud *):not(#dashboard-hud).bg-\[\#12151c\],
+html.theme-light div:not(#dashboard-hud *):not(#dashboard-hud).bg-\[\#0d0f14\],
+html.theme-light div:not(#dashboard-hud *):not(#dashboard-hud).bg-\[\#0a0c10\],
+html.theme-light div:not(#dashboard-hud *):not(#dashboard-hud).bg-\[\#08090c\] {
+  background-color: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  color: #0f172a !important;
+}
+
+/* Invert white text utilities outside HUD */
+html.theme-light .text-white:not(#dashboard-hud *) {
+  color: #0f172a !important;
+}
+html.theme-light .text-white\/90:not(#dashboard-hud *),
+html.theme-light .text-white\/80:not(#dashboard-hud *) {
+  color: #334155 !important;
+}
+html.theme-light .text-white\/70:not(#dashboard-hud *),
+html.theme-light .text-white\/60:not(#dashboard-hud *) {
+  color: #475569 !important;
+}
+html.theme-light .text-white\/50:not(#dashboard-hud *),
+html.theme-light .text-white\/40:not(#dashboard-hud *) {
+  color: #64748b !important;
+}
+
+/* Light mode section textures and borders */
+html.theme-light .section-texture {
+  background-image: 
+    linear-gradient(to right, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+}
+
+html.theme-light .border-white\/5:not(#dashboard-hud *),
+html.theme-light .border-white\/10:not(#dashboard-hud *),
+html.theme-light .border-white\/15:not(#dashboard-hud *),
+html.theme-light .border-white\/20:not(#dashboard-hud *) {
+  border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
 /* ─── Reduced motion support ─────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
