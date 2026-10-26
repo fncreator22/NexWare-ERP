@@ -14,7 +14,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // Modules
-import { getCurrentUser, getWarehouses, getStore, seedDemoData, getActiveCurrency, syncWithBackend } from './modules/store.js';
+import { getCurrentUser, getWarehouses, getStore, getActiveCurrency, syncWithBackend } from './modules/store.js';
 import { getSvgIcon, applyTheme } from './modules/ui.js';
 import { canDo } from './modules/permissions.js';
 
@@ -32,15 +32,18 @@ import { renderAudit } from './pages/audit.js';
 import { renderSettings } from './pages/settings.js';
 import { renderSubscription } from './pages/subscription.js';
 import { renderWarehouseDetail } from './pages/warehouses.js';
-import { renderLanding } from './pages/landing.js';
 import { renderCustomers } from './pages/customers.js';
 import { renderRoles } from './pages/roles.js';
 import { renderNotifications } from './pages/notifications.js';
 import { renderProfile } from './pages/profile.js';
+import { renderAutomation } from './pages/automation.js';
 
 // Route handler map
 const routes = {
-  '/': renderLanding,
+  '/': () => {
+    const user = getCurrentUser();
+    safeNavigate(user ? '/dashboard' : '/login');
+  },
   '/login': renderLogin,
   '/signup': renderSignup,
   '/register-warehouse': renderWarehouseRegistration,
@@ -62,6 +65,7 @@ const routes = {
   '/roles': renderRoles,
   '/notifications': renderNotifications,
   '/profile': renderProfile,
+  '/automation': renderAutomation,
 };
 
 // printBill is used via data-print event delegation — no global exposure needed
@@ -136,6 +140,7 @@ function resolveRoute() {
         '/settings': 'settings',
         '/customers': 'crm',
         '/notifications': 'notifications',
+        '/automation': 'automation',
       };
 
       if (path === '/subscription' && !canDo('settings', 'manage', user)) {
@@ -162,7 +167,7 @@ function resolveRoute() {
       const whId = path.replace('/warehouses/', '');
       renderWarehouseDetail(whId);
     } else {
-      safeNavigate(user ? '/dashboard' : '/');
+      safeNavigate(user ? '/dashboard' : '/login');
     }
   } catch (err) {
     console.error('[WareOps] Route resolution crash:', err);

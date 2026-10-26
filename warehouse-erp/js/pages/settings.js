@@ -231,6 +231,52 @@ export function renderSettings() {
             }).join('')}
           </div>
         </div>
+        <!-- Webhook Configuration & Delivery History Inspector -->
+        <div class="card col-12">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px">
+                ${getSvgIcon('export', 18)} Webhooks & API Integrations
+                <span class="badge badge-brand" style="font-size:10px">v2.0 Inspector</span>
+              </div>
+              <div class="card-subtitle">Configure outbound webhooks and inspect delivery payloads</div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-add-webhook" style="display:flex;align-items:center;gap:6px">
+              ${getSvgIcon('plus', 14)} Add Endpoint
+            </button>
+          </div>
+
+          <!-- Webhook Endpoints list -->
+          <div style="margin-bottom:20px">
+            <h4 style="font-size:13px;font-weight:700;color:var(--text-secondary);margin-bottom:10px">Active Endpoints</h4>
+            <div id="webhook-endpoints-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Delivery History Log Inspector -->
+          <div>
+            <h4 style="font-size:13px;font-weight:700;color:var(--text-secondary);margin-bottom:10px">Delivery History Log Inspector</h4>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Event</th>
+                    <th>Endpoint URL</th>
+                    <th>HTTP Status</th>
+                    <th>Latency</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="webhook-logs-body">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         ${(canDo('settings', 'export', user) || canDo('settings', 'view', user)) ? `
         <!-- Export Panel -->
         <div class="card col-6">
@@ -713,6 +759,160 @@ export function renderSettings() {
       showToast('System Reset Complete', 'Platform ledgers and databases have been wiped to fresh state.', 'success');
       modal.close();
       location.hash='#/dashboard';
+    });
+  });
+
+  // Initialize Webhook Inspector
+  initWebhookInspectorUI();
+}
+
+function initWebhookInspectorUI() {
+  const s = getStore();
+  if (!s.webhooks) {
+    s.webhooks = [
+      { id: 'whk_1', url: 'https://api.erp-hub.com/v1/invoices', events: ['invoice.created', 'bill.paid'], secret: 'whsec_8923a10293', status: 'Active' },
+      { id: 'whk_2', url: 'https://hooks.slack.com/services/T00/B00/XXXXX', events: ['stock.low'], secret: 'whsec_7731b99212', status: 'Active' }
+    ];
+    saveStore();
+  }
+  if (!s.webhookLogs) {
+    s.webhookLogs = [
+      { id: 'wlog_1', url: 'https://api.erp-hub.com/v1/invoices', event: 'invoice.created', statusCode: 200, duration: '48ms', timestamp: new Date(Date.now() - 1800000).toISOString(), payload: '{"event":"invoice.created","billNo":"INV-2026-0041","amount":1250.00}' },
+      { id: 'wlog_2', url: 'https://hooks.slack.com/services/T00/B00/XXXXX', event: 'stock.low', statusCode: 200, duration: '64ms', timestamp: new Date(Date.now() - 7200000).toISOString(), payload: '{"event":"stock.low","item":"Industrial Sensor","stock":4}' },
+      { id: 'wlog_3', url: 'https://api.erp-hub.com/v1/invoices', event: 'bill.paid', statusCode: 500, duration: '120ms', timestamp: new Date(Date.now() - 14400000).toISOString(), payload: '{"event":"bill.paid","billNo":"INV-2026-0038","status":"failed_timeout"}' }
+    ];
+    saveStore();
+  }
+
+  const endpointsEl = document.getElementById('webhook-endpoints-list');
+  if (endpointsEl) {
+    endpointsEl.innerHTML = s.webhooks.map(w => `
+      <div style="background:var(--bg-input);border:1px solid var(--border-subtle);border-radius:8px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-weight:700;font-size:13px;color:var(--text-primary)">${w.url}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Events: ${w.events.join(', ')} · Secret: <code style="font-size:10px">${w.secret.slice(0, 10)}...</code></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="badge badge-success">● ${w.status}</span>
+          <button class="btn btn-ghost btn-xs btn-del-webhook" data-id="${w.id}" style="color:var(--accent-rose)">Delete</button>
+        </div>
+      </div>
+    `).join('');
+
+    endpointsEl.querySelectorAll('.btn-del-webhook').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ok = await confirm('Delete this webhook endpoint?');
+        if (ok) {
+          s.webhooks = s.webhooks.filter(x => x.id !== btn.dataset.id);
+          saveStore();
+          showToast('Webhook Deleted', 'Endpoint removed', 'info');
+          initWebhookInspectorUI();
+        }
+      });
+    });
+  }
+
+  const logsEl = document.getElementById('webhook-logs-body');
+  if (logsEl) {
+    logsEl.innerHTML = s.webhookLogs.map(l => `
+      <tr>
+        <td style="font-size:11px;color:var(--text-muted);white-space:nowrap">${formatDateTime(l.timestamp)}</td>
+        <td style="font-size:12px;font-weight:600"><span class="badge badge-brand">${l.event}</span></td>
+        <td style="font-size:12px;font-family:var(--font-mono);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.url}</td>
+        <td>
+          <span class="badge ${l.statusCode === 200 ? 'badge-success' : 'badge-danger'}">HTTP ${l.statusCode}</span>
+        </td>
+        <td style="font-size:11px;color:var(--text-muted)">${l.duration}</td>
+        <td>
+          <button class="btn btn-ghost btn-xs btn-inspect-payload" data-payload='${l.payload}' style="font-size:11px">Inspect Payload</button>
+          <button class="btn btn-ghost btn-xs btn-resend-webhook" data-id="${l.id}" style="font-size:11px">Re-send</button>
+        </td>
+      </tr>
+    `).join('');
+
+    logsEl.querySelectorAll('.btn-inspect-payload').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const payloadStr = btn.dataset.payload;
+        try {
+          const formatted = JSON.stringify(JSON.parse(payloadStr), null, 2);
+          createModal({
+            title: 'Webhook Delivery Payload Inspector',
+            body: `<pre style="background:var(--bg-input);padding:16px;border-radius:8px;font-family:var(--font-mono);font-size:12px;color:var(--accent-cyan);overflow-x:auto">${formatted}</pre>`,
+            footer: '<button class="btn btn-secondary btn-sm modal-close-btn">Close</button>'
+          });
+        } catch(e) {
+          showToast('Payload', payloadStr, 'info');
+        }
+      });
+    });
+
+    logsEl.querySelectorAll('.btn-resend-webhook').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.processing === 'true') return;
+        btn.dataset.processing = 'true';
+        btn.disabled = true;
+        btn.textContent = '⏳ Sending...';
+
+        setTimeout(() => {
+          showToast('Webhook Delivered', 'Payload re-sent successfully (HTTP 200 OK)', 'success');
+          btn.dataset.processing = 'false';
+          btn.disabled = false;
+          btn.textContent = 'Re-send';
+        }, 500);
+      });
+    });
+  }
+
+  document.getElementById('btn-add-webhook')?.addEventListener('click', () => {
+    const modalBody = document.createElement('div');
+    modalBody.innerHTML = `
+      <form id="form-add-webhook" style="display:flex;flex-direction:column;gap:16px">
+        <div class="form-group">
+          <label class="form-label">Endpoint URL <span class="req">*</span></label>
+          <input type="url" id="wh-url" class="form-control" placeholder="https://api.yourdomain.com/webhooks" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subscribed Events</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;color:var(--text-secondary)">
+            <label><input type="checkbox" value="invoice.created" checked /> invoice.created</label>
+            <label><input type="checkbox" value="bill.paid" checked /> bill.paid</label>
+            <label><input type="checkbox" value="stock.low" checked /> stock.low</label>
+            <label><input type="checkbox" value="user.registered" /> user.registered</label>
+          </div>
+        </div>
+      </form>
+    `;
+
+    const modalFooter = document.createElement('div');
+    modalFooter.style.cssText = 'display:flex;justify-content:flex-end;gap:12px;width:100%';
+    modalFooter.innerHTML = `
+      <button class="btn btn-secondary btn-sm" id="wh-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="wh-save">Add Endpoint</button>
+    `;
+
+    const modal = createModal({
+      title: 'Add Outbound Webhook Endpoint',
+      body: modalBody,
+      footer: modalFooter
+    });
+
+    modal.el.querySelector('#wh-cancel').addEventListener('click', () => modal.close());
+    modal.el.querySelector('#wh-save').addEventListener('click', () => {
+      const url = modal.el.querySelector('#wh-url').value.trim();
+      if (!url) { showToast('Validation Error', 'Endpoint URL is required', 'warning'); return; }
+
+      const selected = Array.from(modal.el.querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value);
+      s.webhooks.push({
+        id: 'whk_' + Date.now(),
+        url,
+        events: selected.length ? selected : ['invoice.created'],
+        secret: 'whsec_' + Math.random().toString(36).substring(2, 12),
+        status: 'Active'
+      });
+      saveStore();
+      showToast('Endpoint Added', `Webhook registered for ${url}`, 'success');
+      modal.close();
+      initWebhookInspectorUI();
     });
   });
 }

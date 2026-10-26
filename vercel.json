@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "routes": [
+    { "src": "/warehouse-erp$", "dest": "/warehouse-erp/index.html" },
+    { "src": "/warehouse-erp/(.*)", "dest": "/warehouse-erp/$1" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}

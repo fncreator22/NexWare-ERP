@@ -515,7 +515,6 @@ function showUserModal(u) {
     : allRoles.filter(r => r.id !== 'super_admin' && r.id !== 'admin');
 
   let m_avatar = u?.avatar || '';
-  const barcodeUrl = u?.barcode ? `http://localhost:8000/api/v1/registry/barcode?code=${u.barcode}` : '';
 
   const body = `
     <form id="user-modal-form">
@@ -690,52 +689,62 @@ function showUserModal(u) {
     }
   });
 
-  modal.el.querySelector('#m-u-save')?.addEventListener('click', async () => {
-    const name = document.getElementById('m-u-name').value.trim();
-    const email = document.getElementById('m-u-email').value.trim();
-    const role = document.getElementById('m-u-role').value;
-    const warehouseId = document.getElementById('m-u-wh').value;
-    if (!name || !email || !role || (role !== 'super_admin' && !warehouseId)) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
-    
-    // Set avatar fallback if empty
-    if (!m_avatar) {
-      m_avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
-    }
+  modal.el.querySelector('#m-u-save')?.addEventListener('click', async (e) => {
+    const saveBtn = e.currentTarget;
+    if (saveBtn.dataset.processing === 'true') return;
+    saveBtn.dataset.processing = 'true';
+    saveBtn.disabled = true;
 
-    if (isEdit) {
-      // Collect user-level permission overrides (super_admin only)
-      let permissionOverrides = u?.permissionOverrides || {};
-      if (currentUser.role === 'super_admin') {
-        permissionOverrides = {};
-        const rolePerms = resolvePermissions(u);
-        modal.el.querySelectorAll('.user-perm-ov').forEach(cb => {
-          const mod = cb.dataset.mod;
-          const action = cb.dataset.action;
-          const roleDefault = !!(rolePerms[mod]?.[action]);
-          if (cb.checked !== roleDefault) {
-            if (!permissionOverrides[mod]) permissionOverrides[mod] = {};
-            permissionOverrides[mod][action] = cb.checked;
-          }
-        });
+    try {
+      const name = document.getElementById('m-u-name').value.trim();
+      const email = document.getElementById('m-u-email').value.trim();
+      const role = document.getElementById('m-u-role').value;
+      const warehouseId = document.getElementById('m-u-wh').value;
+      if (!name || !email || !role || (role !== 'super_admin' && !warehouseId)) { showToast('Validation', 'Fill all required fields', 'warning'); return; }
+      
+      // Set avatar fallback if empty
+      if (!m_avatar) {
+        m_avatar = name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
       }
-      const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value, avatar: m_avatar, permissionOverrides };
-      const result = await updateUser(u.id, data);
-      if (result && result.error) { showToast('Error', result.error, 'error'); return; }
-      showToast('User updated', `${name}'s details updated`, 'success');
-      const curUser = getCurrentUser();
-      if (u.id === curUser.id) {
-        updateDOMAvatars(m_avatar, name);
+
+      if (isEdit) {
+        // Collect user-level permission overrides (super_admin only)
+        let permissionOverrides = u?.permissionOverrides || {};
+        if (currentUser.role === 'super_admin') {
+          permissionOverrides = {};
+          const rolePerms = resolvePermissions(u);
+          modal.el.querySelectorAll('.user-perm-ov').forEach(cb => {
+            const mod = cb.dataset.mod;
+            const action = cb.dataset.action;
+            const roleDefault = !!(rolePerms[mod]?.[action]);
+            if (cb.checked !== roleDefault) {
+              if (!permissionOverrides[mod]) permissionOverrides[mod] = {};
+              permissionOverrides[mod][action] = cb.checked;
+            }
+          });
+        }
+        const data = { name, role, warehouseId, status: document.getElementById('m-u-status').value, avatar: m_avatar, permissionOverrides };
+        const result = await updateUser(u.id, data);
+        if (result && result.error) { showToast('Error', result.error, 'error'); return; }
+        showToast('User updated', `${name}'s details updated`, 'success');
+        const curUser = getCurrentUser();
+        if (u.id === curUser.id) {
+          updateDOMAvatars(m_avatar, name);
+        }
+      } else {
+        const password = document.getElementById('m-u-password').value;
+        if (!password || password.length < 8) { showToast('Validation', 'Password must be at least 8 characters', 'warning'); return; }
+        const result = await createUser({ name, email, password, role, warehouseId, avatar: m_avatar });
+        if (result && result.error) { showToast('Error', result.error, 'error'); return; }
+        showToast('User created', `${name} added as ${role}`, 'success');
       }
-    } else {
-      const password = document.getElementById('m-u-password').value;
-      if (!password || password.length < 8) { showToast('Validation', 'Password must be at least 8 characters', 'warning'); return; }
-      const result = await createUser({ name, email, password, role, warehouseId, avatar: m_avatar });
-      if (result && result.error) { showToast('Error', result.error, 'error'); return; }
-      showToast('User created', `${name} added as ${role}`, 'success');
+      modal.close();
+      renderWorkforceStats();
+      renderWorkforceTable();
+    } finally {
+      saveBtn.dataset.processing = 'false';
+      saveBtn.disabled = false;
     }
-    modal.close();
-    renderWorkforceStats();
-    renderWorkforceTable();
   });
 }
 

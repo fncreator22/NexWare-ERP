@@ -622,37 +622,47 @@ function showItemModal(item) {
   });
 
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
-    const name = document.getElementById('m-i-name').value.trim();
-    const category = document.getElementById('m-i-cat').value;
-    const price = parseFloat(document.getElementById('m-i-price').value);
-    const stock = parseInt(document.getElementById('m-i-stock').value);
-    const warehouseId = document.getElementById('m-i-wh').value;
-    const lowStockThreshold = parseInt(document.getElementById('m-i-threshold').value);
-    if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId||isNaN(lowStockThreshold)) { showToast('Validation','Fill all required fields','warning'); return; }
-    
-    const data = {
-      name, category, price, stock, warehouseId,
-      sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
-      unit: document.getElementById('m-i-unit').value,
-      taxCategory: 'normal',
-      images: selectedImages,
-      lowStockThreshold
-    };
-    
-    let res;
-    if (isEdit) {
-      res = await updateItem(item.id, data);
-      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
-      showToast('Item updated',`${name} updated`,'success');
-    } else {
-      res = await createItem(data);
-      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
-      showToast('Item added',`${name} added to inventory`,'success');
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', async (e) => {
+    const saveBtn = e.currentTarget;
+    if (saveBtn.dataset.processing === 'true') return;
+    saveBtn.dataset.processing = 'true';
+    saveBtn.disabled = true;
+
+    try {
+      const name = document.getElementById('m-i-name').value.trim();
+      const category = document.getElementById('m-i-cat').value;
+      const price = parseFloat(document.getElementById('m-i-price').value);
+      const stock = parseInt(document.getElementById('m-i-stock').value);
+      const warehouseId = document.getElementById('m-i-wh').value;
+      const lowStockThreshold = parseInt(document.getElementById('m-i-threshold').value);
+      if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId||isNaN(lowStockThreshold)) { showToast('Validation','Fill all required fields','warning'); return; }
+      
+      const data = {
+        name, category, price, stock, warehouseId,
+        sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
+        unit: document.getElementById('m-i-unit').value,
+        taxCategory: 'normal',
+        images: selectedImages,
+        lowStockThreshold
+      };
+      
+      let res;
+      if (isEdit) {
+        res = await updateItem(item.id, data);
+        if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+        showToast('Item updated',`${name} updated`,'success');
+      } else {
+        res = await createItem(data);
+        if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+        showToast('Item added',`${name} added to inventory`,'success');
+      }
+      modal.close();
+      renderItemStats();
+      renderItemsTable();
+    } finally {
+      saveBtn.dataset.processing = 'false';
+      saveBtn.disabled = false;
     }
-    modal.close();
-    renderItemStats();
-    renderItemsTable();
   });
 }
 
@@ -763,8 +773,9 @@ function showImportModal() {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
-    const token = localStorage.getItem('access_token');
-    const url = 'http://localhost:8000/api/v1/items/import';
+    const token = sessionStorage.getItem('access_token');
+    const apiBase = (typeof window !== 'undefined' && window.ENV_API_URL) || 'http://localhost:8000/api/v1';
+    const url = `${apiBase}/items/import`;
 
     try {
       const res = await fetch(url, {
@@ -946,7 +957,7 @@ function showItemCardModal(item) {
         
         <!-- Live Scannable Barcode SVG Block -->
         <div style="padding:12px;background:white;border-radius:var(--radius-md);border:1px solid var(--border-default);display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:12px;">
-          <img src="http://localhost:8000/api/v1/registry/barcode?code=${barcodeStr}" style="height:45px;max-width:100%;mix-blend-mode:multiply;" title="Item Barcode" />
+          ${generateBarcodeSVG(barcodeStr, { height: 45, color: '#111', showLabel: false })}
           <span style="font-family:var(--font-mono);font-size:10px;color:#555;margin-top:4px;letter-spacing:1.5px;">${barcodeStr}</span>
         </div>
       </div>

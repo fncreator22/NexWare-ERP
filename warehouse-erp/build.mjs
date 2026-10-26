@@ -9,11 +9,11 @@ const files = [
   'modules/store.js', 'modules/router.js', 'modules/ui.js', 'modules/exporter.js',
   'modules/permissions.js',
   'components/shell.js', 'components/palette.js',
-  'pages/auth.js', 'pages/landing.js', 'pages/legal.js', 'pages/dashboard.js', 'pages/warehouses.js',
+  'pages/auth.js', 'pages/legal.js', 'pages/dashboard.js', 'pages/warehouses.js',
   'pages/workforce.js', 'pages/items.js', 'pages/tables.js',
   'pages/billing.js', 'pages/analytics.js', 'pages/audit.js',
   'pages/settings.js', 'pages/subscription.js',
-  'pages/customers.js', 'pages/roles.js', 'pages/notifications.js', 'pages/profile.js',
+  'pages/customers.js', 'pages/roles.js', 'pages/notifications.js', 'pages/profile.js', 'pages/automation.js',
 ];
 
 function strip(code) {
@@ -30,7 +30,7 @@ function strip(code) {
   return code;
 }
 
-let bundle = `// WareOps ERP — Bundled v2.0  Generated: ${new Date().toISOString()}\n\n`;
+let bundle = '// WareOps ERP — Bundled v2.0\n\n';
 
 for (const f of files) {
   const code = strip(readFileSync(join(jsBase, f), 'utf8'));

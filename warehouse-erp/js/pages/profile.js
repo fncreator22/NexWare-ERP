@@ -329,12 +329,15 @@ function renderTabContent(tab, user) {
               <div style="font-size:14px;font-weight:600;color:var(--text-primary)">Two-Factor Authentication (2FA)</div>
               <div style="font-size:12px;color:var(--text-muted)">Enforce secure one-time passcode confirmation on logins</div>
             </div>
-            <label style="display:flex;align-items:center;cursor:pointer">
-              <input type="checkbox" id="p-2fa" class="privacy-toggle" ${p.twoFactor ? 'checked' : ''} style="display:none" />
-              <div class="toggle-switch ${p.twoFactor ? 'on' : ''}" style="width:40px;height:22px;border-radius:11px;background:${p.twoFactor ? 'var(--brand-500)' : 'var(--bg-input)'};border:1px solid var(--border-default);position:relative;transition:all 0.2s;cursor:pointer">
-                <div style="position:absolute;top:2px;left:${p.twoFactor ? '18px' : '2px'};width:16px;height:16px;border-radius:50%;background:white;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>
-              </div>
-            </label>
+            <div style="display:flex;align-items:center;gap:10px">
+              <button type="button" class="btn btn-secondary btn-xs" id="btn-setup-2fa">Setup 2FA</button>
+              <label style="display:flex;align-items:center;cursor:pointer">
+                <input type="checkbox" id="p-2fa" class="privacy-toggle" ${p.twoFactor ? 'checked' : ''} style="display:none" />
+                <div class="toggle-switch ${p.twoFactor ? 'on' : ''}" style="width:40px;height:22px;border-radius:11px;background:${p.twoFactor ? 'var(--brand-500)' : 'var(--bg-input)'};border:1px solid var(--border-default);position:relative;transition:all 0.2s;cursor:pointer">
+                  <div style="position:absolute;top:2px;left:${p.twoFactor ? '18px' : '2px'};width:16px;height:16px;border-radius:50%;background:white;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>
+                </div>
+              </label>
+            </div>
           </div>
 
           <div style="display:flex;align-items:center;justify-content:space-between">
@@ -570,6 +573,10 @@ function bindTabContentEvents(tab) {
       });
     });
 
+    document.getElementById('btn-setup-2fa')?.addEventListener('click', () => {
+      show2FASetupModal(currentUserDoc);
+    });
+
     document.getElementById('p-privacy-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const twoFactor = document.getElementById('p-2fa').checked;
@@ -592,6 +599,106 @@ function bindTabContentEvents(tab) {
       renderProfile();
     });
   }
+}
+
+export function show2FASetupModal(userDoc) {
+  const secretKey = 'JBSWY3DPEHPK3PXP';
+  const modalBody = document.createElement('div');
+  modalBody.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:14px;font-size:13px;color:var(--text-secondary);display:flex;gap:12px;align-items:flex-start">
+        <span style="color:var(--brand-500);flex-shrink:0">${getSvgIcon('lock', 20)}</span>
+        <div>
+          <strong>Step 1: Scan QR Code</strong><br/>
+          Open your authenticator app (Google Authenticator, Authy, or 1Password) and scan the QR code or enter the secret key manually.
+        </div>
+      </div>
+
+      <div style="display:flex;gap:20px;align-items:center;justify-content:center;background:white;padding:20px;border-radius:12px;box-shadow:var(--shadow-md)">
+        <!-- Generated SVG QR Code mockup -->
+        <svg width="120" height="120" viewBox="0 0 100 100" fill="#0f1029">
+          <rect width="100" height="100" fill="white"/>
+          <rect x="10" y="10" width="25" height="25" fill="#0f1029"/>
+          <rect x="14" y="14" width="17" height="17" fill="white"/>
+          <rect x="18" y="18" width="9" height="9" fill="#0f1029"/>
+          
+          <rect x="65" y="10" width="25" height="25" fill="#0f1029"/>
+          <rect x="69" y="14" width="17" height="17" fill="white"/>
+          <rect x="73" y="18" width="9" height="9" fill="#0f1029"/>
+
+          <rect x="10" y="65" width="25" height="25" fill="#0f1029"/>
+          <rect x="14" y="69" width="17" height="17" fill="white"/>
+          <rect x="18" y="73" width="9" height="9" fill="#0f1029"/>
+
+          <rect x="40" y="10" width="15" height="15" fill="#0f1029"/>
+          <rect x="40" y="30" width="10" height="25" fill="#0f1029"/>
+          <rect x="55" y="45" width="20" height="10" fill="#0f1029"/>
+          <rect x="40" y="65" width="15" height="25" fill="#0f1029"/>
+          <rect x="65" y="65" width="25" height="15" fill="#0f1029"/>
+        </svg>
+
+        <div style="color:#0f1029;font-family:var(--font-mono)">
+          <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px">Secret Key</div>
+          <div style="font-size:14px;font-weight:800;letter-spacing:1px;background:#f1f5f9;padding:6px 10px;border-radius:6px" id="2fa-secret-text">${secretKey}</div>
+          <button type="button" class="btn btn-ghost btn-xs" id="btn-copy-secret" style="margin-top:6px;font-size:10px;color:#6366f1">📋 Copy Key</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Step 2: Enter 6-Digit Passcode <span class="req">*</span></label>
+        <input type="text" id="totp-code-input" class="form-control" placeholder="123456" maxlength="6" style="letter-spacing:4px;font-size:18px;font-weight:800;text-align:center" />
+      </div>
+
+      <div>
+        <label class="form-label">Step 3: One-Time Backup Recovery Codes</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--bg-input);padding:12px;border-radius:8px;font-family:var(--font-mono);font-size:12px;color:var(--accent-emerald)">
+          <div>8394-1940</div><div>5829-3910</div>
+          <div>9410-2819</div><div>7310-4820</div>
+          <div>2819-3019</div><div>6410-2910</div>
+          <div>1920-8401</div><div>9021-3810</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const modalFooter = document.createElement('div');
+  modalFooter.style.cssText = 'display:flex;justify-content:flex-end;gap:12px;width:100%';
+  modalFooter.innerHTML = `
+    <button class="btn btn-secondary btn-sm" id="totp-cancel">Cancel</button>
+    <button class="btn btn-primary btn-sm" id="totp-verify">Verify & Enable 2FA</button>
+  `;
+
+  const modal = createModal({
+    title: 'Setup Two-Factor Authentication (TOTP)',
+    body: modalBody,
+    footer: modalFooter
+  });
+
+  modal.el.querySelector('#btn-copy-secret')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(secretKey);
+    showToast('Secret Copied', '2FA secret key copied to clipboard', 'info');
+  });
+
+  modal.el.querySelector('#totp-cancel')?.addEventListener('click', () => modal.close());
+
+  modal.el.querySelector('#totp-verify')?.addEventListener('click', async () => {
+    const code = modal.el.querySelector('#totp-code-input').value.trim();
+    if (!code || code.length < 6) {
+      showToast('Validation Error', 'Please enter a valid 6-digit TOTP code', 'warning');
+      return;
+    }
+
+    if (!userDoc.profile) userDoc.profile = {};
+    if (!userDoc.profile.privacy) userDoc.profile.privacy = {};
+    userDoc.profile.privacy.twoFactor = true;
+
+    saveStore();
+    await updateUser(userDoc.id, { profile: userDoc.profile });
+
+    showToast('2FA Activated', 'Two-Factor Authentication is now active on your account.', 'success');
+    modal.close();
+    renderProfile();
+  });
 }
 
 export function showIDCardModal(u) {

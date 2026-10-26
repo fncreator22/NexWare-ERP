@@ -1168,8 +1168,8 @@ function _buildReadonlyCell(value, col) {
     if (typeof v === 'string' && v.includes('code=')) {
       code = v.split('code=')[1];
     }
-    const srcVal = `http://localhost:8000/api/v1/registry/barcode?code=${code}`;
-    return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" />`;
+    const svg = generateBarcodeSVG(code, { height: 24, showLabel: false });
+    return `<div style="display:flex;justify-content:center;align-items:center;padding:2px;">${svg}</div>`;
   }
 
   switch (col.type) {
@@ -1196,8 +1196,13 @@ function _buildReadonlyCell(value, col) {
         v.match(/\.(jpeg|jpg|gif|png|svg|webp)($|\?)/i)
       );
       if (isUrlOrPath) {
+        if (typeof v === 'string' && (v.includes('/registry/barcode') || v.includes('code='))) {
+          const code = v.includes('code=') ? v.split('code=')[1].split('&')[0] : v;
+          const svg = generateBarcodeSVG(code, { height: 24, showLabel: false });
+          return `<div style="display:flex;justify-content:center;align-items:center;padding:2px;">${svg}</div>`;
+        }
         const srcVal = v.startsWith('/api/') ? 'http://localhost:8000' + v : v;
-        return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" />`;
+        return `<img src="${srcVal}" style="max-height:28px;max-width:80px;object-fit:contain;border-radius:4px;display:block;cursor:pointer;margin:0 auto;" onclick="window.showImagePreviewModal('${srcVal}')" onerror="this.style.display='none'" />`;
       }
       return `<span>${v}</span>`;
     }
@@ -3147,13 +3152,12 @@ async function _showBarcodePrintSheet() {
         </div>
         <div class="grid">
           ${entries.map(e => {
-            const barcodeUrl = `http://localhost:8000/api/v1/registry/barcode?code=${e.entity_id}`;
             const snap = e.metadata_snapshot || {};
             const name = snap.name || snap.customer || e.entity_type.toUpperCase();
             return `
               <div class="card">
                 <div class="title">${name}</div>
-                <img class="barcode" src="${barcodeUrl}" />
+                <div class="barcode" style="display:flex;justify-content:center;margin:8px 0;">${generateBarcodeSVG(e.entity_id, { height: 36, color: '#111', showLabel: false })}</div>
                 <div class="footer-info">Type: ${e.entity_type} | Scope: ${e.warehouse_id}</div>
               </div>
             `;

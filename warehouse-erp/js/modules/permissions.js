@@ -14,6 +14,7 @@ export const ALL_MODULES = [
   { key: 'notifications',  label: 'Notifications',        icon: 'bell'       },
   { key: 'audit',          label: 'Audit Logs',           icon: 'audit'      },
   { key: 'settings',       label: 'Settings',             icon: 'settings'   },
+  { key: 'automation',     label: 'Automation',           icon: 'settings'   },
   { key: 'registration',   label: 'Registration modules', icon: 'audit'      },
 ];
 
@@ -167,6 +168,7 @@ const MODULE_TO_NAV = {
   notifications:  { path: '/notifications',  icon: 'bell',       label: 'Notifications',  section: 'System'      },
   audit:          { path: '/audit',          icon: 'audit',      label: 'Audit Logs',     section: 'System'      },
   settings:       { path: '/settings',       icon: 'settings',   label: 'Settings',       section: 'System'      },
+  automation:     { path: '/automation',     icon: 'settings',   label: 'Automation',     section: 'Operations'  },
 };
 
 // Always show for super_admin — extra items not tied to permissions
