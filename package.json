@@ -1,7 +1,9 @@
 {
-  "name": "next-erp-monorepo",
+  "name": "nexware-erp-monorepo",
   "version": "1.0.0",
   "private": true,
+  "description": "NexWare ERP — Enterprise Warehouse Management & Operations Platform",
+  "homepage": "https://nexware-erp.vercel.app",
   "type": "module",
   "workspaces": [
     "landing"

@@ -1,14 +1,19 @@
 # NexWare ERP
 
 <p align="center">
-
-<img src="https://img.shields.io/badge/ERP-Enterprise%20Platform-blue"/>
-<img src="https://img.shields.io/badge/Architecture-Modular-green"/>
-<img src="https://img.shields.io/badge/Security-Permission%20Driven-red"/>
-<img src="https://img.shields.io/badge/Stack-FastAPI%20%7C%20MongoDB%20%7C%20JavaScript-orange"/>
-
+  <a href="https://nexware-erp.vercel.app"><img src="https://img.shields.io/badge/Production%20Deployment-nexware--erp.vercel.app-brightgreen?style=for-the-badge&logo=vercel" alt="Live Deployment"/></a>
+  <img src="https://img.shields.io/badge/ERP-Enterprise%20Platform-blue?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Architecture-Modular-green?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Security-Permission%20Driven-red?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Stack-React%2019%20%7C%20FastAPI%20%7C%20JavaScript-orange?style=for-the-badge"/>
 </p>
 
+### Live Platform Access
+- **Production Web Application**: [https://nexware-erp.vercel.app](https://nexware-erp.vercel.app)
+- **Direct ERP System**: [https://nexware-erp.vercel.app/warehouse-erp/](https://nexware-erp.vercel.app/warehouse-erp/)
+- **Live Demo Credentials**: Use guest mode or standard multi-tenant role switchers directly on the live platform.
+
+---
 
 ## Enterprise Business Management Platform
 

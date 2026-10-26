@@ -1,7 +1,9 @@
 {
-  "name": "landing",
+  "name": "@nexware/landing",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "NexWare ERP Enterprise Marketing and Interactive Landing Platform",
+  "homepage": "https://nexware-erp.vercel.app",
   "type": "module",
   "scripts": {
     "dev": "vite",
