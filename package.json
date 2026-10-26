@@ -1,0 +1,10 @@
+{
+  "name": "next-erp-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/assemble-build.mjs",
+    "test": "npm --prefix landing test"
+  }
+}

@@ -758,106 +758,116 @@ function showBillModal() {
   };
 
   modal.el.querySelector('#bill-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#bill-save')?.addEventListener('click', async () => {
-    const customer = document.getElementById('bill-customer')?.value.trim();
-    if (!customer) { showToast('Validation','Customer name required','warning'); return; }
-    if (billItems.length === 0) { showToast('Validation','Add at least one item','warning'); return; }
-    const warehouseId = document.getElementById('bill-wh')?.value || whs[0]?.id;
-    
-    // Custom tax configuration safeguard
-    const wh = whs.find(w => w.id === warehouseId);
-    if (wh && wh.taxPreference === 'custom' && (!wh.taxConfig || Object.keys(wh.taxConfig).length === 0)) {
-      showToast('Tax Configuration Required', 'This warehouse is flagged with "Custom Tax Setup". Please configure regional tax rules in settings before generating invoices.', 'error');
-      return;
-    }
+  modal.el.querySelector('#bill-save')?.addEventListener('click', async (e) => {
+    const saveBtn = e.currentTarget;
+    if (saveBtn.dataset.processing === 'true') return;
+    saveBtn.dataset.processing = 'true';
+    saveBtn.disabled = true;
 
-    const calculation = calculateTaxesFrontend(billItems, warehouseId);
-    
-    // Validation to prevent overselling on the client side
-    let validationPassed = true;
-    const items = getItems(warehouseId);
-    calculation.items.forEach(bi => {
-      const catalogItem = items.find(item => item.id === bi.id);
-      const availableStock = catalogItem ? catalogItem.stock : 0;
-      if (bi.qty > availableStock) {
-        validationPassed = false;
-        showToast('Stock Threshold Alert', `Insufficient stock for ${bi.name}. Maximum: ${availableStock}`, 'error');
+    try {
+      const customer = document.getElementById('bill-customer')?.value.trim();
+      if (!customer) { showToast('Validation','Customer name required','warning'); return; }
+      if (billItems.length === 0) { showToast('Validation','Add at least one item','warning'); return; }
+      const warehouseId = document.getElementById('bill-wh')?.value || whs[0]?.id;
+      
+      // Custom tax configuration safeguard
+      const wh = whs.find(w => w.id === warehouseId);
+      if (wh && wh.taxPreference === 'custom' && (!wh.taxConfig || Object.keys(wh.taxConfig).length === 0)) {
+        showToast('Tax Configuration Required', 'This warehouse is flagged with "Custom Tax Setup". Please configure regional tax rules in settings before generating invoices.', 'error');
+        return;
       }
-    });
 
-    if (!validationPassed) return;
+      const calculation = calculateTaxesFrontend(billItems, warehouseId);
+      
+      // Validation to prevent overselling on the client side
+      let validationPassed = true;
+      const items = getItems(warehouseId);
+      calculation.items.forEach(bi => {
+        const catalogItem = items.find(item => item.id === bi.id);
+        const availableStock = catalogItem ? catalogItem.stock : 0;
+        if (bi.qty > availableStock) {
+          validationPassed = false;
+          showToast('Stock Threshold Alert', `Insufficient stock for ${bi.name}. Maximum: ${availableStock}`, 'error');
+        }
+      });
 
-    const sellerAddress = document.getElementById('bill-seller-address')?.value.trim() || '';
-    const sellerContact = document.getElementById('bill-seller-contact')?.value.trim() || '';
-    const sellerTaxNumber = document.getElementById('bill-seller-tax')?.value.trim() || '';
-    const buyerBillingAddress = document.getElementById('bill-buyer-billing')?.value.trim() || '';
-    const buyerShippingAddress = document.getElementById('bill-buyer-shipping')?.value.trim() || '';
-    const customerPhone = document.getElementById('bill-customer-phone')?.value.trim() || '';
-    const customerEmail = document.getElementById('bill-customer-email')?.value.trim() || '';
+      if (!validationPassed) return;
 
-    // Field validations
-    if (customerEmail && (!customerEmail.includes('@') || !customerEmail.includes('.'))) {
-      showToast('Validation', 'Invalid customer email address format', 'warning');
-      return;
-    }
-    if (customerPhone && customerPhone.length < 5) {
-      showToast('Validation', 'Invalid customer phone number', 'warning');
-      return;
-    }
+      const sellerAddress = document.getElementById('bill-seller-address')?.value.trim() || '';
+      const sellerContact = document.getElementById('bill-seller-contact')?.value.trim() || '';
+      const sellerTaxNumber = document.getElementById('bill-seller-tax')?.value.trim() || '';
+      const buyerBillingAddress = document.getElementById('bill-buyer-billing')?.value.trim() || '';
+      const buyerShippingAddress = document.getElementById('bill-buyer-shipping')?.value.trim() || '';
+      const customerPhone = document.getElementById('bill-customer-phone')?.value.trim() || '';
+      const customerEmail = document.getElementById('bill-customer-email')?.value.trim() || '';
 
-    const billCurrency = document.getElementById('bill-currency')?.value || wh?.currency || getActiveCurrency();
-    const baseCurrency = getActiveCurrency();
-    const rate = (EXCHANGE_RATES[billCurrency] || 1.0) / (EXCHANGE_RATES[baseCurrency] || 1.0);
+      // Field validations
+      if (customerEmail && (!customerEmail.includes('@') || !customerEmail.includes('.'))) {
+        showToast('Validation', 'Invalid customer email address format', 'warning');
+        return;
+      }
+      if (customerPhone && customerPhone.length < 5) {
+        showToast('Validation', 'Invalid customer phone number', 'warning');
+        return;
+      }
 
-    const payload = {
-      customer,
-      warehouseId,
-      currency: billCurrency,
-      exchangeRate: rate,
-      items: calculation.items.map(i => ({
-        id: i.id,
-        name: i.name,
-        price: i.price * rate,
-        taxCategory: i.taxCategory || 'normal',
-        taxRate: i.taxRate,
-        qty: i.qty,
-        taxes: i.taxes ? i.taxes.map(t => ({
+      const billCurrency = document.getElementById('bill-currency')?.value || wh?.currency || getActiveCurrency();
+      const baseCurrency = getActiveCurrency();
+      const rate = (EXCHANGE_RATES[billCurrency] || 1.0) / (EXCHANGE_RATES[baseCurrency] || 1.0);
+
+      const payload = {
+        customer,
+        warehouseId,
+        currency: billCurrency,
+        exchangeRate: rate,
+        items: calculation.items.map(i => ({
+          id: i.id,
+          name: i.name,
+          price: i.price * rate,
+          taxCategory: i.taxCategory || 'normal',
+          taxRate: i.taxRate,
+          qty: i.qty,
+          taxes: i.taxes ? i.taxes.map(t => ({
+            name: t.name,
+            taxType: t.taxType,
+            rate: t.rate,
+            amount: t.amount * rate
+          })) : null
+        })),
+        subtotal: calculation.subtotal * rate,
+        tax: calculation.tax * rate,
+        total: calculation.total * rate,
+        taxDetails: calculation.taxDetails ? calculation.taxDetails.map(t => ({
           name: t.name,
           taxType: t.taxType,
           rate: t.rate,
           amount: t.amount * rate
-        })) : null
-      })),
-      subtotal: calculation.subtotal * rate,
-      tax: calculation.tax * rate,
-      total: calculation.total * rate,
-      taxDetails: calculation.taxDetails ? calculation.taxDetails.map(t => ({
-        name: t.name,
-        taxType: t.taxType,
-        rate: t.rate,
-        amount: t.amount * rate
-      })) : null,
+        })) : null,
+        
+        // Extended fields
+        sellerAddress,
+        sellerContact,
+        sellerTaxNumber,
+        buyerBillingAddress,
+        buyerShippingAddress,
+        customerPhone,
+        customerEmail
+      };
       
-      // Extended fields
-      sellerAddress,
-      sellerContact,
-      sellerTaxNumber,
-      buyerBillingAddress,
-      buyerShippingAddress,
-      customerPhone,
-      customerEmail
-    };
-    
-    const res = await createBill(payload);
-    if (res && res.error) {
-      showToast('Generation failed', res.error, 'error');
-      return;
+      const res = await createBill(payload);
+      if (res && res.error) {
+        showToast('Generation failed', res.error, 'error');
+        return;
+      }
+      
+      showToast('Bill generated!', `${res.billNo || 'Invoice'} — ${formatCurrency(calculation.total * rate, billCurrency)}`, 'success');
+      billItems = [];
+      modal.close();
+      renderBilling();
+    } finally {
+      saveBtn.dataset.processing = 'false';
+      saveBtn.disabled = false;
     }
-    
-    showToast('Bill generated!', `${res.billNo || 'Invoice'} — ${formatCurrency(calculation.total * rate, billCurrency)}`, 'success');
-    billItems = [];
-    modal.close();
-    renderBilling();
   });
 }
 

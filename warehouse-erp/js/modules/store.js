@@ -10,9 +10,21 @@ export function getStorageKey() {
     try {
       const parts = token.split('.');
       if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]));
-        if (payload && payload.user_id) {
-          return `wareops_data_${payload.user_id}`;
+        let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const pad = base64.length % 4;
+        if (pad) {
+          base64 += '='.repeat(4 - pad);
+        }
+        const payload = JSON.parse(atob(base64));
+        if (payload) {
+          const tenantId = payload.tenant_id || payload.tenant;
+          const userId = payload.user_id || payload.sub || payload.id;
+          if (userId) {
+            if (tenantId) {
+              return `wareops_data_t_${tenantId}_u_${userId}`;
+            }
+            return `wareops_data_${userId}`;
+          }
         }
       }
     } catch (e) {}
@@ -112,7 +124,7 @@ export function resetStore() {
 }
 
 // ---- API AND SYNCHRONIZATION ----
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = (typeof window !== 'undefined' && window.ENV_API_URL) || 'http://localhost:8000/api/v1';
 
 export async function apiFetch(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
@@ -167,7 +179,7 @@ export async function apiFetch(path, options = {}) {
       const s = getStore();
       s.currentUserId = null;
       saveStore();
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && window.location) {
         window.location.hash = '#/login';
       }
       return { error: 'Session expired. Please sign in again.' };
@@ -339,11 +351,15 @@ export async function login(email, password) {
 }
 
 export async function logout() {
+  const key = getStorageKey();
   const token = sessionStorage.getItem('access_token');
   if (token) {
     await apiFetch('/auth/logout', { method: 'POST' });
   }
   sessionStorage.removeItem('access_token');
+  if (typeof localStorage !== 'undefined' && key) {
+    localStorage.removeItem(key);
+  }
   _store = null;
   const s = getStore();
   s.currentUserId = null;

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NexWare ERP — Enterprise Warehouse Management Platform</title>
+    <meta name="description" content="Unify inventory, billing, and workforce across unlimited warehouse locations with real-time WebSocket sync and 5-tier role-based access control." />
+    <!-- Open Graph -->
+    <meta property="og:title" content="NexWare ERP — Enterprise Warehouse Management Platform" />
+    <meta property="og:description" content="Multi-warehouse ERP with real-time WebSocket sync, 5-tier RBAC, and automated billing." />
+    <meta property="og:type" content="website" />
+    <!-- CSP: restrict script execution to same-origin; allow fonts and images from trusted CDNs -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self';
+                   script-src 'self' 'unsafe-inline';
+                   style-src 'self' 'unsafe-inline' https://db.onlinewebfonts.com;
+                   font-src 'self' https://db.onlinewebfonts.com;
+                   img-src 'self' data: https://images.unsplash.com;
+                   connect-src 'self';" />
+    <!-- Nimbus Sans font -->
+    <link rel="preconnect" href="https://db.onlinewebfonts.com" />
+    <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/bb5de19d87c09a95216dc6ccd96e37c6?family=Nimbus+Sans+TW01" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/warehouse-erp/" />
   <title>WareOps ERP — Enterprise Warehouse Management Platform</title>
   <meta name="description" content="Enterprise-grade multi-warehouse ERP, workforce, billing, and operations management SaaS platform." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,7 +19,6 @@
   <link rel="stylesheet" href="css/dashboard.css" />
   <link rel="stylesheet" href="css/animations.css" />
   <link rel="stylesheet" href="css/responsive.css" />
-  <link rel="stylesheet" href="css/landing.css" />
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
@@ -64,5 +64,14 @@
   <div id="app"></div>
   <!-- Bundled App -->
   <script src="bundle.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('[WareOps PWA] Service worker registered:', reg.scope))
+          .catch(err => console.warn('[WareOps PWA] Service worker registration failed:', err));
+      });
+    }
+  </script>
 </body>
 </html>

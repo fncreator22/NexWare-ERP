@@ -336,6 +336,23 @@ function updateCharts(bills, items, users, whs) {
       },
       options:{
         ...CHART_OPTS, cutout:'62%',
+        onClick: (event, elements) => {
+          if (elements && elements.length > 0) {
+            const index = elements[0].index;
+            const selectedWh = whs[index];
+            if (selectedWh) {
+              an_whFilter = (an_whFilter === selectedWh.id) ? '' : selectedWh.id;
+              const wSel = document.getElementById('an-wh');
+              if (wSel) wSel.value = an_whFilter;
+              applyFilters();
+            }
+          }
+        },
+        onHover: (event, activeElements) => {
+          if (event.native && event.native.target) {
+            event.native.target.style.cursor = activeElements[0] ? 'pointer' : 'default';
+          }
+        },
         plugins:{
           ...CHART_OPTS.plugins,
           legend:{ position:'bottom', labels:{ color:'#94a3b8', padding:10, font:{size:11} } }

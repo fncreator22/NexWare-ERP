@@ -622,37 +622,47 @@ function showItemModal(item) {
   });
 
   modal.el.querySelector('#m-i-cancel')?.addEventListener('click', modal.close);
-  modal.el.querySelector('#m-i-save')?.addEventListener('click', async () => {
-    const name = document.getElementById('m-i-name').value.trim();
-    const category = document.getElementById('m-i-cat').value;
-    const price = parseFloat(document.getElementById('m-i-price').value);
-    const stock = parseInt(document.getElementById('m-i-stock').value);
-    const warehouseId = document.getElementById('m-i-wh').value;
-    const lowStockThreshold = parseInt(document.getElementById('m-i-threshold').value);
-    if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId||isNaN(lowStockThreshold)) { showToast('Validation','Fill all required fields','warning'); return; }
-    
-    const data = {
-      name, category, price, stock, warehouseId,
-      sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
-      unit: document.getElementById('m-i-unit').value,
-      taxCategory: 'normal',
-      images: selectedImages,
-      lowStockThreshold
-    };
-    
-    let res;
-    if (isEdit) {
-      res = await updateItem(item.id, data);
-      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
-      showToast('Item updated',`${name} updated`,'success');
-    } else {
-      res = await createItem(data);
-      if (res && res.error) { showToast('Error', res.error, 'error'); return; }
-      showToast('Item added',`${name} added to inventory`,'success');
+  modal.el.querySelector('#m-i-save')?.addEventListener('click', async (e) => {
+    const saveBtn = e.currentTarget;
+    if (saveBtn.dataset.processing === 'true') return;
+    saveBtn.dataset.processing = 'true';
+    saveBtn.disabled = true;
+
+    try {
+      const name = document.getElementById('m-i-name').value.trim();
+      const category = document.getElementById('m-i-cat').value;
+      const price = parseFloat(document.getElementById('m-i-price').value);
+      const stock = parseInt(document.getElementById('m-i-stock').value);
+      const warehouseId = document.getElementById('m-i-wh').value;
+      const lowStockThreshold = parseInt(document.getElementById('m-i-threshold').value);
+      if (!name||!category||isNaN(price)||isNaN(stock)||!warehouseId||isNaN(lowStockThreshold)) { showToast('Validation','Fill all required fields','warning'); return; }
+      
+      const data = {
+        name, category, price, stock, warehouseId,
+        sku: document.getElementById('m-i-sku').value || `SKU-${Date.now()}`,
+        unit: document.getElementById('m-i-unit').value,
+        taxCategory: 'normal',
+        images: selectedImages,
+        lowStockThreshold
+      };
+      
+      let res;
+      if (isEdit) {
+        res = await updateItem(item.id, data);
+        if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+        showToast('Item updated',`${name} updated`,'success');
+      } else {
+        res = await createItem(data);
+        if (res && res.error) { showToast('Error', res.error, 'error'); return; }
+        showToast('Item added',`${name} added to inventory`,'success');
+      }
+      modal.close();
+      renderItemStats();
+      renderItemsTable();
+    } finally {
+      saveBtn.dataset.processing = 'false';
+      saveBtn.disabled = false;
     }
-    modal.close();
-    renderItemStats();
-    renderItemsTable();
   });
 }
 

@@ -16,6 +16,8 @@ const _dashboardCharts = {};
  * Displays KPI cards, revenue charts, recent activity logs, and automated restock suggestions.
  * Mounts standard interaction buttons and floating actions.
  */
+let _dashWhFilter = '';
+
 export function renderDashboard() {
   const user = getCurrentUser();
   if (!user) {
@@ -37,13 +39,16 @@ export function renderDashboard() {
   const canViewAudit = canDo('audit', 'view', user);
   const canViewReports = canDo('reports', 'view', user);
 
-  const totalRevenue = bills.reduce((s,b)=>s+(b.total||0),0);
-  const totalTax    = bills.reduce((s,b)=>s+(b.tax||0),0);
-  const totalStock  = items.reduce((s,i)=>s+(i.stock||0),0);
+  let filteredBills = _dashWhFilter ? bills.filter(b => b.warehouseId === _dashWhFilter) : bills;
+  let filteredItems = _dashWhFilter ? items.filter(i => i.warehouseId === _dashWhFilter) : items;
+
+  const totalRevenue = filteredBills.reduce((s,b)=>s+(b.total||0),0);
+  const totalTax    = filteredBills.reduce((s,b)=>s+(b.tax||0),0);
+  const totalStock  = filteredItems.reduce((s,i)=>s+(i.stock||0),0);
   const activeUsers = users.filter(u=>u.status==='active').length;
 
   // Low stock items calculated dynamically based on threshold
-  const allLowStockItems = items.filter(i => {
+  const allLowStockItems = filteredItems.filter(i => {
     const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
     return (i.stock || 0) <= threshold;
   });
@@ -53,21 +58,21 @@ export function renderDashboard() {
   const topWh = whs.length ? [...whs].sort((a,b)=>(b.revenue||0)-(a.revenue||0))[0] : null;
 
   // Recent bills
-  const recentBills = bills.slice(0,5);
+  const recentBills = filteredBills.slice(0,5);
 
   // Role-specific warehouse
   const myWh = !isSA ? whs.find(w=>w.id===user.warehouseId) : null;
   const roleLabel = isSA ? 'Global Overview' : `${myWh?.name || 'Warehouse'} Overview`;
 
   // Smart Restock Logic: Identify items with low stock relative to sales velocity using dynamic threshold
-  const restockSuggestions = items
+  const restockSuggestions = filteredItems
     .filter(i => {
       const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
       return (i.stock || 0) <= threshold;
     })
     .map(i => {
       const threshold = i.lowStockThreshold !== undefined ? i.lowStockThreshold : 20;
-      const salesCount = bills.reduce((acc, b) => acc + (b.items?.filter(bi => bi.id === i.id).reduce((s, bi) => s + bi.qty, 0) || 0), 0);
+      const salesCount = filteredBills.reduce((acc, b) => acc + (b.items?.filter(bi => bi.id === i.id).reduce((s, bi) => s + bi.qty, 0) || 0), 0);
       const priority = (salesCount * 2) + (threshold - (i.stock || 0));
       return { ...i, priority, salesCount };
     })
@@ -93,6 +98,13 @@ export function renderDashboard() {
           ${canDo('billing', 'create', user) ? `<button class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px" onclick="location.hash='#/billing'">${getSvgIcon('billing', 14)} New Bill</button>` : ''}
         </div>
       </div>
+
+      ${_dashWhFilter ? `
+      <div style="margin-bottom:20px;padding:10px 16px;background:rgba(99,102,241,0.12);border:1px solid var(--border-brand);border-radius:10px;display:flex;align-items:center;justify-content:space-between;font-size:13px">
+        <span>🎯 Filtered by Warehouse: <strong>${whs.find(w=>w.id===_dashWhFilter)?.name || 'Warehouse'}</strong></span>
+        <button class="btn btn-secondary btn-xs" id="clear-dash-wh-filter" style="font-size:11px">✕ Clear Filter</button>
+      </div>
+      ` : ''}
 
       <!-- KPI Cards — compact row -->
       <div class="stat-grid" style="margin-bottom:20px">
@@ -423,7 +435,14 @@ export function renderDashboard() {
     ` : ''}
   `);
 
-  setTimeout(() => initDashboardCharts(whs), 100);
+  setTimeout(() => {
+    initDashboardCharts(whs);
+    initDragAndDropWidgets();
+    document.getElementById('clear-dash-wh-filter')?.addEventListener('click', () => {
+      _dashWhFilter = '';
+      renderDashboard();
+    });
+  }, 100);
 }
 
 /**
@@ -564,6 +583,21 @@ async function initDashboardCharts(whs) {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        onClick: (event, elements) => {
+          if (elements && elements.length > 0) {
+            const index = elements[0].index;
+            const clickedWh = whs[index];
+            if (clickedWh) {
+              _dashWhFilter = (_dashWhFilter === clickedWh.id) ? '' : clickedWh.id;
+              renderDashboard();
+            }
+          }
+        },
+        onHover: (event, activeElements) => {
+          if (event.native && event.native.target) {
+            event.native.target.style.cursor = activeElements[0] ? 'pointer' : 'default';
+          }
+        },
         plugins: {
           legend: { display: false },
           tooltip: { backgroundColor:'#1a1d3a', titleColor:'#f1f5f9', bodyColor:'#94a3b8',
@@ -574,4 +608,93 @@ async function initDashboardCharts(whs) {
       }
     });
   }
+}
+
+function initDragAndDropWidgets() {
+  const cards = document.querySelectorAll('.chart-card');
+  if (!cards.length) return;
+
+  // Restore saved widget order from localStorage if available
+  const savedOrderRaw = localStorage.getItem('wareops_dash_widget_order');
+  if (savedOrderRaw) {
+    try {
+      const orderMap = JSON.parse(savedOrderRaw);
+      cards.forEach((card, idx) => {
+        const id = card.dataset.widgetId || ('widget-' + idx);
+        card.dataset.widgetId = id;
+        if (orderMap[id] !== undefined) {
+          card.style.order = orderMap[id];
+        }
+      });
+    } catch(e) {}
+  }
+
+  const saveWidgetOrder = () => {
+    const orderMap = {};
+    document.querySelectorAll('.chart-card').forEach((c, index) => {
+      const id = c.dataset.widgetId || ('widget-' + index);
+      orderMap[id] = index;
+    });
+    localStorage.setItem('wareops_dash_widget_order', JSON.stringify(orderMap));
+  };
+
+  cards.forEach((card, idx) => {
+    if (!card.dataset.widgetId) card.dataset.widgetId = 'widget-' + idx;
+    card.setAttribute('draggable', 'true');
+
+    // Add drag handle if not present
+    const header = card.querySelector('.chart-card-header');
+    if (header && !header.querySelector('.drag-handle')) {
+      const handle = document.createElement('span');
+      handle.className = 'drag-handle';
+      handle.title = 'Drag to reorder';
+      handle.innerHTML = '⋮⋮';
+      handle.style.cssText = 'cursor:grab;color:var(--text-muted);font-size:14px;margin-right:8px;user-select:none;opacity:0.6';
+      header.insertBefore(handle, header.firstChild);
+    }
+
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.widgetId);
+      card.style.opacity = '0.5';
+    });
+
+    card.addEventListener('dragend', () => {
+      card.style.opacity = '1';
+      document.querySelectorAll('.chart-card').forEach(c => c.style.border = '');
+    });
+
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+
+    card.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      card.style.border = '2px dashed var(--brand-500)';
+    });
+
+    card.addEventListener('dragleave', () => {
+      card.style.border = '';
+    });
+
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.style.border = '';
+      const draggedId = e.dataTransfer.getData('text/plain');
+      const draggedCard = document.querySelector(`.chart-card[data-widget-id="${draggedId}"]`);
+      if (draggedCard && draggedCard !== card && draggedCard.parentElement === card.parentElement) {
+        const parent = card.parentElement;
+        const children = Array.from(parent.children);
+        const draggedIndex = children.indexOf(draggedCard);
+        const targetIndex = children.indexOf(card);
+        if (draggedIndex < targetIndex) {
+          parent.insertBefore(draggedCard, card.nextSibling);
+        } else {
+          parent.insertBefore(draggedCard, card);
+        }
+        saveWidgetOrder();
+      }
+    });
+  });
 }
